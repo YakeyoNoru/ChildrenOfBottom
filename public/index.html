@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ChildrenOfBottom</title><link rel="stylesheet" href="/style.css"><script defer src="/app.js"></script></head>
+<body><main><header><span class="eyebrow">FOUR SURVIVORS · ONE WORLD</span><h1>Children<span>OfBottom</span></h1><p id="connection" role="status">서버에 연결 중…</p></header>
+<p id="notice" role="alert" tabindex="-1" hidden></p>
+<section id="home" class="panel"><h2>함께, 바닥에서부터.</h2><p>최대 4명이 함께할 생존의 시작.</p><label for="name">생존자 이름</label><input id="name" maxlength="20" placeholder="이름을 입력하세요" autocomplete="nickname"><div class="actions"><button id="create" disabled>방만들기</button><button id="join-open" class="secondary" disabled>참여하기</button></div>
+<form id="join-form" hidden><label for="code-input">접속코드</label><input id="code-input" maxlength="6" placeholder="6자리 접속코드" autocomplete="off" spellcheck="false"><button id="join" type="submit">방 참가</button><button id="cancel" type="button" class="quiet">취소</button></form></section>
+<section id="lobby" class="panel lobby" hidden><div><div class="section-heading"><h2 id="phase-title">대기실</h2><span id="count"></span></div><ul id="players"></ul><p id="phase-message">참가자가 모두 준비하면 방장이 시작할 수 있습니다.</p></div><aside><label>접속코드</label><strong id="room-code"></strong><button id="copy" class="secondary">접속코드 복사</button><button id="primary">시작</button><p id="hint"></p><button id="leave" class="quiet">나가기</button></aside></section>
+<footer>CHILDREN OF BOTTOM <span>LOBBY PROTOTYPE · 0.1</span></footer></main></body></html>
