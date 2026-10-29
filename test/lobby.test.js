@@ -82,7 +82,7 @@ test('heartbeat expires unresponsive host', async t => {
 });
 test('HTTP serves only public files and health', async t => {
   const {url}=await setup(t);const base=url.replace('ws:','http:').replace('/ws','');
-  for(const path of ['/','/app.js','/style.css','/health'])assert.equal((await fetch(base+path)).status,200);
+  for(const path of ['/','/app.js','/viewport.js','/style.css','/health'])assert.equal((await fetch(base+path)).status,200);
   assert.equal((await fetch(base+'/server.js')).status,404);
 });
 test('simultaneous joins never exceed four players', async t => {
@@ -102,4 +102,110 @@ test('foreign browser origins and oversized payloads are rejected', async t => {
   assert.equal(code,1008);
   const a=await client();const closed=new Promise(resolve=>a.ws.once('close',resolve));
   a.ws.send('x'.repeat(5000));assert.equal(await closed,1009);
+});
+
+async function startedPair(t, options) {
+  const game = await setup(t, options), a = await game.client(), b = await game.client();
+  await a.command('room.create', {name:'방장'}); const {room} = await a.next('room.state');
+  await b.command('room.join', {name:'참가자',code:room.code});
+  await b.command('room.ready', {ready:true}); await a.command('room.start');
+  return {...game,a,b,code:room.code};
+}
+test('playing host leaves alone, successor can move, room disappears only after last departure', async t => {
+  const {a,b,rooms,code} = await startedPair(t);
+  await a.command('room.leave'); await a.next('room.left');
+  assert.equal(rooms.get(code).phase,'started'); assert.equal(rooms.get(code).hostId,b.id);
+  assert.equal(rooms.get(code).players.size,1);
+  const p = rooms.get(code).players.get(b.id), x = p.x;
+  b.ws.send(JSON.stringify({v:1,type:'game.input',x:1,y:0,action:'A',playerId:a.id}));
+  let state; do {state = await b.next('game.state');} while(state.room.players[0].x <= x);
+  assert.equal(state.room.players[0].id,b.id); assert.equal(state.room.players[0].action,'A');
+  await a.command('room.create',{name:'다른 방'});
+  assert.equal(rooms.has(code),true);
+  await b.command('room.leave'); await b.next('room.left'); assert.equal(rooms.has(code),false);
+});
+test('playing host disconnect and heartbeat timeout preserve the remaining game', async t => {
+  const {a,b,rooms,code} = await startedPair(t,{heartbeatMs:50});
+  a.ws._autoPong = false;
+  let state; do {state = await b.next('game.state');} while(state.room.players.length !== 1);
+  assert.equal(state.room.phase,'started'); assert.equal(rooms.get(code).hostId,b.id);
+  b.ws.terminate();
+  await new Promise(resolve => b.ws.once('close',resolve));
+  await new Promise(resolve => setImmediate(resolve));
+  // Server's close frame may be processed on the next event loop turn.
+  for(let i=0; i<20 && rooms.has(code); i++) await new Promise(resolve=>setTimeout(resolve,5));
+  assert.equal(rooms.has(code),false);
+});
+test('movement is validated, bounded, diagonal normalized, stale input stops', async t => {
+  const {a,b,rooms,code} = await startedPair(t);
+  for (const input of [{x:2,y:0},{x:'1',y:0},{x:0,y:0,action:'C'}]) {
+    assert.equal((await b.command('game.input',input,'error')).code,'INVALID_INPUT');
+  }
+  const p = rooms.get(code).players.get(b.id);
+  b.ws.send(JSON.stringify({v:1,type:'game.input',x:1,y:1}));
+  let state; do {state = await b.next('game.state');} while(p.inputAt === 0);
+  assert.ok(Math.abs(Math.hypot(p.input.x,p.input.y)-1)<1e-9);
+  const host = rooms.get(code).players.get(a.id); assert.equal(host.x,-60);
+  for(let i=0;i<12;i++) await b.next('game.state');
+  const stopped = p.x; await b.next('game.state'); assert.equal(p.x,stopped);
+  assert.deepEqual(p.input,{x:0,y:0});
+  p.x=1500; p.y=1500; b.ws.send(JSON.stringify({v:1,type:'game.input',x:1,y:1}));
+  await b.next('game.state'); await b.next('game.state'); assert.ok(p.x<=1500 && p.y<=1500);
+});
+test('input is rejected before game start', async t => {
+  const {client}=await setup(t);const a=await client();
+  assert.equal((await a.command('game.input',{x:0,y:0},'error')).code,'NOT_IN_ROOM');
+  await a.command('room.create',{name:'A'});
+  assert.equal((await a.command('game.input',{x:0,y:0},'error')).code,'GAME_NOT_STARTED');
+});
+
+test('world snapshots share player/NPC/enemy stats; stun/death and speed use server status', async t => {
+  const {createWorldObject}=await import('../game/status.js');
+  const {a,b,rooms,code}=await startedPair(t),room=rooms.get(code),p=room.players.get(b.id);
+  const npc=createWorldObject({objectType:'npc',classificationCode:'NPC001',name:'주민',x:300,maxSkillResource:5,currentSkillResource:2});
+  const enemy=createWorldObject({objectType:'enemy',classificationCode:'ENEMY001',name:'몬스터',x:400});
+  room.objects.set(npc.id,npc);room.objects.set(enemy.id,enemy);
+  let state;do{state=await b.next('game.state');}while(state.room.objects.length!==4);
+  assert.equal(state.room.players.find(x=>x.id===b.id).status.moveSpeed,2);
+  assert.equal(state.room.players.find(x=>x.id===b.id).status.classificationCode,b.id);
+  assert.equal(state.room.objects.find(x=>x.id===npc.id).status.objectType,'npc');
+  assert.equal(state.room.objects.find(x=>x.id===enemy.id).status.objectType,'enemy');
+  assert.equal(state.room.players.find(x=>x.id===b.id).status.nearestEnemyId,enemy.id);
+  assert.equal('skillDeckCode' in state.room.objects.find(x=>x.id===npc.id).status,false);
+  p.status.stunned=true;const x=p.x;
+  b.ws.send(JSON.stringify({v:1,type:'game.input',x:1,y:0,status:{stunned:false,moveSpeed:1000}}));
+  await b.next('game.state');await b.next('game.state');assert.equal(p.x,x);assert.equal(p.status.moveSpeed,2);
+  p.status.stunned=false;p.status.bonusMoveSpeed=-2;
+  b.ws.send(JSON.stringify({v:1,type:'game.input',x:1,y:0}));await b.next('game.state');await b.next('game.state');assert.equal(p.x,x);
+  p.status.bonusMoveSpeed=0;p.status.currentHealth=0;
+  b.ws.send(JSON.stringify({v:1,type:'game.input',x:1,y:0,action:'A'}));
+  await b.next('game.state');await b.next('game.state');assert.equal(p.x,x);assert.equal(p.action,null);assert.equal(p.status.state,'dead');
+  await a.command('room.leave');assert.equal(rooms.has(code),true);
+});
+
+test('movement facing is synchronized and survives stop, stun and zero-speed input',async t=>{
+  const {a,b,rooms,code}=await startedPair(t),p=rooms.get(code).players.get(b.id);
+  assert.equal(p.facing,-Math.PI/2);
+  b.ws.send(JSON.stringify({v:1,type:'game.input',x:1,y:1}));
+  let state;do{state=await b.next('game.state');}while(p.facing===-Math.PI/2);
+  assert.ok(Math.abs(p.facing-Math.PI/4)<1e-7);
+  let other;do{other=await a.next('game.state');}while(Math.abs(other.room.players.find(x=>x.id===b.id).facing-Math.PI/4)>1e-7);
+  b.ws.send(JSON.stringify({v:1,type:'game.input',x:0,y:0}));await b.next('game.state');assert.ok(Math.abs(p.facing-Math.PI/4)<1e-7);
+  p.status.stunned=true;b.ws.send(JSON.stringify({v:1,type:'game.input',x:-1,y:0}));await b.next('game.state');await b.next('game.state');assert.ok(Math.abs(p.facing-Math.PI/4)<1e-7);
+  p.status.stunned=false;p.status.bonusMoveSpeed=-2;b.ws.send(JSON.stringify({v:1,type:'game.input',x:0,y:-1}));await b.next('game.state');await b.next('game.state');assert.ok(Math.abs(p.facing-Math.PI/4)<1e-7);
+});
+
+test('per-player targeting options are validated and propagated on the 100 ms tick',async t=>{
+  const {createWorldObject}=await import('../game/status.js');
+  const {client,rooms}=await setup(t);const a=await client(),b=await client();
+  await a.command('room.create',{name:'A'});const initial=(await a.next('room.state')).room;
+  await b.command('room.join',{name:'B',code:initial.code});await b.command('room.ready',{ready:true});await a.command('room.start');
+  const room=rooms.get(initial.code),p=room.players.get(a.id);
+  for(const [id,x,hp] of [['near',10,8],['low',80,2]]) {const o=createWorldObject({objectType:'enemy',classificationCode:id,instanceId:id,x:p.x+x,y:p.y,currentHealth:hp,healthRegen:0});room.objects.set(id,o);}
+  const nextTarget=async id=>{for(let i=0;i<10;i++){const m=await a.next('game.state');if(m.room.players.find(p=>p.id===a.id).status.nearestEnemyId===id)return;}assert.fail('target did not update');};
+  await nextTarget('near');
+  a.ws.send(JSON.stringify({v:1,type:'game.options',targetPriority:'lowestHealth'}));await nextTarget('low');
+  assert.equal(room.players.get(b.id).targetPriority,'nearest');
+  assert.equal((await a.command('game.options',{targetPriority:'bad'},'error')).code,'INVALID_OPTIONS');
+  room.objects.delete('low');await nextTarget('near');room.objects.clear();await nextTarget(null);
 });
