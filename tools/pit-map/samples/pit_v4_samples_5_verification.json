@@ -1,0 +1,139 @@
+[
+  {
+    "sample": 1,
+    "seed": 2026103011,
+    "image": "pit_v4_map_01.png",
+    "tiles": 58,
+    "optional": [
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57,
+      59
+    ],
+    "heightOneStartCounts": [
+      2,
+      1,
+      1,
+      1
+    ],
+    "transitionCounts": [
+      7,
+      3,
+      3
+    ],
+    "oneWayBridges": 3,
+    "verified": true
+  },
+  {
+    "sample": 2,
+    "seed": 2026103012,
+    "image": "pit_v4_map_02.png",
+    "tiles": 56,
+    "optional": [
+      51,
+      52,
+      53,
+      55,
+      56,
+      58
+    ],
+    "heightOneStartCounts": [
+      2,
+      2,
+      1
+    ],
+    "transitionCounts": [
+      7,
+      5,
+      3
+    ],
+    "oneWayBridges": 5,
+    "verified": true
+  },
+  {
+    "sample": 3,
+    "seed": 2026103013,
+    "image": "pit_v4_map_03.png",
+    "tiles": 57,
+    "optional": [
+      51,
+      52,
+      53,
+      54,
+      56,
+      57,
+      58
+    ],
+    "heightOneStartCounts": [
+      2,
+      2,
+      1
+    ],
+    "transitionCounts": [
+      7,
+      5,
+      3
+    ],
+    "oneWayBridges": 5,
+    "verified": true
+  },
+  {
+    "sample": 4,
+    "seed": 2026103014,
+    "image": "pit_v4_map_04.png",
+    "tiles": 58,
+    "optional": [
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      58,
+      59
+    ],
+    "heightOneStartCounts": [
+      1,
+      2,
+      1,
+      1
+    ],
+    "transitionCounts": [
+      7,
+      3,
+      3
+    ],
+    "oneWayBridges": 3,
+    "verified": true
+  },
+  {
+    "sample": 5,
+    "seed": 2026103015,
+    "image": "pit_v4_map_05.png",
+    "tiles": 56,
+    "optional": [
+      51,
+      52,
+      53,
+      55,
+      57,
+      58
+    ],
+    "heightOneStartCounts": [
+      2,
+      2,
+      1
+    ],
+    "transitionCounts": [
+      7,
+      5,
+      3
+    ],
+    "oneWayBridges": 5,
+    "verified": true
+  }
+]

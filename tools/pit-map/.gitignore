@@ -1,0 +1,5 @@
+__pycache__/
+*.py[cod]
+/map_*.png
+/field_preview.png
+/map_screen.png

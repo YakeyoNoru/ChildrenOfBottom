@@ -1,0 +1,39 @@
+{
+  "allOptionalCombinations": 1024,
+  "allCountCombinations": 72,
+  "realGameSeedsValidated": 1000,
+  "selectionSeedsTested": 100000,
+  "observedGenerationRates": {
+    "51": 0.80031,
+    "52": 0.8032,
+    "53": 0.79817,
+    "54": 0.79959,
+    "55": 0.79833,
+    "56": 0.49919,
+    "57": 0.50179,
+    "58": 0.49984,
+    "59": 0.29967,
+    "60": 0.30162
+  },
+  "observedTotalCounts": [
+    50,
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57,
+    58,
+    59,
+    60
+  ],
+  "expectedTileCount": 56.1,
+  "reproducible": true,
+  "selectionMutationRejected": true,
+  "missingComponentExitRejected": true,
+  "missingStartRejected": true,
+  "forbiddenReverseArcRejected": true,
+  "physicalConnectivity": true,
+  "roundTripRequired": false
+}

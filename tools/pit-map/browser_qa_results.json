@@ -1,0 +1,51 @@
+{
+  "results": [
+    {
+      "oneWayBridgesChecked": 5,
+      "bidirectionalBridgesChecked": 64,
+      "seed": 20261030,
+      "tileCount": 55,
+      "selectedOptional": [
+        52,
+        53,
+        54,
+        55,
+        59
+      ],
+      "connectedBridges": 69,
+      "blockedSides": 66
+    },
+    {
+      "oneWayBridgesChecked": 5,
+      "bidirectionalBridgesChecked": 65,
+      "seed": 29,
+      "tileCount": 60,
+      "selectedOptional": [
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60
+      ],
+      "connectedBridges": 70,
+      "blockedSides": 82
+    },
+    {
+      "oneWayBridgesChecked": 3,
+      "bidirectionalBridgesChecked": 52,
+      "seed": 56791,
+      "tileCount": 50,
+      "selectedOptional": [],
+      "connectedBridges": 55,
+      "blockedSides": 67
+    }
+  ],
+  "keyboardMovement": true,
+  "mobileWidth": 390,
+  "consoleErrors": []
+}
