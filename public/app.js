@@ -83,7 +83,11 @@ function updateControls() { $('touch-controls').hidden = desktopInput; }
 finePointer.addEventListener('change', e => { desktopInput = e.matches; resetInput(); updateControls(); });
 function resetInput() {
   keys.clear(); axis = { x: 0, y: 0 }; action = null; stickPointer = null;
-  $('stick').style.transform = ''; $('action-a').classList.remove('pressed'); $('action-b').classList.remove('pressed');
+  $('stick').style.transform = ''; $('action-a').classList.remove('pressed'); $('action-b').classList.remove('pressed'); $('action-c').classList.remove('pressed');
+}
+function useSkill(slot) {
+  if (room?.phase !== 'started' || socket?.readyState !== WebSocket.OPEN || $('game-dialog').open || document.hidden || viewport.blockedPortrait) return;
+  socket.send(JSON.stringify({v:1,type:'game.cast',slot}));
 }
 function inputPacket() {
   if (room?.phase !== 'started' || socket?.readyState !== WebSocket.OPEN) return;
@@ -113,8 +117,8 @@ window.addEventListener('keydown', e => {
   desktopInput = true; updateControls();
   if (e.code === 'Escape') { e.preventDefault(); if ($('game-dialog').open) closeMenu(); else $('game-menu').click(); return; }
   if ($('game-dialog').open || e.ctrlKey || e.metaKey || e.altKey) return;
-  if (['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyJ','KeyK'].includes(e.code)) {
-    e.preventDefault(); keys.add(e.code); action = keys.has('KeyJ') ? 'A' : keys.has('KeyK') ? 'B' : null;
+  if (['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyJ','KeyK','KeyL'].includes(e.code)) {
+    e.preventDefault(); if (!keys.has(e.code) && ['KeyJ','KeyK','KeyL'].includes(e.code)) useSkill({KeyJ:'A',KeyK:'B',KeyL:'C'}[e.code]); keys.add(e.code); action = keys.has('KeyJ') ? 'A' : keys.has('KeyK') ? 'B' : null;
   }
 });
 window.addEventListener('keyup', e => { keys.delete(e.code); action = keys.has('KeyJ') ? 'A' : keys.has('KeyK') ? 'B' : null; });
@@ -133,9 +137,9 @@ joystick.onpointerdown = e => { if (stickPointer !== null) return; stickPointer 
 joystick.onpointermove = moveStick;
 function releaseStick(e) { if (e.pointerId === stickPointer) { stickPointer = null; axis = { x: 0, y: 0 }; $('stick').style.transform = ''; inputPacket(); } }
 for (const event of ['pointerup','pointercancel','lostpointercapture']) joystick.addEventListener(event, releaseStick);
-for (const key of ['A','B']) {
+for (const key of ['A','B','C']) {
   const button = $('action-' + key.toLowerCase()); let pointer = null;
-  button.onpointerdown = e => { if (pointer !== null) return; pointer = e.pointerId; button.setPointerCapture(e.pointerId); action = key; button.classList.add('pressed'); inputPacket(); };
+  button.onpointerdown = e => { if (pointer !== null) return; pointer = e.pointerId; button.setPointerCapture(e.pointerId); action = key; useSkill(key); button.classList.add('pressed'); inputPacket(); };
   for (const event of ['pointerup','pointercancel','lostpointercapture']) button.addEventListener(event, e => { if (e.pointerId !== pointer) return; pointer = null; if (action === key) action = null; button.classList.remove('pressed'); inputPacket(); });
 }
 updateControls();
@@ -170,6 +174,7 @@ function drawWorld() {
   for (let x = ((ox % 80)+80)%80; x < w; x += 80) { ctx.moveTo(x,0); ctx.lineTo(x,h); }
   for (let y = ((oy % 80)+80)%80; y < h; y += 80) { ctx.moveTo(0,y); ctx.lineTo(w,y); } ctx.stroke();
   ctx.strokeStyle = '#96a47b'; ctx.strokeRect(ox-1520,oy-1520,3040,3040);
+  drawSkillEffects(ctx, room.skillEffects ?? [], ox, oy);
   (room.objects ?? room.players).forEach((p,i) => {
     const x = p.x+ox, y = p.y+oy;
     if (p.action) { ctx.strokeStyle = p.action === 'A' ? '#f7d98b' : '#93ccea'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x,y,32,0,Math.PI*2); ctx.stroke(); }
@@ -179,6 +184,17 @@ function drawWorld() {
     if (userSettings.showNames) { ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = '14px system-ui'; ctx.fillText(p.name + (p.id === playerId ? ' (나)' : ''),x,y-54); }
     drawObjectHud(ctx, p, x, y, playerId);
   });
+}
+function drawSkillEffects(context, effects, ox, oy) {
+  for (const e of effects) {
+    const c=Math.cos(e.angle),s=Math.sin(e.angle);
+    context.beginPath();
+    [[0,-e.width/2],[e.length,-e.width/2],[e.length,e.width/2],[0,e.width/2]].forEach(([f,l],i)=>{
+      const x=e.x+ox+f*c-l*s,y=e.y+oy+f*s+l*c;
+      if(i===0) context.moveTo(x,y); else context.lineTo(x,y);
+    });
+    context.closePath();context.fillStyle='#f7d98b33';context.fill();context.strokeStyle='#f7d98b';context.lineWidth=2;context.stroke();
+  }
 }
 /** The first vertex faces movement; an 18-unit circumradius preserves size. */
 function drawPlayerTriangle(context, object, x, y) {

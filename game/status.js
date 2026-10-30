@@ -4,7 +4,7 @@ export const ObjectType = Object.freeze({ PLAYER: 'player', NPC: 'npc', ENEMY: '
 export const LifeState = Object.freeze({ ALIVE: 'alive', DEAD: 'dead' });
 
 const defaults = Object.freeze({
-  level: 1,
+  level: 1, hitboxDiameter: 24,
   maxHealth: 10, currentHealth: 10,
   maxSkillResource: 0, currentSkillResource: 0,
   attack: 1, defense: 0,
@@ -33,6 +33,10 @@ export function createStatus({ objectType, classificationCode, instanceId = rand
   }
   status.state = values.state ?? LifeState.ALIVE;
   if (!Object.values(LifeState).includes(status.state)) throw new TypeError('Invalid state');
+  for (const slot of ['A','B','C','P']) {
+    status['skill'+slot] = values['skill'+slot] ?? (slot === 'A' ? 'BAS0001' : '');
+    if (typeof status['skill'+slot] !== 'string') throw new TypeError('Invalid skill slot');
+  }
   status.nearestEnemyId = null;
   status.nearestObjectId = null;
   if (objectType === ObjectType.PLAYER) {

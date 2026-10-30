@@ -79,3 +79,10 @@ HTTP `GET /health`는 `{"ok":true,"protocolVersion":1}`을 반환합니다. 방 
 
 ### 공격 우선대상 옵션
 `game.options` 메시지 `{v:1,type:"game.options",targetPriority:"nearest"|"lowestHealth"|"lowestHealthRatio"}`는 본인에게만 적용됩니다. 게임 중 대상 참조는 서버에서 100ms마다 갱신하며 `status.nearestEnemyId`로 전달합니다. 생존한 적대 개체만 대상이며 동률은 거리순, 완전히 같으면 방의 개체 순서를 유지합니다. 비율은 현재체력 / max(0, 최대체력 + 추가체력)입니다. `nearestObjectId`는 계속 거리만 기준으로 합니다. 아직 탐색 반경이 없으므로 방 전체가 기본입니다. 서버 개체의 `targetRange`를 지정하면 세 옵션 모두 그 반경 안에서 선택합니다. 공격 실행 및 사거리는 별도입니다.
+
+## 기술과 히트박스
+모든 개체의 status에 `hitboxDiameter:24`, `skillA`, `skillB`, `skillC`, `skillP`가 있습니다. 표시 크기 36과 피격 원의 지름 24는 별개이며 이동 충돌/밀어내기는 아직 없습니다. 기본 skillA는 BAS0001, B/C/P는 미지정입니다. P는 패시브 예약 슬롯입니다.
+
+`{v:1,type:"game.cast",slot:"A"|"B"|"C"}`로 한 번 시전합니다. 서버는 해당 연결의 개체/기술 슬롯만 사용하며 클라이언트 damage/각도/대상 ID를 신뢰하지 않습니다. 중복 요청 방지를 위한 최소 간격은 100ms이고 정식 쿨다운은 미정입니다. 기절/사망 시 시전하지 않습니다. A는 J, B는 K, C는 L 키이며 길게 눌러도 자동 반복하지 않습니다.
+
+`game/skills.js`의 기술 포맷으로 BAS0001을 정의합니다. 선택된 nearestEnemyId 방향(없으면 마지막 이동 방향), 시전자 중심에서 전방 길이72·폭50 사각형과 적의 원형 히트박스가 겹치면 `max(0,attack+bonusAttack+5)` 피해를 한 번 적용합니다. 방어력 차감은 없습니다. T1=Y일 때 시전 위치에 범위가 4000ms 유지됩니다. T1=N은 일반 시전 표시 150ms만 남습니다. 스냅샷의 skillEffects는 피해 판정 결과/월드 좌표/남은 시간을 포함하며 범위 표시는 지속 피해가 아닙니다.

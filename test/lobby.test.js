@@ -138,7 +138,7 @@ test('playing host disconnect and heartbeat timeout preserve the remaining game'
 });
 test('movement is validated, bounded, diagonal normalized, stale input stops', async t => {
   const {a,b,rooms,code} = await startedPair(t);
-  for (const input of [{x:2,y:0},{x:'1',y:0},{x:0,y:0,action:'C'}]) {
+  for (const input of [{x:2,y:0},{x:'1',y:0},{x:0,y:0,action:'INVALID'}]) {
     assert.equal((await b.command('game.input',input,'error')).code,'INVALID_INPUT');
   }
   const p = rooms.get(code).players.get(b.id);
@@ -208,4 +208,15 @@ test('per-player targeting options are validated and propagated on the 100 ms ti
   assert.equal(room.players.get(b.id).targetPriority,'nearest');
   assert.equal((await a.command('game.options',{targetPriority:'bad'},'error')).code,'INVALID_OPTIONS');
   room.objects.delete('low');await nextTarget('near');room.objects.clear();await nextTarget(null);
+});
+
+test('game.cast resolves server slot and selected target without trusting supplied damage or caster',async t=>{
+ const {createWorldObject}=await import('../game/status.js');
+ const {a,b,rooms,code}=await startedPair(t),room=rooms.get(code),p=room.players.get(a.id);
+ const enemy=createWorldObject({objectType:'enemy',classificationCode:'e',x:p.x+40,y:p.y,maxHealth:30,currentHealth:30,healthRegen:0});room.objects.set(enemy.id,enemy);
+ let state;do{state=await a.next('game.state');}while(state.room.players.find(x=>x.id===a.id).status.nearestEnemyId!==enemy.id);
+ a.ws.send(JSON.stringify({v:1,type:'game.cast',slot:'A',damage:9999,casterId:b.id}));
+ do{state=await a.next('game.state');}while(!state.room.skillEffects.length);
+ assert.equal(enemy.status.currentHealth,24);assert.equal(state.room.skillEffects[0].casterId,a.id);assert.equal(state.room.skillEffects[0].length,72);
+ assert.equal(state.room.players.find(x=>x.id===a.id).status.hitboxDiameter,24);
 });

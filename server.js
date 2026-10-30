@@ -1,3 +1,4 @@
+import { castSkill } from './game/skills.js';
 import http from 'node:http';
 import { createAuthService } from './auth/service.js';
 import { createStatus, ObjectType, LifeState, effectiveStats, normalizeVitals, regenerate, updateNearestObjects, TargetPriority } from './game/status.js';
@@ -41,6 +42,7 @@ export function createGameServer({ heartbeatMs = 15000, auth: authOptions = {} }
       code: room.code, hostId: room.hostId, phase: room.phase,
       players: [...room.players.values()].map(p => ({ ...objectSnapshot(p), ready: p.ready })),
       objects: objects.map(objectSnapshot),
+      skillEffects: (room.skillEffects ?? []).map(effect => ({...effect, remainingMs: Math.max(0,effect.expiresAt-Date.now())})),
     };
   };
   const broadcast = room => { for (const p of room.players.values()) send(p.ws, 'room.state', { room: snapshot(room) }); };
@@ -100,10 +102,20 @@ export function createGameServer({ heartbeatMs = 15000, auth: authOptions = {} }
         if (!TargetPriority.includes(m.targetPriority)) return fail('INVALID_OPTIONS', '올바른 공격 우선대상이 필요합니다.');
         room.players.get(ws.id).targetPriority = m.targetPriority;
         return;
+      } else if (m.type === 'game.cast') {
+        if (!room) return fail('NOT_IN_ROOM', '참여 중인 방이 없습니다.');
+        if (room.phase !== 'started') return fail('GAME_NOT_STARTED', '게임 시작 후 사용할 수 있습니다.');
+        if (!['A','B','C'].includes(m.slot)) return fail('INVALID_SKILL', '올바른 기술 슬롯이 필요합니다.');
+        const caster = room.players.get(ws.id), now = Date.now();
+        if (now-(caster.lastCastAt ?? 0)<100) return;
+        caster.lastCastAt=now;
+        const effect=castSkill(caster,allObjects(room),m.slot,now);
+        if (effect) { room.skillEffects ??= []; room.skillEffects.push(effect); }
+        return;
       } else if (m.type === 'game.input') {
         if (!room) return fail('NOT_IN_ROOM', '참여 중인 방이 없습니다.');
         if (room.phase !== 'started') return fail('GAME_NOT_STARTED', '게임 시작 후 조작할 수 있습니다.');
-        if (![m.x, m.y].every(n => typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= 1) || ![null, 'A', 'B'].includes(m.action ?? null)) return fail('INVALID_INPUT', '올바른 이동 및 행동 입력이 필요합니다.');
+        if (![m.x, m.y].every(n => typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= 1) || ![null, 'A', 'B', 'C'].includes(m.action ?? null)) return fail('INVALID_INPUT', '올바른 이동 및 행동 입력이 필요합니다.');
         const p = room.players.get(ws.id), length = Math.max(1, Math.hypot(m.x, m.y));
         p.input = { x: m.x / length, y: m.y / length }; p.inputAt = Date.now(); p.action = m.action ?? null;
         return; // Continuous input is independent of lobby request/ack transactions.
@@ -131,6 +143,7 @@ export function createGameServer({ heartbeatMs = 15000, auth: authOptions = {} }
     const now = Date.now(), dt = Math.min((now - lastTick) / 1000, 0.1); lastTick = now;
     for (const room of rooms.values()) {
       if (room.phase !== 'started') continue;
+      room.skillEffects = (room.skillEffects ?? []).filter(e=>e.expiresAt>now);
       const objects = allObjects(room);
       for (const object of objects) regenerate(object.status, dt);
       for (const p of room.players.values()) {
