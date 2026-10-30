@@ -77,12 +77,14 @@ $('copy').onclick = async () => {
 };
 const keys = new Set();
 let axis = { x: 0, y: 0 }, action = null, stickPointer = null;
+const mouseButtons = new Set();
+function desktopAction() { return mouseButtons.has(0) ? 'A' : mouseButtons.has(2) ? 'B' : (keys.has('ShiftLeft') || keys.has('ShiftRight')) ? 'C' : null; }
 const finePointer = matchMedia('(any-pointer: fine)');
 let desktopInput = finePointer.matches;
 function updateControls() { $('touch-controls').hidden = desktopInput; }
 finePointer.addEventListener('change', e => { desktopInput = e.matches; resetInput(); updateControls(); });
 function resetInput() {
-  keys.clear(); axis = { x: 0, y: 0 }; action = null; stickPointer = null;
+  keys.clear(); mouseButtons.clear(); axis = { x: 0, y: 0 }; action = null; stickPointer = null;
   $('stick').style.transform = ''; $('action-a').classList.remove('pressed'); $('action-b').classList.remove('pressed'); $('action-c').classList.remove('pressed');
 }
 function useSkill(slot) {
@@ -117,11 +119,21 @@ window.addEventListener('keydown', e => {
   desktopInput = true; updateControls();
   if (e.code === 'Escape') { e.preventDefault(); if ($('game-dialog').open) closeMenu(); else $('game-menu').click(); return; }
   if ($('game-dialog').open || e.ctrlKey || e.metaKey || e.altKey) return;
-  if (['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyJ','KeyK','KeyL'].includes(e.code)) {
-    e.preventDefault(); if (!keys.has(e.code) && ['KeyJ','KeyK','KeyL'].includes(e.code)) useSkill({KeyJ:'A',KeyK:'B',KeyL:'C'}[e.code]); keys.add(e.code); action = keys.has('KeyJ') ? 'A' : keys.has('KeyK') ? 'B' : null;
+  if (['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight'].includes(e.code)) {
+    e.preventDefault(); if (['ShiftLeft','ShiftRight'].includes(e.code) && !keys.has('ShiftLeft') && !keys.has('ShiftRight')) useSkill('C'); keys.add(e.code); action = desktopAction();
   }
 });
-window.addEventListener('keyup', e => { keys.delete(e.code); action = keys.has('KeyJ') ? 'A' : keys.has('KeyK') ? 'B' : null; });
+window.addEventListener('keyup', e => { keys.delete(e.code); action = desktopAction(); });
+$('game-viewport').addEventListener('mousedown', e => {
+  if (![0,2].includes(e.button) || room?.phase !== 'started' || $('game-dialog').open || viewport.blockedPortrait || e.target.closest?.('button, input, select, dialog, #joystick')) return;
+  e.preventDefault(); desktopInput = true; updateControls();
+  if (!mouseButtons.has(e.button)) useSkill(e.button === 0 ? 'A' : 'B');
+  mouseButtons.add(e.button); action = desktopAction(); inputPacket();
+});
+window.addEventListener('mouseup', e => { mouseButtons.delete(e.button); action = desktopAction(); inputPacket(); });
+$('game-viewport').addEventListener('contextmenu', e => {
+  if (room?.phase === 'started' && !$('game-dialog').open) e.preventDefault();
+});
 window.addEventListener('pointermove', e => { if (e.pointerType === 'mouse' && !desktopInput) { desktopInput = true; resetInput(); updateControls(); } });
 window.addEventListener('blur', () => { resetInput(); inputPacket(); });
 document.addEventListener('visibilitychange', () => { resetInput(); inputPacket(); });

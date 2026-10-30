@@ -114,3 +114,16 @@ test('menu separates test settings and options; radio option syncs to server',()
   e.get('target-lowestHealthRatio').onchange();assert.equal(run('userSettings.targetPriority'),'lowestHealthRatio');assert.equal(run('socket.sent.at(-1).type'),'game.options');assert.equal(run('socket.sent.at(-1).targetPriority'),'lowestHealthRatio');
   e.get('options-back').click();assert.equal(e.get('menu-main').hidden,false);e.get('resume').click();e.get('game-menu').click();assert.equal(e.get('menu-main').hidden,false);
 });
+
+test('desktop maps left/right mouse and either Shift, blocks UI casts and suppresses game context menu',()=>{
+ const {elements:e,receive,state,window,run}=client();receive({type:'room.state',room:state});
+ const mouse=(target,type,button)=>{const event=new Event(type,{cancelable:true});Object.defineProperty(event,'button',{value:button});target.dispatchEvent(event);return event;};
+ const casts=()=>run('socket.sent.filter(m=>m.type==="game.cast").map(m=>m.slot).join(",")');
+ mouse(e.get('game-viewport'),'mousedown',0);mouse(window,'mouseup',0);
+ mouse(e.get('game-viewport'),'mousedown',2);mouse(window,'mouseup',2);
+ key(window,'keydown','ShiftLeft');key(window,'keydown','ShiftLeft');key(window,'keydown','ShiftRight');key(window,'keyup','ShiftLeft');key(window,'keyup','ShiftRight');
+ assert.equal(casts(),'A,B,C');
+ key(window,'keydown','KeyJ');key(window,'keydown','KeyK');key(window,'keydown','KeyL');assert.equal(casts(),'A,B,C');
+ const context=new Event('contextmenu',{cancelable:true});e.get('game-viewport').dispatchEvent(context);assert.equal(context.defaultPrevented,true);
+ e.get('game-menu').click();mouse(e.get('game-viewport'),'mousedown',0);key(window,'keydown','ShiftLeft');assert.equal(casts(),'A,B,C');
+});
