@@ -17,6 +17,7 @@ body.playing{overflow:hidden}body.playing main>header,body.playing main>footer{d
 #rotate-notice h2{font-size:1.35rem;margin-bottom:8px}
 #rotate-notice p{max-width:280px}
 
+/* --control-scale: 옵션에서 선택한 조이스틱·기술 버튼의 크기 배율. */
 :root{--control-scale:1}#joystick{width:calc(132px * var(--control-scale));height:calc(132px * var(--control-scale))}#stick{width:calc(54px * var(--control-scale));height:calc(54px * var(--control-scale))}#action-controls button{width:calc(68px * var(--control-scale));height:calc(68px * var(--control-scale))}#game-dialog{max-height:90dvh;overflow:auto}.settings{border-top:1px solid #47604b;padding-top:12px;margin-bottom:14px}.settings input[type=checkbox]{display:inline-block;width:auto}.settings select{font:inherit;background:#203b2b;color:white;padding:8px;border-radius:8px}.settings p{font-size:12px}#client-kind{color:#b7cf99;font-size:13px}.login-button{display:block;padding:16px;margin-top:12px;border-radius:9px;background:#dbe8d0;color:#152015;text-decoration:none;text-align:center}.login-button[aria-disabled=true]{opacity:.4;pointer-events:none}
 
 #game-hud{position:absolute;left:0;top:0;width:100%;height:100%;transform-origin:top left}

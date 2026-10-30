@@ -1,4 +1,5 @@
 plugins { id 'com.android.application' }
+// gameOrigin: APK가 접속할 HTTPS 서버 출처. 인증 비밀키는 앱에 포함하지 않는다.
 def gameOrigin = providers.gradleProperty('gameOrigin').getOrElse('https://game.example.com')
 if (!(gameOrigin ==~ /https:\/\/[a-zA-Z0-9.-]+(:[0-9]+)?/)) throw new GradleException('gameOrigin must be an HTTPS origin without path or trailing slash')
 android {
