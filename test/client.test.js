@@ -31,6 +31,7 @@ function client(mode='web') {
   const context=vm.createContext({document,window,WebSocket:Socket,matchMedia:()=>({matches:false,addEventListener(){}}),location:{protocol:'http:',host:'localhost'},crypto:{randomUUID:()=>String(Math.random())},navigator:{userAgent:''},innerWidth:950,innerHeight:500,setTimeout:()=>1,clearTimeout(){},setInterval:fn=>timers.push(fn),requestAnimationFrame(){}});
   vm.runInContext(readFileSync(new URL('../public/client-mode.js',import.meta.url),'utf8'),context);
   vm.runInContext(readFileSync(new URL('../public/viewport.js',import.meta.url),'utf8'),context);
+  vm.runInContext(readFileSync(new URL('../public/motion.js',import.meta.url),'utf8'),context);
   vm.runInContext(readFileSync(new URL('../public/app.js',import.meta.url),'utf8'),context);
   const run=script=>vm.runInContext(script,context);
   const receive=message=>run(`socket.onmessage({data:${JSON.stringify(JSON.stringify({v:1,...message}))}})`);

@@ -82,7 +82,7 @@ test('heartbeat expires unresponsive host', async t => {
 });
 test('HTTP serves only public files and health', async t => {
   const {url}=await setup(t);const base=url.replace('ws:','http:').replace('/ws','');
-  for(const path of ['/','/app.js','/viewport.js','/style.css','/health'])assert.equal((await fetch(base+path)).status,200);
+  for(const path of ['/','/app.js','/viewport.js','/motion.js','/style.css','/health'])assert.equal((await fetch(base+path)).status,200);
   assert.equal((await fetch(base+'/server.js')).status,404);
 });
 test('simultaneous joins never exceed four players', async t => {

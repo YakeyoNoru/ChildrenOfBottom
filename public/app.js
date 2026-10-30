@@ -1,5 +1,6 @@
 const $ = id => document.getElementById(id);
 let socket, playerId, room = null, reconnectTimer, pending = null, timeout;
+const motionView = new MotionView();
 const messages = { closed: '방이 해제되었습니다.', offline: '연결이 끊어졌습니다. 방에서 퇴장했습니다. 다시 연결 중…' };
 function notice(message) { $('notice').textContent = message; $('notice').hidden = !message; }
 function settle() { pending = null; clearTimeout(timeout); render(); }
@@ -19,7 +20,7 @@ function render() {
   $('game').hidden = !playing; document.body.classList.toggle('playing', playing);
   updateViewport();
   $('game-leave').disabled = !online || !!pending;
-  if (!playing) { closeMenu(); resetInput(); }
+  if (!playing) { motionView.clear(); closeMenu(); resetInput(); }
   if (playing) $('game-status').textContent = `${room.players.length}명 생존 · ${room.players.find(p => p.id === playerId)?.name ?? ''}`;
   for (const id of ['create', 'join-open', 'join']) $(id).disabled = !online || !!pending;
   if (!room) return;
@@ -49,8 +50,8 @@ function connect() {
     let m; try { m = JSON.parse(data); } catch { return; }
     if (m.v !== 1) return;
     if (m.type === 'welcome') { playerId = m.playerId; $('connection').textContent = '● 실시간 서버 연결됨'; }
-    if (m.type === 'game.state') { if (room?.code === m.room.code) room = m.room; return; }
-    if (m.type === 'room.state') { const entering = !room || room.code !== m.room.code; room = m.room; if (entering) syncTargetPriority(); notice(''); }
+    if (m.type === 'game.state') { if (room?.code === m.room.code) { room = m.room; motionView.receive(room,playerId,Date.now()); } return; }
+    if (m.type === 'room.state') { const entering = !room || room.code !== m.room.code; room = m.room; motionView.receive(room,playerId,Date.now()); if (entering) syncTargetPriority(); notice(''); }
     if (m.type === 'room.closed' || m.type === 'room.left') { room = null; notice(m.type === 'room.closed' ? messages.closed : '방에서 나왔습니다.'); }
     if (m.type === 'error') notice(m.message);
     if ((m.type === 'ack' || m.type === 'error') && m.requestId === pending) settle();
@@ -91,11 +92,15 @@ function useSkill(slot) {
   if (room?.phase !== 'started' || socket?.readyState !== WebSocket.OPEN || $('game-dialog').open || document.hidden || viewport.blockedPortrait) return;
   socket.send(JSON.stringify({v:1,type:'game.cast',slot}));
 }
-function inputPacket() {
-  if (room?.phase !== 'started' || socket?.readyState !== WebSocket.OPEN) return;
+function movementInput() {
   const blocked = $('game-dialog').open || document.hidden || viewport.blockedPortrait;
   const x = blocked ? 0 : ((keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) || axis.x);
   const y = blocked ? 0 : ((keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) - (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) || axis.y);
+  return {x,y,blocked};
+}
+function inputPacket() {
+  if (room?.phase !== 'started' || socket?.readyState !== WebSocket.OPEN) return;
+  const {x,y,blocked} = movementInput();
   socket.send(JSON.stringify({ v: 1, type: 'game.input', x, y, action: blocked ? null : action }));
 }
 function showMenuPage(page) {
@@ -176,7 +181,8 @@ const canvas = $('world'), ctx = canvas.getContext('2d');
 function drawWorld() {
   requestAnimationFrame(drawWorld);
   if (room?.phase !== 'started' || viewport.blockedPortrait) return;
-  const me = room.players.find(p => p.id === playerId); if (!me) return;
+  const displayObjects = motionView.sample(playerId,movementInput(),Date.now());
+  const me = displayObjects.find(p => p.id === playerId); if (!me) return;
   const w = viewport.worldWidth, h = viewport.worldHeight, dpr = Math.min(devicePixelRatio || 1, 2);
   const pixelWidth = Math.round(viewport.pixelWidth*dpr), pixelHeight = Math.round(viewport.pixelHeight*dpr);
   if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) { canvas.width = pixelWidth; canvas.height = pixelHeight; }
@@ -187,7 +193,7 @@ function drawWorld() {
   for (let y = ((oy % 80)+80)%80; y < h; y += 80) { ctx.moveTo(0,y); ctx.lineTo(w,y); } ctx.stroke();
   ctx.strokeStyle = '#96a47b'; ctx.strokeRect(ox-1520,oy-1520,3040,3040);
   drawSkillEffects(ctx, room.skillEffects ?? [], ox, oy);
-  (room.objects ?? room.players).forEach((p,i) => {
+  displayObjects.forEach((p,i) => {
     const x = p.x+ox, y = p.y+oy;
     if (p.action) { ctx.strokeStyle = p.action === 'A' ? '#f7d98b' : '#93ccea'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x,y,32,0,Math.PI*2); ctx.stroke(); }
     ctx.fillStyle = p.id === playerId ? '#c8e5a6' : ['#e6ac8a','#91c8dd','#c7a8de','#d7cc82'][i];
