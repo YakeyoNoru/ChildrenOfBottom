@@ -58,3 +58,13 @@ test('stun reconciles movement; new rooms and teleports reset visible state',/**
  assert.equal(view.pendingInputs.length,0);assert.equal(view.sequence,0);assert.equal(view.local.x,500);
  view.clear();assert.equal(view.sample('me',{},200).length,0);
 });
+
+test('roll replay preserves authoritative state without restarting skill',/** 서버 구르기 상태의 복사·미확인 이동 재계산을 검증한다. */ ()=>{
+ const /** view: 표시·예측 이동기. */ view=create();
+ const /** me: 서버가 확정한 구르기 초기 상태. */ me=object('me',0);me.roll={angle:0,speed:660,remaining:72};
+ view.receive(room([me]),'me',0);view.command({x:-1,y:0,localId:'me'},0);
+ assert.equal(view.predicted.x,33);assert.equal(me.roll.remaining,72);
+ const /** confirmed: 첫 입력이 반영된 서버 구르기 상태. */ confirmed=object('me',33,0,1);confirmed.roll={angle:0,speed:660,remaining:39};
+ view.receive(room([confirmed]),'me',50);assert.equal(view.predicted.x,33);assert.equal(view.pendingInputs.length,0);
+ view.command({x:0,y:-1,localId:'me'},50);assert.equal(view.predicted.x,66);assert.equal(view.predicted.y,0);
+});

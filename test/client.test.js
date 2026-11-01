@@ -131,3 +131,10 @@ test('desktop maps left/right mouse and either Shift, blocks UI casts and suppre
  const /** context: 그리기 또는 테스트용 격리 실행 문맥. */ context=new Event('contextmenu',{cancelable:true});e.get('game-viewport').dispatchEvent(context);assert.equal(context.defaultPrevented,true);
  e.get('game-menu').click();mouse(e.get('game-viewport'),'mousedown',0);key(window,'keydown','ShiftLeft');assert.equal(casts(),'A,B,C');
 });
+
+test('rolling blocks local movement axes and skill requests',/** 구르는 동안 웹 조작부가 이동·기술을 요청하지 않는지 검증한다. */ ()=>{
+ const /** e: UI 요소; receive: 상태 수신 함수; state: 기본 방; run: 격리 실행 함수; window: 이벤트 대상. */ {elements:e,receive,state,run,window}=client();
+ receive({type:'room.state',room:{...state,players:[{...state.players[0],roll:{remaining:72,angle:0,speed:660}}]}});
+ key(window,'keydown','KeyD');run("useSkill('A');useSkill('B');useSkill('C')");
+ assert.equal(run('movementInput().x'),0);assert.equal(run('socket.sent.filter(m=>m.type==="game.cast").length'),0);
+});

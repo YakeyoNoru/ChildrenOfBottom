@@ -17,7 +17,7 @@ class MotionView {
     const /** me: 현재 접속자의 개체. */ me=objects.find(/** o: 표시 이력으로 복사할 개체. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ o=>o.id===localId);
     if(me) {
       this.pendingInputs=this.pendingInputs.filter(/** 처리 확인 이후의 입력만 남긴다. */ (/** command: 확인 여부를 검사할 이동 입력. */ command)=>command.seq>(me.lastProcessedInput??0));
-      this.predicted={x:me.x,y:me.y,facing:me.facing};
+      this.predicted={x:me.x,y:me.y,facing:me.facing,roll:me.roll?{...me.roll}:null,lastMovementInput:me.lastMovementInput};
       for(const /** command: 서버가 아직 처리하지 않은 이동 입력. */ command of this.pendingInputs) this.predicted=globalThis.MovementRules.step(this.predicted,command,me.status??{moveSpeed:2,bonusMoveSpeed:0});
       if(!this.local || Math.hypot(me.x-this.local.x,me.y-this.local.y)>200) this.local={...this.predicted};
     }
@@ -49,6 +49,7 @@ class MotionView {
         this.local.x+=(this.predicted.x-this.local.x)*alpha;
         this.local.y+=(this.predicted.y-this.local.y)*alpha;
         this.local.facing=this.predicted.facing;
+        this.local.roll=this.predicted.roll;
         return {...object,...this.local};
       }
       const /** from: 보간 시작 개체 상태. */ from=old.get(object.id),/** to: 보간 종료 개체 상태. */ to=next.get(object.id);

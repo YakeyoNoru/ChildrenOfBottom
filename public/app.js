@@ -88,12 +88,16 @@ finePointer.addEventListener('change', /** e: 현재 입력 이벤트 또는 그
   keys.clear(); mouseButtons.clear(); axis = { x: 0, y: 0 }; action = null; stickPointer = null;
   $('stick').style.transform = ''; $('action-a').classList.remove('pressed'); $('action-b').classList.remove('pressed'); $('action-c').classList.remove('pressed');
 }
+/** 서버 또는 표시 예측에서 구르기가 진행 중인지 확인한다. */
+function rolling() {
+  return !!(room?.players.find(/** 본인을 조회한다. */ (/** object: 방의 플레이어. */ object)=>object.id===playerId)?.roll?.remaining>0 || motionView.predicted?.roll?.remaining>0);
+}
 /** useSkill: 게임 진행과 조작 가능 여부를 검사하고 슬롯 시전 요청을 보낸다. */ function useSkill(/** slot: 기술을 저장하거나 시전할 A·B·C·P 슬롯. */ slot) {
-  if (room?.phase !== 'started' || socket?.readyState !== WebSocket.OPEN || $('game-dialog').open || document.hidden || viewport.blockedPortrait) return;
+  if (room?.phase !== 'started' || socket?.readyState !== WebSocket.OPEN || $('game-dialog').open || document.hidden || viewport.blockedPortrait || rolling()) return;
   socket.send(JSON.stringify({v:1,type:'game.cast',slot}));
 }
 /** movementInput: 키보드와 조이스틱을 조합해 현재 프레임의 이동 입력을 구한다. */ function movementInput() {
-  const /** blocked: 메뉴·기절 등으로 현재 조작이 차단되는지 여부. */ blocked = $('game-dialog').open || document.hidden || viewport.blockedPortrait;
+  const /** blocked: 메뉴·구르기 등으로 현재 조작이 차단되는지 여부. */ blocked = $('game-dialog').open || document.hidden || viewport.blockedPortrait || rolling();
   const /** x: 가로 좌표·이동 입력 또는 반복 비교 항목. */ x = blocked ? 0 : ((keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) || axis.x);
   const /** y: 세로 좌표 또는 이동 입력. */ y = blocked ? 0 : ((keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) - (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) || axis.y);
   return {x,y,blocked};

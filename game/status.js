@@ -34,7 +34,7 @@ export /** createStatus: 모든 개체가 공유하는 수치·기술 슬롯·�
   status.state = values.state ?? LifeState.ALIVE;
   if (!Object.values(LifeState).includes(status.state)) throw new TypeError('Invalid state');
   for (const /** slot: 기술을 저장하거나 시전할 A·B·C·P 슬롯. */ slot of ['A','B','C','P']) {
-    status['skill'+slot] = values['skill'+slot] ?? (slot === 'A' ? 'BAS0001' : '');
+    status['skill'+slot] = values['skill'+slot] ?? (slot === 'A' ? 'BAS0001' : slot === 'B' ? 'BAS0002' : '');
     if (typeof status['skill'+slot] !== 'string') throw new TypeError('Invalid skill slot');
   }
   status.nearestEnemyId = null;

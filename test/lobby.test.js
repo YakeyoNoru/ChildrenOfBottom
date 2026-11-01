@@ -239,3 +239,15 @@ test('sequenced movement acknowledges consumed ticks only; duplicates cannot mov
  do {await a.next('game.state');}while(player.lastProcessedInput<2);
  assert.equal(player.x,startX+11);
 });
+
+test('roll moves without further inputs, rejects casts and ends after 72 units',/** 서버가 구르기와 조작 잠금·종료를 확정하는지 검증한다. */ async (/** t: 테스트 정리 문맥. */ t)=>{
+ const /** a: 본인 연결; rooms: 서버 방 목록; code: 방 코드. */ {a,rooms,code}=await startedPair(t);
+ const /** caster: 구르기 시전자. */ caster=rooms.get(code).players.get(a.id);caster.facing=0;
+ const /** startX: 시작 가로 좌표. */ startX=caster.x;
+ a.ws.send(JSON.stringify({v:1,type:'game.input',seq:1,x:0,y:0}));
+ do {await a.next('game.state');}while(caster.lastProcessedInput!==1);
+ a.ws.send(JSON.stringify({v:1,type:'game.cast',slot:'B'}));
+ assert.equal((await a.command('game.cast',{slot:'A'},'error')).code,'ACTION_LOCKED');
+ do {await a.next('game.state');}while(caster.roll);
+ assert.ok(Math.abs(caster.x-startX-72)<1e-8);assert.equal(caster.status.skillB,'BAS0002');
+});

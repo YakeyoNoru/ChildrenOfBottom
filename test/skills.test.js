@@ -12,7 +12,7 @@ test('A targets selected enemy, damages all intersecting hostiles once, ignores 
  const /** p: 검증 기준이 되는 개체 또는 표시 위치. */ p=obj('p','player',0,0,{attack:2,bonusAttack:3}),/** e: 검증할 이벤트·요소 모음·적 개체. */ e=obj('e','enemy',0,50,{maxHealth:30,currentHealth:30,defense:100}),/** ally: 피해 제외 여부를 검사할 우호 개체. */ ally=obj('n','npc',0,30),/** out: 공격 범위 밖의 적 개체. */ out=obj('o','enemy',100,0);
  p.status.nearestEnemyId=e.id;
  const /** effect: 시전 위치·피해 결과·표시 만료 시각을 담은 기술 효과. */ effect=castSkill(p,[p,e,ally,out],'A',1000);assert.equal(effect.angle,Math.PI/2);assert.equal(e.status.currentHealth,20);assert.equal(ally.status.currentHealth,10);assert.equal(out.status.currentHealth,10);assert.deepEqual(effect.hits,['e']);assert.equal(effect.expiresAt,5000);
- assert.equal(p.status.skillA,'BAS0001');assert.equal(p.status.skillP,'');assert.equal(castSkill(p,[p,e],'B'),null);
+ assert.equal(p.status.skillA,'BAS0001');assert.equal(p.status.skillP,'');assert.equal(castSkill(p,[p,e],'C'),null);
  p.status.stunned=true;assert.equal(castSkill(p,[p,e],'A'),null);
 });
 test('no target uses last facing; death normalizes and T1 N does not retain debug box',/** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ ()=>{

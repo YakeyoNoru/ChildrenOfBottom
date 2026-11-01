@@ -32,7 +32,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
   };
   const /** objectSnapshot: 개체를 전송용 상태로 복사하는 함수. */ objectSnapshot = /** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** objectSnapshot: 개체의 최종 수치를 계산하고 전송 가능한 상태만 복사한다. */ p => {
     const /** effective: 추가 수치를 합산한 최종 스테이터스. */ effective = normalizeVitals(p.status);
-    return { id: p.id, name: p.name, x: p.x, y: p.y, action: p.action, facing: p.facing ?? -Math.PI / 2, lastProcessedInput: p.lastProcessedInput ?? 0, status: { ...p.status, effective } };
+    return { id: p.id, name: p.name, x: p.x, y: p.y, action: p.action, facing: p.facing ?? -Math.PI / 2, lastProcessedInput: p.lastProcessedInput ?? 0, roll:p.roll?{...p.roll}:null, lastMovementInput:p.lastMovementInput??{x:0,y:0}, status: { ...p.status, effective } };
   };
   const /** allObjects: 방의 플레이어와 일반 개체를 함께 조회하는 함수. */ allObjects = /** room: 현재 처리하는 방의 상태. */ /** allObjects: 방 안의 플레이어와 NPC·적을 하나의 목록으로 모은다. */ room => [...room.players.values(), ...room.objects.values()];
   const /** snapshot: 방 상태를 전송용 데이터로 변환하는 함수. */ snapshot = /** room: 현재 처리하는 방의 상태. */ /** snapshot: 현재 방의 참가자·개체·기술 효과를 전송용 스냅샷으로 만든다. */ room => {
@@ -108,9 +108,10 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
         if (room.phase !== 'started') return fail('GAME_NOT_STARTED', '게임 시작 후 사용할 수 있습니다.');
         if (!['A','B','C'].includes(m.slot)) return fail('INVALID_SKILL', '올바른 기술 슬롯이 필요합니다.');
         const /** caster: 기술을 사용하는 개체. */ caster = room.players.get(ws.id), /** now: 현재 처리 시각(밀리초). */ now = Date.now();
+        if (caster.roll?.remaining>0) return fail('ACTION_LOCKED','구르는 동안에는 기술을 사용할 수 없습니다.');
         if (skillCooldownRemaining(caster,m.slot,now)>0) return fail('SKILL_COOLDOWN', '기술 재사용 대기 중입니다.');
         const /** effect: 시전 위치·피해 결과·표시 만료 시각을 담은 기술 효과. */ effect=castSkill(caster,allObjects(room),m.slot,now);
-        if (effect) { room.skillEffects ??= []; room.skillEffects.push(effect); }
+        if (effect && effect.kind!=='roll') { room.skillEffects ??= []; room.skillEffects.push(effect); }
         return;
       } else if (m.type === 'game.input') {
         if (!room) return fail('NOT_IN_ROOM', '참여 중인 방이 없습니다.');
@@ -163,12 +164,18 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
       for (const /** p: 현재 처리하는 플레이어 또는 검증 개체. */ p of room.players.values()) {
         if (p.sequencedInput) {
           const /** command: 이번 서버 틱에 실제 반영할 단 하나의 고정 스텝 입력. */ command=p.inputQueue.shift();
-          if (command) {
-            Object.assign(p,globalThis.MovementRules.step(p,command,p.status));
+          const /** wasRolling: 이번 틱이 구르기 동작으로 시작됐는지 여부. */ wasRolling=!!p.roll;
+          if (command || wasRolling) {
+            Object.assign(p,globalThis.MovementRules.step(p,command??{x:0,y:0},p.status));
             /** p.lastProcessedInput: 실제 이동 계산에 반영한 입력 번호. 클라이언트 재계산 기준이다. */
-            p.lastProcessedInput=command.seq;
-            p.action=p.status.stunned||p.status.state===LifeState.DEAD?null:command.action;
+            if(command) p.lastProcessedInput=command.seq;
+            p.action=p.status.stunned||p.status.state===LifeState.DEAD?null:wasRolling?'roll':command?.action??null;
           } else p.action=null;
+          continue;
+        }
+        if(p.roll) {
+          Object.assign(p,globalThis.MovementRules.step(p,{x:0,y:0},p.status));
+          p.action=p.status.stunned||p.status.state===LifeState.DEAD?null:'roll';
           continue;
         }
         if (p.status.stunned || p.status.state === LifeState.DEAD) { p.input = { x: 0, y: 0 }; p.action = null; }

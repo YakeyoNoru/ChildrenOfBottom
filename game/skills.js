@@ -16,14 +16,25 @@ export const /** skills: 기술 코드별 공통 기술 정의. */ skills = Obje
     /** bonusDamage: 기본공격력과 추가공격력의 합에 더하는 기술 고유 피해. */ bonusDamage: 5,
     /** debugDurationMs: T1이 Y일 때 시전 위치의 범위를 유지할 시간(밀리초). */ debugDurationMs: 4000,
   }),
+  /** BAS0002: 시전자 이동 방향으로 정해진 거리를 전진하는 비공격 기술. */
+  BAS0002: Object.freeze({
+    /** code: B 슬롯의 기본 기술 코드. */ code:'BAS0002',
+    /** name: 기술 표시 이름. */ name:'구르기',
+    /** kind: 피해 판정 대신 강제 이동 상태를 시작하는 기술 구분. */ kind:'roll',
+    /** T1: 공격 범위 표시를 만들지 않는다. */ T1:'N',
+    /** cooldownMs: 별도 대기는 추가하지 않고 구르기 동작 중 재사용만 막는다. */ cooldownMs:0,
+    /** distance: 캐릭터 표시 지름 36의 두 배 거리(월드 좌표). */ distance:72,
+    /** speedMultiplier: 시전 순간 최종 이동속도에 곱할 배율. */ speedMultiplier:3,
+  }),
 });
 export /** circleIntersectsSkill: 공격 방향으로 좌표를 투영해 원형 히트박스와 전방 사각형의 교차를 검사한다. */ function circleIntersectsSkill(/** caster: 기술을 사용하는 개체. */ caster, /** target: 선택된 적대 개체 또는 히트박스를 검사할 대상. */ target, /** angle: 방향을 나타내는 라디안 각도. */ angle, /** skill: 이번 시전에 적용할 기술 정의. */ skill) {
   return intersectsSkill({x:caster.x,y:caster.y,angle,shape:skill.shape,width:skill.width,length:skill.length,radius:skill.radius},target);
 }
 export /** castSkill: 서버 기술 슬롯과 선택 대상을 기준으로 적에게 한 번 피해를 적용하고 표시 효과를 만든다. */ function castSkill(/** caster: 기술을 사용하는 개체. */ caster, /** objects: 처리할 월드 개체 목록. */ objects, /** slot: 기술을 저장하거나 시전할 A·B·C·P 슬롯. */ slot, /** now: 현재 처리 시각(밀리초). */ now = Date.now(), /** definitions: 시전에 사용할 기술 코드별 정의 모음. */ definitions = skills) {
-  if (!['A','B','C'].includes(slot) || caster.status.stunned || caster.status.state === LifeState.DEAD) return null;
+  if (!['A','B','C'].includes(slot) || caster.status.stunned || caster.status.state === LifeState.DEAD || caster.roll?.remaining>0) return null;
   const /** skill: 이번 시전에 적용할 기술 정의. */ skill = definitions[caster.status['skill'+slot]];
   if (!skill || skillCooldownRemaining(caster,slot,now)>0) return null;
+  if(skill.kind==='roll') return startRoll(caster,skill,slot,now);
   const /** target: 선택된 적대 개체 또는 히트박스를 검사할 대상. */ target = objects.find(/** o: 현재 비교하거나 변환할 개체. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ o=>o.id===caster.status.nearestEnemyId && o.status.state!==LifeState.DEAD && areEnemies(caster.status,o.status));
   const /** angle: 방향을 나타내는 라디안 각도. */ angle = target ? Math.atan2(target.y-caster.y,target.x-caster.x) : caster.facing ?? -Math.PI/2;
   const /** instance: 이번 시전만의 위치·공격 수치·피격 기록을 가진 서버 객체. */ instance=createSkillInstance(caster,skill,angle,now);
@@ -78,4 +89,24 @@ export function createSkillInstance(
     /** results: 확정한 피해 결과 기록. */ results:[],
     /** resultSequence: 동일 시전 안의 결과를 구분하는 증가 번호. */ resultSequence:0,
   };
+}
+
+/** 이동 또는 주시 방향을 시전 순간 고정하고 구르기 상태를 시작한다. 피해·무적은 부여하지 않는다. */
+function startRoll(
+  /** caster: 구르기를 시작할 개체. */ caster,
+  /** skill: 거리·속도 배율을 정의한 서버 기술. */ skill,
+  /** slot: 재사용 대기를 저장할 기술 슬롯. */ slot,
+  /** now: 시전 시각(밀리초). */ now,
+) {
+  const /** input: 서버가 마지막으로 처리한 이동 입력. */ input=caster.lastMovementInput??caster.input??{x:0,y:0};
+  const /** angle: 이동 중이면 이동 방향, 정지 중이면 주시 방향(라디안). */ angle=Math.hypot(input.x,input.y)>0?Math.atan2(input.y,input.x):caster.facing??-Math.PI/2;
+  const /** speed: 시전 순간 평상시 속도의 3배인 초당 월드 이동 거리. */ speed=Math.max(0,caster.status.moveSpeed+caster.status.bonusMoveSpeed)*110*skill.speedMultiplier;
+  if(speed<=0) return null;
+  /** caster.roll: 입력으로 꺾을 수 없는 구르기 방향·속도·남은 거리. */
+  caster.roll={angle,speed,remaining:skill.distance};
+  caster.facing=angle;
+  /** caster.skillCooldowns: 슬롯별 다음 시전 가능 서버 시각. */ caster.skillCooldowns??={};
+  caster.skillCooldowns[slot]=now+skill.cooldownMs;
+  // 구르기는 위치 스냅샷으로 전달하며 공격 사각형 효과를 생성하지 않는다.
+  return {code:skill.code,kind:'roll'};
 }
