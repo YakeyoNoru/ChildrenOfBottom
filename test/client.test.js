@@ -33,6 +33,7 @@ class Socket {
   const /** context: 그리기 또는 테스트용 격리 실행 문맥. */ context=vm.createContext({document,window,WebSocket:Socket,/** matchMedia: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ matchMedia:()=>({matches:false,/** addEventListener: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ addEventListener(){}}),location:{protocol:'http:',host:'localhost'},crypto:{/** randomUUID: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ randomUUID:()=>String(Math.random())},navigator:{userAgent:''},innerWidth:950,innerHeight:500,/** setTimeout: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ setTimeout:()=>1,/** clearTimeout: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ clearTimeout(){},/** setInterval: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ setInterval:/** fn: 등록하거나 실행할 콜백 함수. */ fn=>timers.push(fn),/** requestAnimationFrame: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ requestAnimationFrame(){}});
   vm.runInContext(readFileSync(new URL('../public/client-mode.js',import.meta.url),'utf8'),context);
   vm.runInContext(readFileSync(new URL('../public/viewport.js',import.meta.url),'utf8'),context);
+  vm.runInContext(readFileSync(new URL('../public/movement.js',import.meta.url),'utf8'),context);
   vm.runInContext(readFileSync(new URL('../public/motion.js',import.meta.url),'utf8'),context);
   vm.runInContext(readFileSync(new URL('../public/app.js',import.meta.url),'utf8'),context);
   const /** run: 격리 문맥 안에서 테스트 코드를 실행하는 함수. */ run=/** script: 격리 문맥에서 실행할 테스트 코드 문자열. */ /** run: 격리 문맥에서 실제 클라이언트 코드를 실행해 결과를 확인한다. */ script=>vm.runInContext(script,context);

@@ -101,7 +101,9 @@ finePointer.addEventListener('change', /** e: 현재 입력 이벤트 또는 그
 /** inputPacket: 현재 이동과 기술 버튼 상태를 서버에 주기적으로 전송한다. */ function inputPacket() {
   if (room?.phase !== 'started' || socket?.readyState !== WebSocket.OPEN) return;
   const /** x: 가로 좌표·이동 입력 또는 반복 비교 항목; y: 세로 좌표 또는 이동 입력; blocked: 메뉴·기절 등으로 현재 조작이 차단되는지 여부. */ {x,y,blocked} = movementInput();
-  socket.send(JSON.stringify({ v: 1, type: 'game.input', x, y, action: blocked ? null : action }));
+  const /** command: 이번 고정 스텝에 생성한 입력. */ command=motionView.command({x,y,localId:playerId},Date.now());
+  if (!command && !motionView.sequence) return;
+  socket.send(JSON.stringify({ v: 1, type: 'game.input', seq:command?.seq??motionView.sequence, x, y, action: blocked ? null : action }));
 }
 /** showMenuPage: 게임 메뉴·테스트설정·옵션 중 선택한 화면만 표시한다. */ function showMenuPage(/** page: 메뉴에서 표시할 하위 화면 이름. */ page) {
   for (const /** name: 현재 항목이나 사용자에게 표시할 이름. */ name of ['main','test','options']) $('menu-' + name).hidden = name !== page;
@@ -160,7 +162,7 @@ for (const /** key: 현재 항목의 식별 키. */ key of ['A','B','C']) {
   for (const /** event: 현재 처리하는 사용자 입력 또는 연결 이벤트. */ event of ['pointerup','pointercancel','lostpointercapture']) button.addEventListener(event, /** e: 현재 입력 이벤트 또는 그릴 기술 효과. */ /** 등록된 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ e => { if (e.pointerId !== pointer) return; pointer = null; if (action === key) action = null; button.classList.remove('pressed'); inputPacket(); });
 }
 updateControls();
-setInterval(inputPacket, 100);
+setInterval(inputPacket, 50);
 let /** viewport: 게임의 유효 화면 크기·배율·여백 정보. */ viewport = calculateViewport(innerWidth, innerHeight, CLIENT_MODE);
 /** updateViewport: 화면 크기와 접속 모드에 맞게 월드 영역·여백·UI 배율을 갱신한다. */ function updateViewport() {
   viewport = calculateViewport(innerWidth, innerHeight, CLIENT_MODE);

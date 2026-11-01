@@ -1,3 +1,4 @@
+import './public/movement.js';
 import { /** castSkill: 슬롯의 쿨타임과 상태를 검사하고 기술을 시전한다. */ castSkill, /** skillCooldownRemaining: 슬롯의 서버 쿨타임 잔여 시간을 구한다. */ skillCooldownRemaining, /** skillSnapshot: 판정 내부 기록을 제외한 전송 데이터를 만든다. */ skillSnapshot } from './game/skills.js';
 import /** http: 게임 HTTP 서버 생성 기능을 제공한다. */ http from 'node:http';
 import { /** createAuthService: 제공자 로그인·앱 세션·계정 설정 API와 만료 정리를 구성한다. */ createAuthService } from './auth/service.js';
@@ -10,7 +11,7 @@ import { /** WebSocketServer: 서버의 WebSocket 연결과 프레임 처리를 
 export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증을 제공하는 서버를 생성한다. */ function createGameServer(/** heartbeatMs: 연결 생존 확인 주기(밀리초); authOptions: 인증 서비스 생성 옵션. */ { heartbeatMs = 15000, auth: authOptions = {} } = {}) {
   const /** rooms: 접속코드별 방 상태를 보관하는 맵. */ rooms = new Map();
   const /** auth: 앱 로그인과 계정 API를 처리하는 인증 서비스. */ auth = createAuthService(authOptions);
-  const /** files: 외부에 제공할 정적 파일 경로와 MIME 형식. */ files = { '/pit-map.html': ['pit-map.html', 'text/html'], '/motion.js': ['motion.js', 'text/javascript'], '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/viewport.js': ['viewport.js', 'text/javascript'], '/client-mode.js': ['client-mode.js', 'text/javascript'], '/app': ['index.html', 'text/html'], '/style.css': ['style.css', 'text/css'] };
+  const /** files: 외부에 제공할 정적 파일 경로와 MIME 형식. */ files = { '/movement.js': ['movement.js', 'text/javascript'], '/pit-map.html': ['pit-map.html', 'text/html'], '/motion.js': ['motion.js', 'text/javascript'], '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/viewport.js': ['viewport.js', 'text/javascript'], '/client-mode.js': ['client-mode.js', 'text/javascript'], '/app': ['index.html', 'text/html'], '/style.css': ['style.css', 'text/css'] };
   const /** server: 정적 파일과 WebSocket 연결을 제공하는 HTTP 서버. */ server = http.createServer(/** 현재 비동기 작업의 완료 또는 후속 처리를 수행한다. */ async (/** req: 수신한 HTTP 요청. */ req, /** res: HTTP 응답 작성 객체. */ res) => {
     if (await auth.handle(req,res)) return;
     if (req.url === '/health') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end('{"ok":true,"protocolVersion":1}'); }
@@ -31,7 +32,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
   };
   const /** objectSnapshot: 개체를 전송용 상태로 복사하는 함수. */ objectSnapshot = /** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** objectSnapshot: 개체의 최종 수치를 계산하고 전송 가능한 상태만 복사한다. */ p => {
     const /** effective: 추가 수치를 합산한 최종 스테이터스. */ effective = normalizeVitals(p.status);
-    return { id: p.id, name: p.name, x: p.x, y: p.y, action: p.action, facing: p.facing ?? -Math.PI / 2, status: { ...p.status, effective } };
+    return { id: p.id, name: p.name, x: p.x, y: p.y, action: p.action, facing: p.facing ?? -Math.PI / 2, lastProcessedInput: p.lastProcessedInput ?? 0, status: { ...p.status, effective } };
   };
   const /** allObjects: 방의 플레이어와 일반 개체를 함께 조회하는 함수. */ allObjects = /** room: 현재 처리하는 방의 상태. */ /** allObjects: 방 안의 플레이어와 NPC·적을 하나의 목록으로 모은다. */ room => [...room.players.values(), ...room.objects.values()];
   const /** snapshot: 방 상태를 전송용 데이터로 변환하는 함수. */ snapshot = /** room: 현재 처리하는 방의 상태. */ /** snapshot: 현재 방의 참가자·개체·기술 효과를 전송용 스냅샷으로 만든다. */ room => {
@@ -76,7 +77,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
     ws.on('message', /** message 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ (/** raw: 수신한 원본 메시지. */ raw, /** binary: 바이너리 프레임 수신 여부. */ binary) => {
       const /** error: 오류 정보 또는 오류 응답 처리기. */ error = /** error: 요청 실패 내용을 오류 응답으로 전달한다. */ (/** code: 개체·기술·방 또는 오류를 식별하는 코드. */ code, /** message: 사용자나 연결에 전달할 안내 내용. */ message, /** requestId: 요청과 응답을 대응시키는 식별자. */ requestId) => send(ws, 'error', { code, message, requestId });
       if (Date.now() - ws.windowStart > 10000) { ws.windowStart = Date.now(); ws.count = 0; }
-      if (++ws.count > 160) return error('RATE_LIMIT', '요청이 너무 많습니다. 잠시 후 다시 시도하세요.');
+      if (++ws.count > 500) return error('RATE_LIMIT', '요청이 너무 많습니다. 잠시 후 다시 시도하세요.');
       let /** m: 수신 메시지 또는 문자열 패턴 일치 결과. */ m;
       try { m = JSON.parse(raw.toString()); } catch { return error('BAD_MESSAGE', '올바른 JSON이 필요합니다.'); }
       if (binary || !m || Array.isArray(m) || m.v !== 1 || typeof m.type !== 'string' || (m.requestId !== undefined && (typeof m.requestId !== 'string' || m.requestId.length > 64))) return error('BAD_MESSAGE', '지원하지 않는 메시지입니다.');
@@ -116,6 +117,20 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
         if (room.phase !== 'started') return fail('GAME_NOT_STARTED', '게임 시작 후 조작할 수 있습니다.');
         if (![m.x, m.y].every(/** n: 검증할 숫자 입력. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ n => typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= 1) || ![null, 'A', 'B', 'C'].includes(m.action ?? null)) return fail('INVALID_INPUT', '올바른 이동 및 행동 입력이 필요합니다.');
         const /** p: 현재 처리하는 플레이어 또는 검증 개체. */ p = room.players.get(ws.id), /** length: 이동 입력 벡터의 정규화에 사용할 길이. */ length = Math.max(1, Math.hypot(m.x, m.y));
+        if (m.seq !== undefined) {
+          if (!Number.isSafeInteger(m.seq) || m.seq<1) return fail('INVALID_INPUT_SEQUENCE','입력 순번이 올바르지 않습니다.');
+          if (m.seq <= (p.lastReceivedInput ?? 0)) return;
+          if (m.seq !== (p.lastReceivedInput ?? 0)+1 || (p.inputQueue?.length ?? 0)>=32) return fail('INVALID_INPUT_SEQUENCE','입력 순서를 다시 확인해야 합니다.');
+          /** p.inputQueue: 서버가 아직 이동에 반영하지 않은 고정 시간 입력 목록. */
+          p.inputQueue ??= [];
+          p.inputQueue.push({seq:m.seq,x:m.x,y:m.y,action:m.action ?? null});
+          /** p.lastReceivedInput: 수신 검증을 마친 마지막 입력 번호. 처리 확인 번호와 다르다. */
+          p.lastReceivedInput=m.seq;
+          /** p.sequencedInput: 고정 스텝 입력 프로토콜 사용 여부. */ p.sequencedInput=true;
+          p.inputAt=Date.now();
+          return;
+        }
+        if (p.sequencedInput) return fail('INVALID_INPUT_SEQUENCE','순번 입력 연결에는 이전 입력 형식을 사용할 수 없습니다.');
         p.input = { x: m.x / length, y: m.y / length }; p.inputAt = Date.now(); p.action = m.action ?? null;
         return; // 연속 입력은 로비 요청과 확인 응답의 대기 흐름과 별도로 처리한다.
       } else if (['room.leave', 'room.ready', 'room.start'].includes(m.type)) {
@@ -146,6 +161,16 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
       const /** objects: 처리할 월드 개체 목록. */ objects = allObjects(room);
       for (const /** object: 현재 처리하는 월드 개체. */ object of objects) regenerate(object.status, dt);
       for (const /** p: 현재 처리하는 플레이어 또는 검증 개체. */ p of room.players.values()) {
+        if (p.sequencedInput) {
+          const /** command: 이번 서버 틱에 실제 반영할 단 하나의 고정 스텝 입력. */ command=p.inputQueue.shift();
+          if (command) {
+            Object.assign(p,globalThis.MovementRules.step(p,command,p.status));
+            /** p.lastProcessedInput: 실제 이동 계산에 반영한 입력 번호. 클라이언트 재계산 기준이다. */
+            p.lastProcessedInput=command.seq;
+            p.action=p.status.stunned||p.status.state===LifeState.DEAD?null:command.action;
+          } else p.action=null;
+          continue;
+        }
         if (p.status.stunned || p.status.state === LifeState.DEAD) { p.input = { x: 0, y: 0 }; p.action = null; }
         if (now - p.inputAt > 350) { p.input = { x: 0, y: 0 }; p.action = null; }
         const /** previousX: 이동 전 가로 좌표. */ previousX = p.x, /** previousY: 이동 전 세로 좌표. */ previousY = p.y;

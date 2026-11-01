@@ -222,3 +222,20 @@ test('game.cast resolves server slot and selected target without trusting suppli
   assert.equal(state.room.skillEffects[0].results[0].targetId,enemy.id);
   assert.equal((await a.command('game.cast',{slot:'A'},'error')).code,'SKILL_COOLDOWN');
 });
+
+test('sequenced movement acknowledges consumed ticks only; duplicates cannot move twice',/** 입력 순번과 실제 처리 확인·중복 방지·형식 전환 차단을 검증한다. */ async (/** t: 서버 정리용 테스트 문맥. */ t)=>{
+ const /** a: 본인 연결; rooms: 서버 방 목록; code: 방 코드. */ {a,rooms,code}=await startedPair(t);
+ const /** player: 이동 판정을 검사할 서버 개체. */ player=rooms.get(code).players.get(a.id);
+ const /** startX: 검증 시작 좌표. */ startX=player.x;
+ a.ws.send(JSON.stringify({v:1,type:'game.input',seq:1,x:1,y:0}));
+ a.ws.send(JSON.stringify({v:1,type:'game.input',seq:1,x:1,y:0}));
+ let /** snapshot: 실제 처리 확인을 담을 수신 상태. */ snapshot;
+ do {snapshot=await a.next('game.state');}while((snapshot.room.players.find(/** 본인을 조회한다. */ (/** item: 수신 플레이어. */ item)=>item.id===a.id).lastProcessedInput??0)<1);
+ assert.equal(player.x,startX+11);
+ await a.next('game.state');assert.equal(player.x,startX+11);
+ assert.equal((await a.command('game.input',{seq:3,x:1,y:0},'error')).code,'INVALID_INPUT_SEQUENCE');
+ assert.equal((await a.command('game.input',{x:1,y:0},'error')).code,'INVALID_INPUT_SEQUENCE');
+ a.ws.send(JSON.stringify({v:1,type:'game.input',seq:2,x:0,y:0}));
+ do {await a.next('game.state');}while(player.lastProcessedInput<2);
+ assert.equal(player.x,startX+11);
+});
