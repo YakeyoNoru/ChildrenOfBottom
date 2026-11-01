@@ -89,3 +89,10 @@ HTTP `GET /health`는 `{"ok":true,"protocolVersion":1}`을 반환합니다. 방 
 
 ## 화면 이동 보간
 서버 위치·피격 판정·20Hz 전송은 유지합니다. `public/motion.js`는 표시용 복사본만 만들며 다른 개체는 수신 이력 기준 75ms 지연 보간합니다. 본인은 입력 기반 프레임 이동과 최대 150ms의 제한된 예측 목표를 사용하고 서버 위치로 지수 보정합니다. 카메라는 본인의 같은 표시 좌표를 사용합니다. 250ms 이상 새 스냅샷이 없으면 예측을 중지하며, 200좌표 초과 위치 변경은 순간이동으로 즉시 반영합니다. 방 변경/퇴장 시 이력을 초기화합니다. 이 보간은 공격 판정이나 서버 상태를 변경하지 않습니다.
+
+## 기술 접촉·피해 공통 처리 (최신)
+A/B/C의 재사용 대기는 시전자별 `skillCooldowns[slot]`에 다음 사용 가능 서버 시각을 저장합니다. BAS0001 기본값은 300ms이며 다른 기술은 `cooldownMs`로 지정합니다. 대기 중 요청은 `SKILL_COOLDOWN` 오류로 거절하고, 기절·사망·미지정 기술 실패는 새로운 쿨타임을 소비하지 않습니다. 기존 전체 기술 공통 100ms 차단 대신 슬롯별 규칙을 적용합니다. 공격속도 연동과 쿨타임 UI는 아직 없습니다.
+
+`game/skills.js`는 시전 승인과 기술 인스턴스 생성을 담당하고 `game/combat.js`는 접촉 검사→피해 계산→체력·사망 적용→확정 결과 생성을 담당합니다. 시전 당시 공격력과 소속을 인스턴스에 복사하며, 이후 시전자 이동·공격력 변경과 분리됩니다. 인스턴스의 위치·각도를 바꾼 뒤 같은 `resolveSkillContacts`를 호출하면 이동한 판정 영역에 대한 검사가 가능합니다. `hitIntervalMs=null`은 인스턴스당 대상별 1회, 숫자이면 같은 대상의 재피격 간격입니다. `activeFrom/activeUntil`은 실제 피해 유효 시간이며 T1 표시 유지와 별개입니다. 즉시 기본공격은 생성 시 한 번만 판정합니다. 투사체 이동·연속 충돌 검사·장판 생성·지속시간 스케줄링은 이번 변경에 포함하지 않습니다.
+
+기술별 피해 공식은 서버에서 `resolveSkillContacts(instance, objects, now, damageRule)`로 연결합니다. 기본공격은 기존 `max(0,기본공격력+추가공격력+5)`를 유지합니다. 확정 결과에는 id, instanceId, casterId, targetId, code, damage, appliedDamage, healthBefore, healthAfter, killed, occurredAt가 있습니다. `skillSnapshot`이 내부 피격 맵을 제외해 `skillEffects[].results`로 전달하며, 반복 스냅샷에서 동일 결과는 id로 중복 제거할 수 있습니다. 새 피해 숫자 UI는 아직 없습니다.

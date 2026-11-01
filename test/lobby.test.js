@@ -219,4 +219,6 @@ test('game.cast resolves server slot and selected target without trusting suppli
  do{state=await a.next('game.state');}while(!state.room.skillEffects.length);
  assert.equal(enemy.status.currentHealth,24);assert.equal(state.room.skillEffects[0].casterId,a.id);assert.equal(state.room.skillEffects[0].length,72);
  assert.equal(state.room.players.find(/** x: 검증 좌표·비교 항목 또는 위치 조회 함수. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ x=>x.id===a.id).status.hitboxDiameter,24);
+  assert.equal(state.room.skillEffects[0].results[0].targetId,enemy.id);
+  assert.equal((await a.command('game.cast',{slot:'A'},'error')).code,'SKILL_COOLDOWN');
 });

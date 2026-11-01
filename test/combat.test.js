@@ -1,0 +1,53 @@
+import { /** test: 테스트 시나리오를 등록한다. */ test } from 'node:test';
+import /** assert: 기대 결과를 검사한다. */ assert from 'node:assert/strict';
+import { /** createWorldObject: 검증용 월드 개체를 생성한다. */ createWorldObject } from '../game/status.js';
+import { /** castSkill: 서버 기술을 시전한다. */ castSkill, /** createSkillInstance: 독립 시전 정보를 만든다. */ createSkillInstance, /** skills: 기술 코드별 서버 정의. */ skills, /** skillCooldownRemaining: 남은 재사용 대기를 조회한다. */ skillCooldownRemaining, /** skillSnapshot: 전송용 기술 결과를 만든다. */ skillSnapshot } from '../game/skills.js';
+import { /** resolveSkillContacts: 공통 접촉·피해 흐름을 처리한다. */ resolveSkillContacts } from '../game/combat.js';
+
+/** 시전자와 피격 대상을 독립된 위치·수치로 생성한다. */
+function pair() {
+  const /** caster: A·B·C 시전과 쿨타임을 검사할 플레이어. */ caster=createWorldObject({objectType:'player',classificationCode:'p',instanceId:'p'});
+  const /** target: 반복 피해를 검증할 적. */ target=createWorldObject({objectType:'enemy',classificationCode:'e',instanceId:'e',x:40,maxHealth:100,currentHealth:100,healthRegen:0});
+  caster.facing=0;caster.status.skillB='BAS0001';caster.status.skillC='BAS0001';
+  return {caster,target};
+}
+
+test('A B C cooldowns are independent; early casts and invalid states do not consume a new cooldown',/** 슬롯별 서버 재사용 대기를 경계 시각까지 검증한다. */ ()=>{
+  const /** caster: 시전자; target: 피격 대상. */ {caster,target}=pair();
+  for(const /** slot: 시전할 기술 슬롯. */ slot of ['A','B','C']) {
+    assert.ok(castSkill(caster,[caster,target],slot,1000));
+    assert.equal(skillCooldownRemaining(caster,slot,1001),299);
+    assert.equal(castSkill(caster,[caster,target],slot,1299),null);
+    assert.ok(castSkill(caster,[caster,target],slot,1300));
+  }
+  caster.status.stunned=true;
+  assert.equal(castSkill(caster,[caster,target],'A',2000),null);
+  assert.equal(skillCooldownRemaining(caster,'A',2000),0);
+  caster.status.stunned=false;caster.status.skillA='';
+  assert.equal(castSkill(caster,[caster,target],'A',2000),null);
+});
+
+test('independent instance retains cast stats, moves into contact later and emits one result per target',/** 시전자 이후의 변화와 독립된 접촉·피해·결과 흐름을 검증한다. */ ()=>{
+  const /** caster: 시전자; target: 접촉 대상. */ {caster,target}=pair();
+  const /** instance: 아직 대상에 닿지 않은 원형 기술. */ instance=createSkillInstance(caster,{...skills.BAS0001,shape:'circle',radius:5,activeDurationMs:1000},0,1000);
+  caster.status.attack=99;
+  assert.equal(resolveSkillContacts(instance,[target],1000).length,0);
+  instance.x=40;
+  const /** results: 이동 후 최초 접촉이 생성한 확정 결과. */ results=resolveSkillContacts(instance,[target],1100);
+  assert.equal(results[0].damage,6);assert.equal(results[0].healthAfter,94);
+  assert.equal(resolveSkillContacts(instance,[target],1200).length,0);
+  const /** packed: 클라이언트에 전달할 기술 결과. */ packed=skillSnapshot(instance,1200);
+  assert.equal(packed.hitTimes,undefined);assert.equal(packed.results[0].targetId,target.id);
+});
+
+test('area instance re-hits only at interval and applies target-specific formula until expiry',/** 장판용 반복 간격과 기술별 피해 공식 연결을 검증한다. */ ()=>{
+  const /** caster: 시전자; target: 반복 접촉 대상. */ {caster,target}=pair();
+  const /** instance: 지정 간격으로 같은 대상을 다시 타격할 기술. */ instance=createSkillInstance(caster,{...skills.BAS0001,activeDurationMs:1000,hitIntervalMs:300},0,1000);
+  /** 별도 기술이 대상별 피해량을 계산하는 연결 예시다. */
+  const /** formula: 대상의 최대체력 10퍼센트를 피해로 계산할 서버 함수. */ formula=(/** skill: 현재 판정할 기술 인스턴스. */ skill,/** victim: 피해를 계산할 대상. */ victim)=>victim.status.maxHealth*.1;
+  assert.equal(resolveSkillContacts(instance,[target],1000,formula)[0].damage,10);
+  assert.equal(resolveSkillContacts(instance,[target],1299,formula).length,0);
+  assert.equal(resolveSkillContacts(instance,[target],1300,formula).length,1);
+  assert.equal(resolveSkillContacts(instance,[target],2000,formula).length,0);
+  assert.notEqual(instance.results[0].id,instance.results[1].id);
+});
