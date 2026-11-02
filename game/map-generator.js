@@ -7,5 +7,5 @@ const generator=globalThis.PitGeneratorFactory(layouts);
 /** 서버가 게임 시작 시 한 번 생성해 모두에게 공유할 맵을 만든다. */
 export function generateRoomMap(/** seed: 서버가 선택한 32비트 지도 시드. */ seed) {
   const /** map: 원본 생성기가 검증을 마친 지도. */ map=generator.generate(seed);
-  return {...map,id:map.version+':'+map.seed,tileRadius:90,landScale:.89,bridgeWidth:48};
+  return {...map,id:map.version+':'+map.seed,tileRadius:800/.89,landScale:.89,bridgeWidth:48};
 }

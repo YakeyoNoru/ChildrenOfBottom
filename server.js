@@ -207,8 +207,9 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
         if (p.status.stunned || p.status.state === LifeState.DEAD) { p.input = { x: 0, y: 0 }; p.action = null; }
         if (now - p.inputAt > 350) { p.input = { x: 0, y: 0 }; p.action = null; }
         const /** previousX: 이동 전 가로 좌표. */ previousX = p.x, /** previousY: 이동 전 세로 좌표. */ previousY = p.y;
-        p.x = Math.max(-1500, Math.min(1500, p.x + p.input.x * effectiveStats(p.status).moveSpeed * 110 * dt));
-        p.y = Math.max(-1500, Math.min(1500, p.y + p.input.y * effectiveStats(p.status).moveSpeed * 110 * dt));
+        const /** bound: 지도에서는 지형 판정으로 제한하고 빈 필드만 기존 범위를 적용한다. */ bound=room.map?Infinity:1500;
+        p.x = Math.max(-bound, Math.min(bound, p.x + p.input.x * effectiveStats(p.status).moveSpeed * 110 * dt));
+        p.y = Math.max(-bound, Math.min(bound, p.y + p.input.y * effectiveStats(p.status).moveSpeed * 110 * dt));
         if(room.map) {
           const /** allowed: 구형 입력도 동일한 맵의 통행 구역으로 제한한다. */ allowed=globalThis.PitMapRules.constrain(room.map,{x:previousX,y:previousY},p,(p.status.hitboxDiameter??24)/2);
           p.x=allowed.x;p.y=allowed.y;

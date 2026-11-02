@@ -40,3 +40,17 @@ test('bridges allow continuous terrain movement and preserve 2-to-3-only directi
  assert.ok(Math.hypot(downward.x-low.x,downward.y-low.y)>60);
  assert.equal(globalThis.PitMapRules.walkable(map,(low.x+high.x)/2,(low.y+high.y)/2,12),true);
 });
+
+
+test('800-unit terrain allows movement beyond legacy empty-field bounds',/** 확장된 지도에서 외곽 시작점의 이동·구르기를 검증한다. */ ()=>{
+ const /** map: 실제 생성한 큰 지도. */ map=generateRoomMap(29);
+ assert.equal(map.tileRadius*map.landScale,800);
+ const /** tile: 기존 필드 범위 밖의 지형. */ tile=map.tiles.find(/** 외곽 지형을 선택한다. */ (/** candidate: 검사할 지형. */ candidate)=>Math.abs(globalThis.PitMapRules.center(candidate,map).x)>1700);
+ const /** center: 외곽 지형의 중심. */ center=globalThis.PitMapRules.center(tile,map);
+ const /** start: 해당 중심에서 이동을 시작할 개체. */ start=actor(center.x,center.y);
+ const /** moved: 일반 이동 결과. */ moved=globalThis.MovementRules.step(start,{x:1,y:0},start.status,map);
+ assert.equal(moved.x,center.x+11);assert.equal(moved.y,center.y);
+ start.roll={angle:0,speed:660,remaining:72};
+ const /** rolled: 구르기 한 틱 결과. */ rolled=globalThis.MovementRules.step(start,{x:0,y:0},start.status,map);
+ assert.equal(rolled.x,center.x+33);assert.equal(rolled.y,center.y);
+});
