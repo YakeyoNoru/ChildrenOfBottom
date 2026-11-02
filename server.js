@@ -1,5 +1,5 @@
 import './public/movement.js';
-import { /** castSkill: 슬롯의 쿨타임과 상태를 검사하고 기술을 시전한다. */ castSkill, /** skillCooldownRemaining: 슬롯의 서버 쿨타임 잔여 시간을 구한다. */ skillCooldownRemaining, /** skillSnapshot: 판정 내부 기록을 제외한 전송 데이터를 만든다. */ skillSnapshot, /** updateSkillCooldowns: 서버 기준 잔여 대기를 갱신한다. */ updateSkillCooldowns } from './game/skills.js';
+import { /** castSkill: 슬롯의 쿨타임과 상태를 검사하고 기술을 시전한다. */ castSkill, /** skillCooldownRemaining: 슬롯의 서버 쿨타임 잔여 시간을 구한다. */ skillCooldownRemaining, /** skillSnapshot: 판정 내부 기록을 제외한 전송 데이터를 만든다. */ skillSnapshot, /** updateSkillCooldowns: 서버 기준 잔여 대기를 갱신한다. */ updateSkillCooldowns, /** getSkillSlotNames: 할당된 기술의 표시 이름을 조회한다. */ getSkillSlotNames } from './game/skills.js';
 import /** http: 게임 HTTP 서버 생성 기능을 제공한다. */ http from 'node:http';
 import { /** createAuthService: 제공자 로그인·앱 세션·계정 설정 API와 만료 정리를 구성한다. */ createAuthService } from './auth/service.js';
 import { /** createStatus: 모든 개체가 공유하는 수치·기술 슬롯·상태를 검증해 생성한다. */ createStatus, /** ObjectType: 플레이어·NPC·적의 개체 분류 상수. */ ObjectType, /** LifeState: 생존·사망 상태 상수. */ LifeState, /** effectiveStats: 기본 수치에 추가 수치를 합산하고 음수를 방지한 최종 능력치를 계산한다. */ effectiveStats, /** normalizeVitals: 체력·자원을 최종 최대치 안으로 제한하고 사망 상태를 정규화한다. */ normalizeVitals, /** regenerate: 생존 개체의 체력과 스킬자원을 경과 시간만큼 회복한다. */ regenerate, /** updateNearestObjects: 생존 개체의 최근접 개체와 설정 우선순위에 맞는 적 ID를 갱신한다. */ updateNearestObjects, /** TargetPriority: 허용하는 공격 우선대상 선택 방식. */ TargetPriority } from './game/status.js';
@@ -35,7 +35,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
   const /** objectSnapshot: 개체를 전송용 상태로 복사하는 함수. */ objectSnapshot = /** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** objectSnapshot: 개체의 최종 수치를 계산하고 전송 가능한 상태만 복사한다. */ p => {
     updateSkillCooldowns(p);
     const /** effective: 추가 수치를 합산한 최종 스테이터스. */ effective = normalizeVitals(p.status);
-    return { id: p.id, name: p.name, x: p.x, y: p.y, action: p.action, facing: p.facing ?? -Math.PI / 2, lastProcessedInput: p.lastProcessedInput ?? 0, roll:p.roll?{...p.roll}:null, lastMovementInput:p.lastMovementInput??{x:0,y:0}, status: { ...p.status, effective } };
+    return { id: p.id, name: p.name, x: p.x, y: p.y, action: p.action, facing: p.facing ?? -Math.PI / 2, skillNames:getSkillSlotNames(p.status), lastProcessedInput: p.lastProcessedInput ?? 0, roll:p.roll?{...p.roll}:null, lastMovementInput:p.lastMovementInput??{x:0,y:0}, status: { ...p.status, effective } };
   };
   const /** allObjects: 방의 플레이어와 일반 개체를 함께 조회하는 함수. */ allObjects = /** room: 현재 처리하는 방의 상태. */ /** allObjects: 방 안의 플레이어와 NPC·적을 하나의 목록으로 모은다. */ room => [...room.players.values(), ...room.objects.values()];
   const /** snapshot: 방 상태를 전송용 데이터로 변환하는 함수. */ snapshot = /** room: 현재 처리하는 방의 상태. */ /** snapshot: 현재 방의 참가자·개체·기술 효과를 전송용 스냅샷으로 만든다. */ room => {

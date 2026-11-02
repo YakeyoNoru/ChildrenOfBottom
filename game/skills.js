@@ -123,3 +123,12 @@ export function updateSkillCooldowns(
     if(object.skillCooldowns?.[slot]!==undefined) object.status['skill'+slot+'CooldownRemaining']=Math.max(0,object.skillCooldowns[slot]-now)/1000;
   }
 }
+
+/** 공통 스테이터스의 기술 코드를 서버 정의의 실제 표시 이름으로 변환한다. */
+export function getSkillSlotNames(
+  /** status: 기술 코드가 저장된 공통 스테이터스. */ status,
+) {
+  return Object.fromEntries(['A','B','C'].map(
+    /** 각 슬롯에 할당된 이름 또는 미지정을 반환한다. */
+    (/** slot: 이름을 조회할 기술 슬롯. */ slot)=>[slot,skills[status['skill'+slot]]?.name??'미지정']));
+}

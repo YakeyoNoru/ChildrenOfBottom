@@ -23,3 +23,11 @@ body.playing{overflow:hidden}body.playing main>header,body.playing main>footer{d
 #game-hud{position:absolute;left:0;top:0;width:100%;height:100%;transform-origin:top left}
 
 .settings input[type=radio]{display:inline-block;width:auto;margin-right:8px}.settings fieldset{margin-top:20px;border:1px solid #47604b;border-radius:8px}.settings fieldset label{font-size:14px;margin:12px 0}#menu-test p{font-size:14px}
+
+/* 기술명은 원형 버튼 안에, 잔여 대기는 비활성 버튼의 투명도와 별개로 위에 표시한다. */
+#action-controls .skill-control{position:relative;display:flex;flex-direction:column;align-items:center}
+#action-controls .skill-control:last-child{margin-bottom:30px}
+#action-controls #action-a{margin-bottom:0}
+#action-controls button{font-size:13px;line-height:1.2;padding:4px;white-space:normal;overflow-wrap:anywhere}
+/* --skill-cooldown-font-size: 화면 배율을 반영한 캐릭터 이름과 같은 크기의 UI 글자 크기. */
+.skill-cooldown{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);font:var(--skill-cooldown-font-size,14px) system-ui;color:#fff;text-shadow:0 1px 3px #000;white-space:nowrap;pointer-events:none}

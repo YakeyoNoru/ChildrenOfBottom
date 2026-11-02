@@ -157,3 +157,12 @@ test('remaining cooldown disables touch skills and keyboard or mouse cast until 
  receive({type:'game.state',room:{...state,players:[{...state.players[0],status:{skillACooldownRemaining:0,skillBCooldownRemaining:0}}]}});
  assert.equal(e.get('action-a').disabled,false);run("useSkill('A')");assert.equal(run('socket.sent.at(-1).slot'),'A');
 });
+
+test('assigned skill names and cooldown labels update from server state',/** 이름과 잔여 시간 표시·완료 숨김·할당 변경을 검증한다. */ ()=>{
+ const /** e: UI 요소; receive: 수신 함수; state: 기본 방. */ {elements:e,receive,state}=client();
+ receive({type:'room.state',room:{...state,players:[{...state.players[0],skillNames:{A:'기본공격',B:'구르기',C:'미지정'},status:{skillACooldownRemaining:.45,skillBCooldownRemaining:2}}]}});
+ assert.equal(e.get('skill-name-a').textContent,'기본공격');assert.equal(e.get('skill-name-b').textContent,'구르기');
+ assert.equal(e.get('cooldown-a').textContent,'0.5초');assert.equal(e.get('cooldown-b').textContent,'2.0초');assert.equal(e.get('cooldown-c').hidden,true);
+ receive({type:'game.state',room:{...state,players:[{...state.players[0],skillNames:{A:'구르기',B:'기본공격'},status:{skillACooldownRemaining:0}}]}});
+ assert.equal(e.get('cooldown-a').hidden,true);assert.equal(e.get('skill-name-a').textContent,'구르기');
+});
