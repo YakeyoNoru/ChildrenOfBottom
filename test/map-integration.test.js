@@ -42,9 +42,9 @@ test('bridges allow continuous terrain movement and preserve 2-to-3-only directi
 });
 
 
-test('800-unit terrain allows movement beyond legacy empty-field bounds',/** 확장된 지도에서 외곽 시작점의 이동·구르기를 검증한다. */ ()=>{
+test('600-unit terrain allows movement beyond legacy empty-field bounds',/** 확장된 지도에서 외곽 시작점의 이동·구르기를 검증한다. */ ()=>{
  const /** map: 실제 생성한 큰 지도. */ map=generateRoomMap(29);
- assert.equal(map.tileRadius*map.landScale,800);
+ assert.equal(map.tileRadius*map.landScale,600);
  const /** tile: 기존 필드 범위 밖의 지형. */ tile=map.tiles.find(/** 외곽 지형을 선택한다. */ (/** candidate: 검사할 지형. */ candidate)=>Math.abs(globalThis.PitMapRules.center(candidate,map).x)>1700);
  const /** center: 외곽 지형의 중심. */ center=globalThis.PitMapRules.center(tile,map);
  const /** start: 해당 중심에서 이동을 시작할 개체. */ start=actor(center.x,center.y);
