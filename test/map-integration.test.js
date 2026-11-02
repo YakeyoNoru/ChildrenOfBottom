@@ -54,3 +54,17 @@ test('600-unit terrain allows movement beyond legacy empty-field bounds',/** 확
  const /** rolled: 구르기 한 틱 결과. */ rolled=globalThis.MovementRules.step(start,{x:0,y:0},start.status,map);
  assert.equal(rolled.x,center.x+33);assert.equal(rolled.y,center.y);
 });
+
+
+test('wide bridges leave a 30-unit terrain gap without opening unlinked edges',/** 다리 치수와 연결되지 않은 이웃의 차단을 실제 크기에서 검증한다. */ ()=>{
+ const /** map: 실제 게임 치수의 단순 검증 지도. */ map={...generateRoomMap(29),tiles:[{id:1,q:0,r:0,height:1},{id:2,q:1,r:0,height:1}],bridges:[]};
+ const /** a: 첫 지형 중심; b: 둘째 지형 중심. */ [a,b]=map.tiles.map(/** 중심을 구한다. */ (/** tile: 변환할 지형. */ tile)=>PitMapRules.center(tile,map));
+ const /** length: 두 중심 간 거리. */ length=Math.hypot(b.x-a.x,b.y-a.y);
+ assert.ok(Math.abs(length-600*Math.sqrt(3)-30)<1e-8);assert.equal(map.bridgeWidth,500);
+ assert.equal(PitMapRules.walkable(map,b.x/2,b.y/2,12),false);
+ const /** connected: 같은 치수에서 다리를 연결한 별도 지도. */ connected={...map,bridges:[[0,1]]};
+ assert.equal(PitMapRules.walkable(connected,b.x/2,b.y/2,12),true);
+ const /** ux: 다리 방향 가로 성분; uy: 세로 성분. */ [ux,uy]=[b.x/length,b.y/length];
+ assert.equal(PitMapRules.walkable(connected,b.x/2-uy*237,b.y/2+ux*237,12),true);
+ assert.equal(PitMapRules.walkable(connected,b.x/2-uy*251,b.y/2+ux*251,12),false);
+});

@@ -7,5 +7,6 @@ const generator=globalThis.PitGeneratorFactory(layouts);
 /** 서버가 게임 시작 시 한 번 생성해 모두에게 공유할 맵을 만든다. */
 export function generateRoomMap(/** seed: 서버가 선택한 32비트 지도 시드. */ seed) {
   const /** map: 원본 생성기가 검증을 마친 지도. */ map=generator.generate(seed);
-  return {...map,id:map.version+':'+map.seed,tileRadius:600/.89,landScale:.89,bridgeWidth:48};
+  const /** tileRadius: 한 변 600인 지형 사이의 수직 간격을 30으로 만드는 격자 반지름. */ tileRadius=600+30/Math.sqrt(3);
+  return {...map,id:map.version+':'+map.seed,tileRadius,landScale:600/tileRadius,bridgeWidth:500};
 }

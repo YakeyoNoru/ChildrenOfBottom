@@ -159,6 +159,8 @@ test('movement is validated, bounded, diagonal normalized, stale input stops', /
   for(let /** i: 현재 반복 항목의 순번. */ i=0;i<12;i++) await b.next('game.state');
   const /** stopped: 입력이 만료됐을 때 기록한 정지 위치. */ stopped = p.x; await b.next('game.state'); assert.equal(p.x,stopped);
   assert.deepEqual(p.input,{x:0,y:0});
+  // 지도 없는 기존 필드의 경계 제한도 별도로 검증한다.
+  rooms.get(code).map=null;
   p.x=1500; p.y=1500; b.ws.send(JSON.stringify({v:1,type:'game.input',x:1,y:1}));
   await b.next('game.state'); await b.next('game.state'); assert.ok(p.x<=1500 && p.y<=1500);
 });
