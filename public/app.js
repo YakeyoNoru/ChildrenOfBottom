@@ -19,18 +19,19 @@ const /** messages: 연결 종료 등에 사용할 안내 문구 모음. */ mess
   $('home').hidden = !!room; $('lobby').hidden = !room || playing;
   $('game').hidden = !playing; document.body.classList.toggle('playing', playing);
   updateViewport();
+  updateSkillControls();
   $('game-leave').disabled = !online || !!pending;
   if (!playing) { motionView.clear(); closeMenu(); resetInput(); }
   if (playing) $('game-status').textContent = `${room.players.length}명 생존 · ${room.players.find(/** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ p => p.id === playerId)?.name ?? ''}`;
   for (const /** id: 대상 개체 또는 요소의 식별자. */ id of ['create', 'join-open', 'join']) $(id).disabled = !online || !!pending;
   if (!room) return;
   const /** host: 방장 여부 또는 방장 개체. */ host = room.hostId === playerId, /** me: 현재 접속자의 개체. */ me = room.players.find(/** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ p => p.id === playerId), /** started: 방이 게임 시작 상태인지 여부. */ started = room.phase === 'started';
-  $('count').textContent = `${room.players.length} / 4`;
+  $('count').textContent = `${room.players.length} / ${room.maxPlayers??5}`;
   $('room-code').textContent = room.code;
   $('phase-title').textContent = started ? '게임 시작 완료' : '대기실';
   $('phase-message').textContent = started ? '모든 참가자에게 시작 상태가 동기화되었습니다. 생존 플레이는 이후 구현됩니다.' : '참가자가 모두 준비하면 방장이 시작할 수 있습니다.';
   $('players').replaceChildren();
-  for (let /** i: 현재 반복 항목의 순번. */ i = 0; i < 4; i++) {
+  for (let /** i: 현재 반복 항목의 순번. */ i = 0; i < (room.maxPlayers??5); i++) {
     const /** p: 현재 처리하는 플레이어 또는 검증 개체. */ p = room.players[i], /** li: 참가자 한 줄을 표시하는 목록 요소. */ li = document.createElement('li'), /** name: 현재 항목이나 사용자에게 표시할 이름. */ name = document.createElement('span'), /** status: 개체 상태 또는 응답 상태. */ status = document.createElement('span');
     name.textContent = p ? `${p.name}${p.id === playerId ? ' (나)' : ''}` : '생존자 대기 중';
     status.textContent = p ? p.id === room.hostId ? '방장' : p.ready ? '준비 완료' : '준비 전' : '—';
@@ -50,7 +51,7 @@ const /** messages: 연결 종료 등에 사용할 안내 문구 모음. */ mess
     let /** m: 수신 메시지 또는 문자열 패턴 일치 결과. */ m; try { m = JSON.parse(data); } catch { return; }
     if (m.v !== 1) return;
     if (m.type === 'welcome') { playerId = m.playerId; $('connection').textContent = '● 실시간 서버 연결됨'; }
-    if (m.type === 'game.state') { if (room?.code === m.room.code) { room = m.room; motionView.receive(room,playerId,Date.now()); } return; }
+    if (m.type === 'game.state') { if (room?.code === m.room.code) { room = m.room; motionView.receive(room,playerId,Date.now()); updateSkillControls(); } return; }
     if (m.type === 'room.state') { const /** entering: 새로운 방 상태로 진입했는지 여부. */ entering = !room || room.code !== m.room.code; room = m.room; motionView.receive(room,playerId,Date.now()); if (entering) syncTargetPriority(); notice(''); }
     if (m.type === 'room.closed' || m.type === 'room.left') { room = null; notice(m.type === 'room.closed' ? messages.closed : '방에서 나왔습니다.'); }
     if (m.type === 'error') notice(m.message);
@@ -82,7 +83,11 @@ const /** mouseButtons: 현재 누르고 있는 마우스 버튼 집합. */ mous
 /** desktopAction: 현재 마우스 버튼과 Shift 입력에서 표시할 기술 행동을 선택한다. */ function desktopAction() { return mouseButtons.has(0) ? 'A' : mouseButtons.has(2) ? 'B' : (keys.has('ShiftLeft') || keys.has('ShiftRight')) ? 'C' : null; }
 const /** finePointer: 정밀 포인터 연결 여부를 감시하는 미디어 조건. */ finePointer = matchMedia('(any-pointer: fine)');
 let /** desktopInput: 키보드·마우스 조작부 사용 여부. */ desktopInput = finePointer.matches;
-/** updateControls: 키보드·마우스 사용 여부에 따라 터치 조작부를 표시한다. */ function updateControls() { $('touch-controls').hidden = desktopInput; }
+/** updateControls: 키보드·마우스 사용 여부에 따라 터치 조작부를 표시한다. */ function updateControls() {
+  const /** visible: 수동 설정이 있으면 우선하고 없으면 장치 감지로 정한 표시 여부. */ visible=userSettings.showTouchControls ?? !desktopInput;
+  $('touch-controls').hidden=!visible;
+  $('show-touch-controls').checked=visible;
+}
 finePointer.addEventListener('change', /** e: 현재 입력 이벤트 또는 그릴 기술 효과. */ /** change 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ e => { desktopInput = e.matches; resetInput(); updateControls(); });
 /** resetInput: 눌린 키·마우스·터치 입력을 지워 이동이나 기술 입력이 남지 않게 한다. */ function resetInput() {
   keys.clear(); mouseButtons.clear(); axis = { x: 0, y: 0 }; action = null; stickPointer = null;
@@ -92,8 +97,19 @@ finePointer.addEventListener('change', /** e: 현재 입력 이벤트 또는 그
 function rolling() {
   return !!(room?.players.find(/** 본인을 조회한다. */ (/** object: 방의 플레이어. */ object)=>object.id===playerId)?.roll?.remaining>0 || motionView.predicted?.roll?.remaining>0);
 }
+/** 현재 서버 스테이터스의 슬롯별 남은 대기(초)를 조회한다. */
+function cooldownRemaining(/** slot: 검사할 기술 슬롯. */ slot) {
+  return room?.players.find(/** 본인을 조회한다. */ (/** object: 플레이어 상태. */ object)=>object.id===playerId)?.status?.['skill'+slot+'CooldownRemaining']??0;
+}
+/** 서버가 확정한 잔여 대기와 구르기 잠금에 따라 기술 버튼을 활성화한다. */
+function updateSkillControls() {
+  for(const /** slot: 갱신할 기술 버튼 슬롯. */ slot of ['A','B','C']) {
+    const /** button: 화면의 기술 버튼. */ button=$('action-'+slot.toLowerCase());
+    button.disabled=cooldownRemaining(slot)>0||rolling();
+  }
+}
 /** useSkill: 게임 진행과 조작 가능 여부를 검사하고 슬롯 시전 요청을 보낸다. */ function useSkill(/** slot: 기술을 저장하거나 시전할 A·B·C·P 슬롯. */ slot) {
-  if (room?.phase !== 'started' || socket?.readyState !== WebSocket.OPEN || $('game-dialog').open || document.hidden || viewport.blockedPortrait || rolling()) return;
+  if (room?.phase !== 'started' || socket?.readyState !== WebSocket.OPEN || $('game-dialog').open || document.hidden || viewport.blockedPortrait || rolling() || cooldownRemaining(slot)>0) return;
   socket.send(JSON.stringify({v:1,type:'game.cast',slot}));
 }
 /** movementInput: 키보드와 조이스틱을 조합해 현재 프레임의 이동 입력을 구한다. */ function movementInput() {

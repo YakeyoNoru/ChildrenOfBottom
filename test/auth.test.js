@@ -81,3 +81,12 @@ test('app WebSockets require login; web ignores app identity; logout revokes API
   assert.equal((await request('/api/logout',{method:'POST',headers:{Cookie:cookie,'X-Client-Mode':'app',Origin:'https://game.test','X-CSRF-Token':session.csrf}})).status,200);
   const /** after: 작업 이후에 조회한 상태. */ after=await(await request('/api/session',{headers:{Cookie:cookie,'X-Client-Mode':'app'}})).json();assert.equal(after.account,null);
 });
+
+test('touch control override persists as a boolean and rejects invalid settings',/** 앱 설정 저장이 표시 여부를 보존하고 잘못된 타입을 거절하는지 검증한다. */ async (/** t: 테스트 정리 문맥. */ t)=>{
+ const /** file: 테스트 계정 파일 경로. */ {file}=await setup(t);
+ const /** store: 독립 설정 저장 인터페이스. */ store=createAccountStore(file);
+ const /** account: 설정을 저장할 계정. */ account=store.upsert('google','touch-test','테스트');
+ store.saveSettings(account.id,{controlScale:1,showNames:true,showTouchControls:false});
+ assert.equal(createAccountStore(file).find(account.id).settings.showTouchControls,false);
+ assert.throws(/** 문자열로 전달된 표시 설정은 거절해야 한다. */ ()=>store.saveSettings(account.id,{controlScale:1,showNames:true,showTouchControls:'false'}));
+});

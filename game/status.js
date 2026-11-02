@@ -4,6 +4,9 @@ export const /** ObjectType: 플레이어·NPC·적의 개체 분류 상수. */ 
 export const /** LifeState: 생존·사망 상태 상수. */ LifeState = Object.freeze({ ALIVE: 'alive', DEAD: 'dead' });
 
 const /** defaults: 공통 스테이터스의 기본 수치. */ defaults = Object.freeze({
+  /** skillACooldownRemaining: A 슬롯의 남은 재사용 대기(초). */ skillACooldownRemaining:0,
+  /** skillBCooldownRemaining: B 슬롯의 남은 재사용 대기(초). */ skillBCooldownRemaining:0,
+  /** skillCCooldownRemaining: C 슬롯의 남은 재사용 대기(초). */ skillCCooldownRemaining:0,
   /** level: 개체 레벨(1 이상 정수). */ level: 1, /** hitboxDiameter: 중심 기준 원형 피격 히트박스 지름(월드 좌표). 표시 지름 36과 별개. */ hitboxDiameter: 24,
   /** maxHealth: 기본 최대체력. */ maxHealth: 10, /** currentHealth: 현재체력. 최종 최대체력 안으로 제한하며 0이면 사망. */ currentHealth: 10,
   /** maxSkillResource: 기본 최대 스킬자원. 최종 최대치 0이면 UI를 숨김. */ maxSkillResource: 0, /** currentSkillResource: 현재 스킬자원. */ currentSkillResource: 0,
@@ -71,6 +74,9 @@ export /** normalizeVitals: 체력·자원을 최종 최대치 안으로 제한�
 export /** regenerate: 생존 개체의 체력과 스킬자원을 경과 시간만큼 회복한다. */ function regenerate(/** s: 현재 처리하는 공통 스테이터스. */ s, /** seconds: 회복량 계산에 사용할 경과 시간(초). */ seconds) {
   if (!Number.isFinite(seconds) || seconds < 0) throw new TypeError('Invalid elapsed time');
   const /** effective: 추가 수치를 합산한 최종 스테이터스. */ effective = normalizeVitals(s);
+  for(const /** slot: 경과 시간을 차감할 기술 슬롯. */ slot of ['A','B','C']) {
+    s['skill'+slot+'CooldownRemaining']=Math.max(0,(s['skill'+slot+'CooldownRemaining']??0)-seconds);
+  }
   if (s.state === LifeState.DEAD) return;
   s.currentHealth = Math.min(effective.maxHealth, s.currentHealth + effective.healthRegen * seconds);
   s.currentSkillResource = Math.min(effective.maxSkillResource, s.currentSkillResource + effective.skillResourceRegen * seconds);

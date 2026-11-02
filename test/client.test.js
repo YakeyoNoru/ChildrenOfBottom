@@ -138,3 +138,22 @@ test('rolling blocks local movement axes and skill requests',/** 구르는 동�
  key(window,'keydown','KeyD');run("useSkill('A');useSkill('B');useSkill('C')");
  assert.equal(run('movementInput().x'),0);assert.equal(run('socket.sent.filter(m=>m.type==="game.cast").length'),0);
 });
+
+test('touch control checkbox overrides hardware detection and can always hide controls',/** 수동 표시·숨김이 키보드·마우스 감지보다 우선하는지 검증한다. */ ()=>{
+ const /** e: UI 요소; receive: 상태 수신 함수; state: 방 상태; window: 입력 이벤트; run: 코드 실행기. */ {elements:e,receive,state,window,run}=client();receive({type:'room.state',room:state});
+ assert.equal(e.get('show-touch-controls').checked,true);
+ key(window,'keydown','KeyD');assert.equal(e.get('show-touch-controls').checked,false);
+ e.get('show-touch-controls').checked=true;e.get('show-touch-controls').onchange();
+ key(window,'keydown','KeyW');assert.equal(e.get('touch-controls').hidden,false);assert.equal(run('userSettings.showTouchControls'),true);
+ e.get('show-touch-controls').checked=false;e.get('show-touch-controls').onchange();assert.equal(e.get('touch-controls').hidden,true);
+ run('desktopInput=false;updateControls()');assert.equal(e.get('touch-controls').hidden,true);
+});
+
+test('remaining cooldown disables touch skills and keyboard or mouse cast until server reaches zero',/** 잔여 대기에 맞춰 모든 조작 경로와 버튼 활성화가 바뀌는지 검증한다. */ ()=>{
+ const /** e: UI 요소; receive: 상태 수신 함수; state: 방 상태; run: 코드 실행기. */ {elements:e,receive,state,run}=client();
+ receive({type:'room.state',room:{...state,players:[{...state.players[0],status:{skillACooldownRemaining:.5,skillBCooldownRemaining:2,skillCCooldownRemaining:0}}]}});
+ assert.equal(e.get('action-a').disabled,true);assert.equal(e.get('action-b').disabled,true);assert.equal(e.get('action-c').disabled,false);
+ run("useSkill('A');useSkill('B')");assert.equal(run('socket.sent.filter(m=>m.type==="game.cast").length'),0);
+ receive({type:'game.state',room:{...state,players:[{...state.players[0],status:{skillACooldownRemaining:0,skillBCooldownRemaining:0}}]}});
+ assert.equal(e.get('action-a').disabled,false);run("useSkill('A')");assert.equal(run('socket.sent.at(-1).slot'),'A');
+});

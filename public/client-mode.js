@@ -7,6 +7,7 @@ let /** settingsCsrf: 앱 설정 저장 요청의 위조 방지 토큰. */ setti
   document.documentElement.style.setProperty('--control-scale', String(userSettings.controlScale));
   document.getElementById('control-scale').value = String(userSettings.controlScale);
   document.getElementById('show-names').checked = userSettings.showNames;
+  updateControls();
   for (const /** value: 검사하거나 변환할 현재 값. */ value of ['nearest','lowestHealth','lowestHealthRatio']) document.getElementById('target-' + value).checked = value === (userSettings.targetPriority ?? 'nearest');
 }
 /** initializeClient: 웹은 게스트로 연결하고 APK는 계정을 확인한 뒤 로그인 또는 게임을 연다. */ async function initializeClient() {
@@ -39,7 +40,7 @@ let /** settingsCsrf: 앱 설정 저장 요청의 위조 방지 토큰. */ setti
   } catch { document.getElementById('connection').textContent = '계정 서버에 연결할 수 없습니다. 앱을 다시 실행해 주세요.'; }
 }
 /** saveUserSettings: 옵션 변경을 반영하고 앱 계정이면 로컬 캐시와 서버에 저장한다. */ async function saveUserSettings() {
-  userSettings = { controlScale: Number(document.getElementById('control-scale').value), showNames: document.getElementById('show-names').checked, targetPriority: ['nearest','lowestHealth','lowestHealthRatio'].find(/** value: 검사하거나 변환할 현재 값. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ value => document.getElementById('target-' + value).checked) ?? 'nearest' };
+  userSettings = { ...(userSettings.showTouchControls!==undefined?{showTouchControls:userSettings.showTouchControls}:{}), controlScale: Number(document.getElementById('control-scale').value), showNames: document.getElementById('show-names').checked, targetPriority: ['nearest','lowestHealth','lowestHealthRatio'].find(/** value: 검사하거나 변환할 현재 값. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ value => document.getElementById('target-' + value).checked) ?? 'nearest' };
   applyUserSettings();
   syncTargetPriority();
   if (CLIENT_MODE === 'web') { document.getElementById('settings-status').textContent = '게스트 설정 · 현재 접속 중에만 적용'; return; }
@@ -53,6 +54,11 @@ let /** settingsCsrf: 앱 설정 저장 요청의 위조 방지 토큰. */ setti
 }
 document.getElementById('control-scale').onchange = saveUserSettings;
 document.getElementById('show-names').onchange = saveUserSettings;
+/** 사용자가 터치 조작부를 직접 선택하면 이후 장치 감지보다 그 선택을 우선한다. */
+document.getElementById('show-touch-controls').onchange = () => {
+  userSettings.showTouchControls=document.getElementById('show-touch-controls').checked;
+  resetInput();inputPacket();saveUserSettings();
+};
 for (const /** value: 검사하거나 변환할 현재 값. */ value of ['nearest','lowestHealth','lowestHealthRatio']) document.getElementById('target-' + value).onchange = saveUserSettings;
 document.getElementById('logout').onclick = /** onclick: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ async () => {
   try {

@@ -16,9 +16,9 @@ test('A B C cooldowns are independent; early casts and invalid states do not con
   const /** caster: 시전자; target: 피격 대상. */ {caster,target}=pair();
   for(const /** slot: 시전할 기술 슬롯. */ slot of ['A','B','C']) {
     assert.ok(castSkill(caster,[caster,target],slot,1000));
-    assert.equal(skillCooldownRemaining(caster,slot,1001),299);
-    assert.equal(castSkill(caster,[caster,target],slot,1299),null);
-    assert.ok(castSkill(caster,[caster,target],slot,1300));
+    assert.equal(skillCooldownRemaining(caster,slot,1001),499);
+    assert.equal(castSkill(caster,[caster,target],slot,1499),null);
+    assert.ok(castSkill(caster,[caster,target],slot,1500));
   }
   caster.status.stunned=true;
   assert.equal(castSkill(caster,[caster,target],'A',2000),null);
@@ -50,4 +50,16 @@ test('area instance re-hits only at interval and applies target-specific formula
   assert.equal(resolveSkillContacts(instance,[target],1300,formula).length,1);
   assert.equal(resolveSkillContacts(instance,[target],2000,formula).length,0);
   assert.notEqual(instance.results[0].id,instance.results[1].id);
+});
+
+test('shared remaining cooldowns start at zero, count down and unlock A at .5s and B at 2s',/** 공통 잔여 시간과 기술별 재사용 경계를 검증한다. */ ()=>{
+ const /** caster: 시전자; target: 피격 대상. */ {caster,target}=pair();caster.status.skillB='BAS0002';
+ for(const /** slot: 기본값을 검사할 슬롯. */ slot of ['A','B','C']) assert.equal(caster.status['skill'+slot+'CooldownRemaining'],0);
+ castSkill(caster,[caster,target],'A',1000);assert.equal(caster.status.skillACooldownRemaining,.5);
+ assert.equal(skillCooldownRemaining(caster,'A',1250),250);assert.equal(caster.status.skillACooldownRemaining,.25);
+ assert.equal(castSkill(caster,[caster,target],'A',1499),null);assert.ok(castSkill(caster,[caster,target],'A',1500));
+ assert.ok(castSkill(caster,[caster,target],'B',1600));assert.equal(caster.status.skillBCooldownRemaining,2);
+ caster.roll=null;
+ assert.equal(skillCooldownRemaining(caster,'B',2600),1000);
+ assert.equal(castSkill(caster,[caster,target],'B',3599),null);assert.ok(castSkill(caster,[caster,target],'B',3600));
 });

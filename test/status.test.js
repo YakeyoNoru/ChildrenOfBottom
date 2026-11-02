@@ -52,3 +52,13 @@ test('attack priorities use distance, current health, effective health ratio, ra
   p.targetRange=Infinity;p.targetPriority='lowestHealth';near.status.currentHealth=3;updateNearestObjects(objects);assert.equal(p.status.nearestEnemyId,'near');
   low.status.state='dead';near.status.state='dead';ratio.status.state='dead';updateNearestObjects(objects);assert.equal(p.status.nearestEnemyId,null);
 });
+
+test('every object kind has zero slot cooldowns and elapsed time clamps remaining values',/** 모든 개체의 쿨타임 기본값과 경과 시간 차감을 검증한다. */ ()=>{
+ for(const /** kind: 검사할 개체 분류. */ kind of ['player','npc','enemy']) {
+  const /** value: 공통 스테이터스 검증 개체. */ value=status(kind);
+  for(const /** slot: 기본값을 확인할 슬롯. */ slot of ['A','B','C'])assert.equal(value['skill'+slot+'CooldownRemaining'],0);
+  value.skillACooldownRemaining=.5;value.skillBCooldownRemaining=2;regenerate(value,.25);
+  assert.equal(value.skillACooldownRemaining,.25);assert.equal(value.skillBCooldownRemaining,1.75);
+  regenerate(value,5);assert.equal(value.skillACooldownRemaining,0);assert.equal(value.skillBCooldownRemaining,0);
+ }
+});

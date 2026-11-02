@@ -69,3 +69,7 @@ const npc = createWorldObject({
 });
 room.objects.set(npc.id, npc);
 ```
+
+## 기술 잔여 재사용 대기
+
+모든 개체가 `skillACooldownRemaining`, `skillBCooldownRemaining`, `skillCCooldownRemaining`을 공통으로 보유합니다. 초 단위, 기본값 0이며 시전 성공 시 설정하고 경과 시간에 따라 0까지 감소합니다. BAS0001은 0.5초, BAS0002는 2초입니다. 서버가 관리하며 클라이언트 전달값으로 수정할 수 없습니다.

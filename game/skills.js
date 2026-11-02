@@ -10,7 +10,7 @@ export const /** skills: 기술 코드별 공통 기술 정의. */ skills = Obje
     /** name: 기술의 표시 이름. */ name: '기본공격',
     /** T1: Y이면 범위 표시를 4초 유지하며 피해는 시전 시 한 번만 적용한다. */ T1: 'Y',
     /** shape: 시전자 중심에서 전방으로 뻗는 사각형 판정 형식. */ shape: 'forwardRectangle',
-    /** cooldownMs: 시전 성공 후 같은 슬롯을 다시 사용할 때까지의 시간(밀리초). */ cooldownMs: 300,
+    /** cooldownMs: 시전 성공 후 같은 슬롯을 다시 사용할 때까지의 시간(밀리초). */ cooldownMs: 500,
     /** width: 전방에 수직인 좌우 전체 폭(월드 좌표). */ width: 50,
     /** length: 시전자 중심부터 전방 끝까지의 거리(월드 좌표). */ length: 72,
     /** bonusDamage: 기본공격력과 추가공격력의 합에 더하는 기술 고유 피해. */ bonusDamage: 5,
@@ -22,7 +22,7 @@ export const /** skills: 기술 코드별 공통 기술 정의. */ skills = Obje
     /** name: 기술 표시 이름. */ name:'구르기',
     /** kind: 피해 판정 대신 강제 이동 상태를 시작하는 기술 구분. */ kind:'roll',
     /** T1: 공격 범위 표시를 만들지 않는다. */ T1:'N',
-    /** cooldownMs: 별도 대기는 추가하지 않고 구르기 동작 중 재사용만 막는다. */ cooldownMs:0,
+    /** cooldownMs: 시전 성공 후 B 슬롯 재사용을 막을 시간(밀리초). */ cooldownMs:2000,
     /** distance: 캐릭터 표시 지름 36의 두 배 거리(월드 좌표). */ distance:72,
     /** speedMultiplier: 시전 순간 최종 이동속도에 곱할 배율. */ speedMultiplier:3,
   }),
@@ -42,6 +42,7 @@ export /** castSkill: 서버 기술 슬롯과 선택 대상을 기준으로 적�
   /** caster.skillCooldowns: 각 슬롯에서 다음 시전이 허용되는 서버 시각. */
   caster.skillCooldowns ??= {};
   caster.skillCooldowns[slot]=now+Math.max(0,skill.cooldownMs ?? 0);
+  updateSkillCooldowns(caster,now);
   return instance;
 }
 
@@ -51,7 +52,8 @@ export function skillCooldownRemaining(
   /** slot: 확인할 A·B·C 슬롯. */ slot,
   /** now: 서버 현재 시각(밀리초). */ now = Date.now(),
 ) {
-  return Math.max(0,(caster.skillCooldowns?.[slot] ?? 0)-now);
+  updateSkillCooldowns(caster,now);
+  return (caster.status['skill'+slot+'CooldownRemaining']??0)*1000;
 }
 
 /** 시전자를 떠나 독립적으로 판정할 수 있는 기술 인스턴스를 생성한다. 이동·설치 스케줄러는 추후 연결한다. */
@@ -107,6 +109,17 @@ function startRoll(
   caster.facing=angle;
   /** caster.skillCooldowns: 슬롯별 다음 시전 가능 서버 시각. */ caster.skillCooldowns??={};
   caster.skillCooldowns[slot]=now+skill.cooldownMs;
+  updateSkillCooldowns(caster,now);
   // 구르기는 위치 스냅샷으로 전달하며 공격 사각형 효과를 생성하지 않는다.
   return {code:skill.code,kind:'roll'};
+}
+
+/** 서버 종료 시각을 기준으로 공통 스테이터스의 슬롯별 잔여 쿨타임(초)을 갱신한다. */
+export function updateSkillCooldowns(
+  /** object: 개체별 기술 재사용 종료 시각과 공통 스테이터스. */ object,
+  /** now: 서버 현재 시각(밀리초). */ now = Date.now(),
+) {
+  for(const /** slot: 남은 대기를 갱신할 기술 슬롯. */ slot of ['A','B','C']) {
+    if(object.skillCooldowns?.[slot]!==undefined) object.status['skill'+slot+'CooldownRemaining']=Math.max(0,object.skillCooldowns[slot]-now)/1000;
+  }
 }

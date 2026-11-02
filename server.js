@@ -1,5 +1,5 @@
 import './public/movement.js';
-import { /** castSkill: 슬롯의 쿨타임과 상태를 검사하고 기술을 시전한다. */ castSkill, /** skillCooldownRemaining: 슬롯의 서버 쿨타임 잔여 시간을 구한다. */ skillCooldownRemaining, /** skillSnapshot: 판정 내부 기록을 제외한 전송 데이터를 만든다. */ skillSnapshot } from './game/skills.js';
+import { /** castSkill: 슬롯의 쿨타임과 상태를 검사하고 기술을 시전한다. */ castSkill, /** skillCooldownRemaining: 슬롯의 서버 쿨타임 잔여 시간을 구한다. */ skillCooldownRemaining, /** skillSnapshot: 판정 내부 기록을 제외한 전송 데이터를 만든다. */ skillSnapshot, /** updateSkillCooldowns: 서버 기준 잔여 대기를 갱신한다. */ updateSkillCooldowns } from './game/skills.js';
 import /** http: 게임 HTTP 서버 생성 기능을 제공한다. */ http from 'node:http';
 import { /** createAuthService: 제공자 로그인·앱 세션·계정 설정 API와 만료 정리를 구성한다. */ createAuthService } from './auth/service.js';
 import { /** createStatus: 모든 개체가 공유하는 수치·기술 슬롯·상태를 검증해 생성한다. */ createStatus, /** ObjectType: 플레이어·NPC·적의 개체 분류 상수. */ ObjectType, /** LifeState: 생존·사망 상태 상수. */ LifeState, /** effectiveStats: 기본 수치에 추가 수치를 합산하고 음수를 방지한 최종 능력치를 계산한다. */ effectiveStats, /** normalizeVitals: 체력·자원을 최종 최대치 안으로 제한하고 사망 상태를 정규화한다. */ normalizeVitals, /** regenerate: 생존 개체의 체력과 스킬자원을 경과 시간만큼 회복한다. */ regenerate, /** updateNearestObjects: 생존 개체의 최근접 개체와 설정 우선순위에 맞는 적 ID를 갱신한다. */ updateNearestObjects, /** TargetPriority: 허용하는 공격 우선대상 선택 방식. */ TargetPriority } from './game/status.js';
@@ -8,6 +8,8 @@ import { /** randomBytes: 방 코드와 인증 증명에 사용할 암호학적 
 import { /** pathToFileURL: 현재 실행 파일과 모듈 주소를 비교할 수 있도록 URL로 변환한다. */ pathToFileURL } from 'node:url';
 import { /** WebSocketServer: 서버의 WebSocket 연결과 프레임 처리를 제공한다. */ WebSocketServer, /** WebSocket: 클라이언트 연결 생성 또는 WebSocket 연결 상태 상수를 제공한다. */ WebSocket } from 'ws';
 
+/** MAX_PLAYERS: 방장을 포함한 방 정원. */
+export const MAX_PLAYERS=5;
 export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증을 제공하는 서버를 생성한다. */ function createGameServer(/** heartbeatMs: 연결 생존 확인 주기(밀리초); authOptions: 인증 서비스 생성 옵션. */ { heartbeatMs = 15000, auth: authOptions = {} } = {}) {
   const /** rooms: 접속코드별 방 상태를 보관하는 맵. */ rooms = new Map();
   const /** auth: 앱 로그인과 계정 API를 처리하는 인증 서비스. */ auth = createAuthService(authOptions);
@@ -31,6 +33,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
     }
   };
   const /** objectSnapshot: 개체를 전송용 상태로 복사하는 함수. */ objectSnapshot = /** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** objectSnapshot: 개체의 최종 수치를 계산하고 전송 가능한 상태만 복사한다. */ p => {
+    updateSkillCooldowns(p);
     const /** effective: 추가 수치를 합산한 최종 스테이터스. */ effective = normalizeVitals(p.status);
     return { id: p.id, name: p.name, x: p.x, y: p.y, action: p.action, facing: p.facing ?? -Math.PI / 2, lastProcessedInput: p.lastProcessedInput ?? 0, roll:p.roll?{...p.roll}:null, lastMovementInput:p.lastMovementInput??{x:0,y:0}, status: { ...p.status, effective } };
   };
@@ -40,7 +43,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
     for (const /** object: 현재 처리하는 월드 개체. */ object of objects) normalizeVitals(object.status);
     // 대상 참조는 100밀리초 주기의 서버 시뮬레이션에서 갱신한다.
     return {
-      code: room.code, hostId: room.hostId, phase: room.phase,
+      code: room.code, hostId: room.hostId, phase: room.phase, maxPlayers:MAX_PLAYERS,
       players: [...room.players.values()].map(/** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** 각 항목을 현재 계산에 필요한 값으로 변환한다. */ p => ({ ...objectSnapshot(p), ready: p.ready })),
       objects: objects.map(objectSnapshot),
       skillEffects: (room.skillEffects ?? []).map(/** effect: 시전 위치·피해 결과·표시 만료 시각을 담은 기술 효과. */ /** 각 항목을 현재 계산에 필요한 값으로 변환한다. */ effect => skillSnapshot(effect)),
@@ -95,7 +98,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
           room = rooms.get(m.code.trim().toUpperCase());
           if (!room) return fail('ROOM_NOT_FOUND', '방을 찾을 수 없습니다.');
           if (room.phase !== 'lobby') return fail('GAME_STARTED', '이미 시작한 방입니다.');
-          if (room.players.size >= 4) return fail('ROOM_FULL', '방이 가득 찼습니다. (최대 4명)');
+          if (room.players.size >= MAX_PLAYERS) return fail('ROOM_FULL', '방이 꽉찼습니다');
         }
         ws.roomCode = room.code; room.players.set(ws.id, { id: ws.id, name: m.name.trim(), ready: false, x: 0, y: 0, input: { x: 0, y: 0 }, inputAt: 0, action: null, facing: -Math.PI / 2, targetPriority: 'nearest', status: createStatus({ objectType: ObjectType.PLAYER, classificationCode: ws.account?.id ?? ws.id, instanceId: ws.id }), ws }); broadcast(room);
       } else if (m.type === 'game.options') {
@@ -160,7 +163,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
       if (room.phase !== 'started') continue;
       room.skillEffects = (room.skillEffects ?? []).filter(/** e: 현재 처리하는 이벤트 또는 검증 개체. */ /** 조건에 맞는 항목만 다음 처리 대상으로 남긴다. */ e=>e.expiresAt>now);
       const /** objects: 처리할 월드 개체 목록. */ objects = allObjects(room);
-      for (const /** object: 현재 처리하는 월드 개체. */ object of objects) regenerate(object.status, dt);
+      for (const /** object: 현재 처리하는 월드 개체. */ object of objects) { regenerate(object.status, dt); updateSkillCooldowns(object,now); }
       for (const /** p: 현재 처리하는 플레이어 또는 검증 개체. */ p of room.players.values()) {
         if (p.sequencedInput) {
           const /** command: 이번 서버 틱에 실제 반영할 단 하나의 고정 스텝 입력. */ command=p.inputQueue.shift();

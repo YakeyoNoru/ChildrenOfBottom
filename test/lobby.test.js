@@ -23,23 +23,24 @@ import { /** createGameServer: 방·게임 시뮬레이션·정적 파일·인�
   return { ...game, client, url };
 }
 
-test('four clients: capacity, authority, readiness, start and late join', /** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ async /** t: 테스트 정리·검증 문맥 또는 프레임 시각. */ t => {
+test('five clients: capacity, authority, readiness, start and late join', /** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ async /** t: 테스트 정리·검증 문맥 또는 프레임 시각. */ t => {
   const /** client: 테스트용 접속자 생성 함수. */ { client } = await setup(t);
-  const /** a: 첫 번째 검증용 값·개체·접속 결과; b: 두 번째 검증용 값·개체·접속 결과; c: 세 번째 검증용 연결; d: 네 번째 검증용 연결; e: 검증할 이벤트·요소 모음·적 개체. */ [a,b,c,d,e] = await Promise.all(Array.from({length:5}, client));
+  const /** a: 첫 번째 검증용 값·개체·접속 결과; b: 두 번째 검증용 값·개체·접속 결과; c: 세 번째 검증용 연결; d: 네 번째 검증용 연결; e: 다섯 번째 접속자; f: 정원 초과를 검사할 여섯 번째 접속자. */ [a,b,c,d,e,f] = await Promise.all(Array.from({length:6}, client));
   await a.command('room.create', {name:'방장'}); const /** room: 현재 처리하는 방의 상태. */ {room} = await a.next('room.state');
-  for (const /** p: 검증 기준이 되는 개체 또는 표시 위치. */ p of [b,c,d]) await p.command('room.join', {name:'참가자',code:room.code});
-  assert.equal((await d.next('room.state')).room.players.length,4);
-  assert.equal((await e.command('room.join',{name:'초과',code:room.code},'error')).code,'ROOM_FULL');
+  for (const /** p: 검증 기준이 되는 개체 또는 표시 위치. */ p of [b,c,d,e]) await p.command('room.join', {name:'참가자',code:room.code});
+  assert.equal((await e.next('room.state')).room.players.length,5);
+  const /** full: 여섯 번째 접속자에게 반환한 정원 초과 오류. */ full=await f.command('room.join',{name:'초과',code:room.code},'error');
+  assert.equal(full.code,'ROOM_FULL');assert.equal(full.message,'방이 꽉찼습니다');
   assert.equal((await b.command('room.start',{},'error')).code,'FORBIDDEN');
   assert.equal((await a.command('room.ready',{ready:true},'error')).code,'HOST_CANNOT_READY');
   assert.equal((await a.command('room.start',{},'error')).code,'NOT_READY');
   assert.equal((await b.command('room.ready',{ready:'true'},'error')).code,'INVALID_READY');
   await b.command('room.ready',{ready:true}); await b.command('room.ready',{ready:false});
   assert.equal((await a.command('room.start',{},'error')).code,'NOT_READY');
-  for (const /** p: 검증 기준이 되는 개체 또는 표시 위치. */ p of [b,c,d]) await p.command('room.ready',{ready:true});
+  for (const /** p: 검증 기준이 되는 개체 또는 표시 위치. */ p of [b,c,d,e]) await p.command('room.ready',{ready:true});
   await a.command('room.start');
-  for (const /** p: 검증 기준이 되는 개체 또는 표시 위치. */ p of [a,b,c,d]) { let /** state: 현재 상태 스냅샷. */ state; do {state = await p.next('room.state');} while(state.room.phase !== 'started'); assert.equal(state.room.players.length,4); }
-  assert.equal((await e.command('room.join',{name:'늦은 참가',code:room.code},'error')).code,'GAME_STARTED');
+  for (const /** p: 검증 기준이 되는 개체 또는 표시 위치. */ p of [a,b,c,d,e]) { let /** state: 현재 상태 스냅샷. */ state; do {state = await p.next('room.state');} while(state.room.phase !== 'started'); assert.equal(state.room.players.length,5); }
+  assert.equal((await f.command('room.join',{name:'늦은 참가',code:room.code},'error')).code,'GAME_STARTED');
   assert.equal((await b.command('room.ready',{ready:false},'error')).code,'GAME_STARTED');
 });
 test('guest departure affects only guest; host leave closes room for everyone', /** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ async /** t: 테스트 정리·검증 문맥 또는 프레임 시각. */ t => {
@@ -85,15 +86,15 @@ test('HTTP serves only public files and health', /** 이 테스트 시나리오�
   for(const /** path: 요청 또는 파일의 경로. */ path of ['/','/app.js','/viewport.js','/motion.js','/style.css','/health'])assert.equal((await fetch(base+path)).status,200);
   assert.equal((await fetch(base+'/server.js')).status,404);
 });
-test('simultaneous joins never exceed four players', /** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ async /** t: 테스트 정리·검증 문맥 또는 프레임 시각. */ t => {
+test('simultaneous joins never exceed five players', /** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ async /** t: 테스트 정리·검증 문맥 또는 프레임 시각. */ t => {
   const /** client: 테스트용 접속자 생성 함수; rooms: 접속코드별 방 상태를 보관하는 맵. */ {client,rooms}=await setup(t); const /** a: 첫 번째 검증용 값·개체·접속 결과. */ a=await client();
   await a.command('room.create',{name:'A'});const /** room: 현재 처리하는 방의 상태. */ {room}=await a.next('room.state');
   const /** guests: 일반 참가자 연결 목록. */ guests=await Promise.all(Array.from({length:8},client));
   for(const /** guest: 게스트 접속 결과 또는 게스트 연결. */ guest of guests) guest.ws.send(JSON.stringify({v:1,type:'room.join',name:'동시 참가',code:room.code}));
   const /** results: 여러 비동기 작업의 실행 결과. */ results=await Promise.all(guests.map(/** guest: 게스트 접속 결과 또는 게스트 연결. */ /** 각 항목을 현재 계산에 필요한 값으로 변환한다. */ guest=>new Promise(/** resolve: 비동기 처리를 성공으로 완료하는 함수. */ /** 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ resolve=>{guest.ws.on('message',/** raw: 수신한 원본 메시지. */ /** message 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ raw=>{const /** m: 수신 메시지 또는 문자열 패턴 일치 결과. */ m=JSON.parse(raw);if(m.type==='ack'||m.type==='error')resolve(m);});})));
-  assert.equal(results.filter(/** m: 수신 메시지 또는 문자열 패턴 일치 결과. */ /** 조건에 맞는 항목만 다음 처리 대상으로 남긴다. */ m=>m.type==='ack').length,3);
-  assert.equal(results.filter(/** m: 수신 메시지 또는 문자열 패턴 일치 결과. */ /** 조건에 맞는 항목만 다음 처리 대상으로 남긴다. */ m=>m.code==='ROOM_FULL').length,5);
-  assert.equal(rooms.get(room.code).players.size,4);
+  assert.equal(results.filter(/** m: 수신 메시지 또는 문자열 패턴 일치 결과. */ /** 조건에 맞는 항목만 다음 처리 대상으로 남긴다. */ m=>m.type==='ack').length,4);
+  assert.equal(results.filter(/** m: 수신 메시지 또는 문자열 패턴 일치 결과. */ /** 조건에 맞는 항목만 다음 처리 대상으로 남긴다. */ m=>m.code==='ROOM_FULL').length,4);
+  assert.equal(rooms.get(room.code).players.size,5);
 });
 test('foreign browser origins and oversized payloads are rejected', /** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ async /** t: 테스트 정리·검증 문맥 또는 프레임 시각. */ t => {
   const /** url: 해석하거나 접속할 URL; client: 테스트용 접속자 생성 함수. */ {url,client}=await setup(t);

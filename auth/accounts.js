@@ -7,7 +7,8 @@ export const /** defaultSettings: 새 계정에 사용할 기본 설정 생성 �
 export /** validateSettings: 설정값이 허용 범위에 있는지 검사하고 저장용 값만 반환한다. */ function validateSettings(/** value: 검사하거나 변환할 현재 값. */ value) {
   if (!value || ![.75,1,1.25,1.5].includes(value.controlScale) || typeof value.showNames !== 'boolean') throw Error('INVALID_SETTINGS');
   if (value.targetPriority !== undefined && !TargetPriority.includes(value.targetPriority)) throw Error('INVALID_SETTINGS');
-  return { controlScale: value.controlScale, showNames: value.showNames, ...(value.targetPriority !== undefined ? {targetPriority:value.targetPriority} : {}) };
+  if(value.showTouchControls!==undefined && typeof value.showTouchControls!=='boolean') throw Error('INVALID_SETTINGS');
+  return { ...(value.showTouchControls!==undefined?{showTouchControls:value.showTouchControls}:{}), controlScale: value.controlScale, showNames: value.showNames, ...(value.targetPriority !== undefined ? {targetPriority:value.targetPriority} : {}) };
 }
 export /** createAccountStore: 계정 파일을 읽고 조회·생성·설정 저장 인터페이스를 제공한다. */ function createAccountStore(/** file: 읽거나 저장할 파일 경로. */ file = '.data/accounts.json') {
   let /** accounts: 영구 게임 계정 목록. */ accounts = [];
