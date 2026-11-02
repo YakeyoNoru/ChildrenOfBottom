@@ -5,7 +5,7 @@ import { /** readFileSync: 실제 표시 소스를 읽는 함수. */ readFileSyn
 /** 서버와 같은 규칙을 사용하는 실제 표시 이동기를 테스트 문맥에 생성한다. */
 function create() {
  const /** context: 전역 상태를 격리한 실행 문맥. */ context=vm.createContext({});
- for(const /** file: 실행할 공통 이동·표시 코드 파일명. */ file of ['movement.js','motion.js']) vm.runInContext(readFileSync(new URL('../public/'+file,import.meta.url),'utf8'),context);
+ for(const /** file: 실행할 공통 이동·표시 코드 파일명. */ file of ['pit-map-rules.js','movement.js','motion.js']) vm.runInContext(readFileSync(new URL('../public/'+file,import.meta.url),'utf8'),context);
  return vm.runInContext('new MotionView()',context);
 }
 /** 서버가 보내는 개체 스냅샷을 구성한다. */

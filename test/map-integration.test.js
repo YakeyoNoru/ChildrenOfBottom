@@ -1,0 +1,42 @@
+import { /** test: 맵 통합 검증 등록 함수. */ test } from 'node:test';
+import /** assert: 기대 결과 검사. */ assert from 'node:assert/strict';
+import { /** generateRoomMap: 기존 생성 규칙으로 지도 생성. */ generateRoomMap } from '../game/map-generator.js';
+import '../public/pit-map-rules.js';
+import '../public/movement.js';
+
+/** 테스트에서 사용할 이동 가능한 기본 개체를 만든다. */
+function actor(/** x: 가로 위치. */ x,/** y: 세로 위치. */ y) {return {x,y,facing:0,status:{moveSpeed:2,bonusMoveSpeed:0,hitboxDiameter:24,state:'alive'}};}
+
+test('existing generation remains deterministic and all five numbered starts are walkable',/** 원본 생성 재현성과 1~5번 시작점의 유효성을 검증한다. */ ()=>{
+ for(const /** seed: 검증용 서로 다른 지도 시드. */ seed of [29,56791,20261030,1,2,3]) {
+  const /** map: 서버가 생성한 지도. */ map=generateRoomMap(seed);
+  assert.equal(map.validation.valid,true);assert.deepEqual(map,generateRoomMap(seed));
+  for(let /** id: 플레이어 번호에 대응할 시작 타일 번호. */ id=1;id<=5;id++) {
+   const /** tile: 번호로 조회한 타일. */ tile=map.tiles.find(/** 번호를 비교한다. */ (/** candidate: 지형 후보. */ candidate)=>candidate.id===id);
+   const /** center: 시작 타일 월드 중심. */ center=globalThis.PitMapRules.center(tile,map);
+   assert.equal(globalThis.PitMapRules.walkable(map,center.x,center.y,12),true);
+  }
+ }
+});
+
+test('unconnected adjacent tiles have a blocked gap and rolls cannot tunnel through it',/** 끝점만 유효한 긴 이동도 빈 공간을 넘어갈 수 없음을 검증한다. */ ()=>{
+ const /** map: 타일 두 개가 이웃하지만 다리는 없는 지도. */ map={tileRadius:90,landScale:.89,bridgeWidth:48,tiles:[{id:1,q:0,r:0,height:1},{id:2,q:1,r:0,height:1}],bridges:[]};
+ const /** start: 첫 지형 중심. */ start=actor(0,0);
+ const /** end: 둘째 지형 중심. */ end=globalThis.PitMapRules.center(map.tiles[1],map);
+ const /** allowed: 빠른 강제 이동을 시도한 결과. */ allowed=globalThis.PitMapRules.constrain(map,start,end,12,false);
+ assert.ok(Math.hypot(allowed.x,allowed.y)<80);assert.equal(globalThis.PitMapRules.walkable(map,allowed.x,allowed.y,12),true);
+ start.roll={angle:Math.atan2(end.y,end.x),speed:10000,remaining:200};
+ const /** rolled: 한 스텝이 타일 전체를 넘을 정도로 빠른 구르기 결과. */ rolled=globalThis.MovementRules.step(start,{x:1,y:0},start.status,map);
+ assert.ok(Math.hypot(rolled.x,rolled.y)<80);
+});
+
+test('bridges allow continuous terrain movement and preserve 2-to-3-only direction',/** 연결된 다리 통행과 역방향 차단을 검증한다. */ ()=>{
+ const /** map: 높이 2와 3을 잇는 단일 다리 지도. */ map={tileRadius:90,landScale:.89,bridgeWidth:48,tiles:[{id:1,q:0,r:0,height:2},{id:2,q:1,r:0,height:3}],bridges:[[0,1]]};
+ const /** low: 낮은 타일 중심. */ low=globalThis.PitMapRules.center(map.tiles[0],map);
+ const /** high: 높은 타일 중심. */ high=globalThis.PitMapRules.center(map.tiles[1],map);
+ const /** upward: 허용 방향으로 이동한 위치. */ upward=globalThis.PitMapRules.constrain(map,low,high,12,false);
+ assert.ok(Math.hypot(upward.x-high.x,upward.y-high.y)<1e-6);
+ const /** downward: 금지 방향 이동 결과. */ downward=globalThis.PitMapRules.constrain(map,high,low,12,false);
+ assert.ok(Math.hypot(downward.x-low.x,downward.y-low.y)>60);
+ assert.equal(globalThis.PitMapRules.walkable(map,(low.x+high.x)/2,(low.y+high.y)/2,12),true);
+});

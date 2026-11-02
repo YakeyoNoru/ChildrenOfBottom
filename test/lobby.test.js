@@ -39,7 +39,16 @@ test('five clients: capacity, authority, readiness, start and late join', /** �
   assert.equal((await a.command('room.start',{},'error')).code,'NOT_READY');
   for (const /** p: 검증 기준이 되는 개체 또는 표시 위치. */ p of [b,c,d,e]) await p.command('room.ready',{ready:true});
   await a.command('room.start');
-  for (const /** p: 검증 기준이 되는 개체 또는 표시 위치. */ p of [a,b,c,d,e]) { let /** state: 현재 상태 스냅샷. */ state; do {state = await p.next('room.state');} while(state.room.phase !== 'started'); assert.equal(state.room.players.length,5); }
+  for (const /** p: 검증 기준이 되는 개체 또는 표시 위치. */ p of [a,b,c,d,e]) { let /** state: 현재 상태 스냅샷. */ state; do {state = await p.next('room.state');} while(state.room.phase !== 'started'); assert.equal(state.room.players.length,5);
+    assert.ok(state.room.map?.validation.valid);
+    for(const /** index: 참가자 순번; player: 검증할 플레이어. */ [index,player] of state.room.players.entries()) {
+      const /** tile: 순번에 대응하는 시작 지형. */ tile=state.room.map.tiles.find(/** 번호가 같은 타일을 찾는다. */ (/** item: 지형 타일. */ item)=>item.id===index+1);
+      const /** center: 지정 타일의 시작 좌표. */ center=globalThis.PitMapRules.center(tile,state.room.map);
+      assert.equal(player.playerNumber,index+1);assert.equal(player.spawnTileId,index+1);assert.equal(player.x,center.x);assert.equal(player.y,center.y);
+    }
+  }
+  const /** tick: 지도 전체를 반복 전송하지 않는 서버 틱 상태. */ tick=await a.next('game.state');
+  assert.equal(tick.room.map,undefined);assert.ok(tick.room.mapId);
   assert.equal((await f.command('room.join',{name:'늦은 참가',code:room.code},'error')).code,'GAME_STARTED');
   assert.equal((await b.command('room.ready',{ready:false},'error')).code,'GAME_STARTED');
 });
@@ -146,7 +155,7 @@ test('movement is validated, bounded, diagonal normalized, stale input stops', /
   b.ws.send(JSON.stringify({v:1,type:'game.input',x:1,y:1}));
   let /** state: 현재 상태 스냅샷. */ state; do {state = await b.next('game.state');} while(p.inputAt === 0);
   assert.ok(Math.abs(Math.hypot(p.input.x,p.input.y)-1)<1e-9);
-  const /** host: 방장 여부 또는 방장 개체. */ host = rooms.get(code).players.get(a.id); assert.equal(host.x,-60);
+  const /** host: 방장 여부 또는 방장 개체. */ host = rooms.get(code).players.get(a.id); assert.equal(host.x,globalThis.PitMapRules.center(rooms.get(code).map.tiles.find(/** 1번 시작 타일을 찾는다. */ (/** tile: 지도 타일. */ tile)=>tile.id===1),rooms.get(code).map).x);
   for(let /** i: 현재 반복 항목의 순번. */ i=0;i<12;i++) await b.next('game.state');
   const /** stopped: 입력이 만료됐을 때 기록한 정지 위치. */ stopped = p.x; await b.next('game.state'); assert.equal(p.x,stopped);
   assert.deepEqual(p.input,{x:0,y:0});
@@ -243,14 +252,18 @@ test('sequenced movement acknowledges consumed ticks only; duplicates cannot mov
 
 test('roll moves without further inputs, rejects casts and ends after 72 units',/** 서버가 구르기와 조작 잠금·종료를 확정하는지 검증한다. */ async (/** t: 테스트 정리 문맥. */ t)=>{
  const /** a: 본인 연결; rooms: 서버 방 목록; code: 방 코드. */ {a,rooms,code}=await startedPair(t);
- const /** caster: 구르기 시전자. */ caster=rooms.get(code).players.get(a.id);caster.facing=0;
- const /** startX: 시작 가로 좌표. */ startX=caster.x;
+ const /** caster: 구르기 시전자. */ caster=rooms.get(code).players.get(a.id);const /** map: 시작한 방 지도. */ map=rooms.get(code).map;
+ const /** startIndex: 1번 시작 타일 인덱스. */ startIndex=map.tiles.findIndex(/** 1번 지형을 찾는다. */ (/** tile: 지도 타일. */ tile)=>tile.id===1);
+ const /** bridge: 시작 타일에서 나가는 실제 다리. */ bridge=map.bridges.find(/** 시작점 연결을 찾는다. */ (/** ends: 다리 양 끝 인덱스. */ ends)=>ends.includes(startIndex));
+ const /** destination: 연결된 타일의 중심. */ destination=globalThis.PitMapRules.center(map.tiles[bridge.find(/** 반대 끝을 찾는다. */ (/** index: 타일 인덱스. */ index)=>index!==startIndex)],map);
+ caster.facing=Math.atan2(destination.y-caster.y,destination.x-caster.x);
+ const /** startX: 시작 가로 좌표; startY: 시작 세로 좌표. */ startX=caster.x,startY=caster.y;
  a.ws.send(JSON.stringify({v:1,type:'game.input',seq:1,x:0,y:0}));
  do {await a.next('game.state');}while(caster.lastProcessedInput!==1);
  a.ws.send(JSON.stringify({v:1,type:'game.cast',slot:'B'}));
  assert.equal((await a.command('game.cast',{slot:'A'},'error')).code,'ACTION_LOCKED');
  do {await a.next('game.state');}while(caster.roll);
- assert.ok(Math.abs(caster.x-startX-72)<1e-8);assert.equal(caster.status.skillB,'BAS0002');
+ assert.ok(Math.abs(Math.hypot(caster.x-startX,caster.y-startY)-72)<1e-8);assert.equal(caster.status.skillB,'BAS0002');
 });
 
 test('room countdown starts at creation, allows grace, then removes all five players without disconnecting',/** 10분·1분 경계와 모든 참가자 퇴장·소켓 재사용을 검증한다. */ async (/** t: 테스트 정리 문맥. */ t)=>{

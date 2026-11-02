@@ -33,6 +33,7 @@ class Socket {
   const /** context: 그리기 또는 테스트용 격리 실행 문맥. */ context=vm.createContext({document,window,WebSocket:Socket,/** matchMedia: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ matchMedia:()=>({matches:false,/** addEventListener: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ addEventListener(){}}),location:{protocol:'http:',host:'localhost'},crypto:{/** randomUUID: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ randomUUID:()=>String(Math.random())},navigator:{userAgent:''},innerWidth:950,innerHeight:500,/** setTimeout: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ setTimeout:()=>1,/** clearTimeout: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ clearTimeout(){},/** setInterval: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ setInterval:/** fn: 등록하거나 실행할 콜백 함수. */ fn=>timers.push(fn),/** requestAnimationFrame: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ requestAnimationFrame(){}});
   vm.runInContext(readFileSync(new URL('../public/client-mode.js',import.meta.url),'utf8'),context);
   vm.runInContext(readFileSync(new URL('../public/viewport.js',import.meta.url),'utf8'),context);
+  vm.runInContext(readFileSync(new URL('../public/pit-map-rules.js',import.meta.url),'utf8'),context);
   vm.runInContext(readFileSync(new URL('../public/movement.js',import.meta.url),'utf8'),context);
   vm.runInContext(readFileSync(new URL('../public/motion.js',import.meta.url),'utf8'),context);
   vm.runInContext(readFileSync(new URL('../public/room-timer.js',import.meta.url),'utf8'),context);
@@ -176,4 +177,12 @@ test('room timer displays countdown and grace then returns home with server clos
  assert.equal(e.get('room-timer-value').textContent,'00:00');assert.equal(e.get('room-timer-grace').hidden,false);
  run('pending="waiting"');receive({type:'room.closed',reason:'TIME_LIMIT',message:'제한 시간이 지나 방이 종료되었습니다.'});
  assert.equal(e.get('home').hidden,false);assert.equal(e.get('notice').textContent,'제한 시간이 지나 방이 종료되었습니다.');assert.equal(run('pending'),null);assert.equal(run('socket.readyState'),1);
+});
+
+test('client retains initial map through lightweight snapshots and clears it on leaving',/** 초기 지도 수신 후 틱에서 맵이 빠져도 유지하며 퇴장 시 초기화하는지 검증한다. */ ()=>{
+ const /** receive: 상태 수신 함수; state: 방 상태; run: 실행 문맥 조회. */ {receive,state,run}=client();
+ const /** map: 예측과 화면이 공유할 최소 검증 지도. */ map={id:'test-map',tileRadius:90,landScale:.89,bridgeWidth:48,tiles:[{id:1,q:0,r:0,height:1}],bridges:[]};
+ receive({type:'room.state',room:{...state,map}});receive({type:'game.state',room:{...state,mapId:map.id}});
+ assert.equal(run('room.map.id'),map.id);assert.equal(run('motionView.map.id'),map.id);
+ receive({type:'room.left'});assert.equal(run('motionView.map'),null);
 });

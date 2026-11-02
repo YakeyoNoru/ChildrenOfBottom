@@ -7,10 +7,12 @@ class MotionView {
     /** this.sequence: 본인이 생성한 마지막 이동 입력 번호. */ this.sequence=0;
     /** this.lastCommandTime: 마지막 고정 스텝 입력을 만든 시각. */ this.lastCommandTime=null;
     /** this.predicted: 서버 상태에 미확인 입력을 재실행한 판정용 예측 좌표. */ this.predicted=null;
+    /** this.map: 본인 이동 재계산에 적용할 서버 지도. */ this.map=null;
   }
   /** receive: 서버 스냅샷을 표시용 이력으로 복사하고 방 변경·순간이동을 반영한다. */ receive(/** room: 현재 처리하는 방의 상태. */ room, /** localId: 현재 접속자의 개체 식별자. */ localId, /** now: 현재 처리 시각(밀리초). */ now) {
     if(this.code!==room.code || room.phase!=='started') this.clear();
     /** this.code: 현재 표시 이력이 속한 방 코드. */ this.code=room.code;
+    if(room.map) this.map=room.map;
     const /** objects: 처리할 월드 개체 목록. */ objects=(room.objects??room.players).map(/** o: 표시 이력으로 복사할 개체. */ /** 각 항목을 현재 계산에 필요한 값으로 변환한다. */ o=>({...o}));
     this.frames.push({time:now,objects});
     while(this.frames.length>12) this.frames.shift();
@@ -18,7 +20,7 @@ class MotionView {
     if(me) {
       this.pendingInputs=this.pendingInputs.filter(/** 처리 확인 이후의 입력만 남긴다. */ (/** command: 확인 여부를 검사할 이동 입력. */ command)=>command.seq>(me.lastProcessedInput??0));
       this.predicted={x:me.x,y:me.y,facing:me.facing,roll:me.roll?{...me.roll}:null,lastMovementInput:me.lastMovementInput};
-      for(const /** command: 서버가 아직 처리하지 않은 이동 입력. */ command of this.pendingInputs) this.predicted=globalThis.MovementRules.step(this.predicted,command,me.status??{moveSpeed:2,bonusMoveSpeed:0});
+      for(const /** command: 서버가 아직 처리하지 않은 이동 입력. */ command of this.pendingInputs) this.predicted=globalThis.MovementRules.step(this.predicted,command,me.status??{moveSpeed:2,bonusMoveSpeed:0},this.map);
       if(!this.local || Math.hypot(me.x-this.local.x,me.y-this.local.y)>200) this.local={...this.predicted};
     }
   }
@@ -32,7 +34,7 @@ class MotionView {
     const /** command: 순번과 한 스텝의 방향을 가진 이동 전용 기록. */ command={seq:++this.sequence,x:input.x,y:input.y};
     this.pendingInputs.push(command);
     const /** me: 현재 예측에 적용할 서버 확정 스테이터스. */ me=this.frames.at(-1).objects.find(/** 본인 상태를 조회한다. */ (/** object: 수신 개체. */ object)=>object.id===input.localId);
-    this.predicted=globalThis.MovementRules.step(this.predicted,command,me?.status??{moveSpeed:2,bonusMoveSpeed:0});
+    this.predicted=globalThis.MovementRules.step(this.predicted,command,me?.status??{moveSpeed:2,bonusMoveSpeed:0},this.map);
     return command;
   }
   /** sample: 다른 개체를 보간하고 본인은 확인되지 않은 입력을 재실행한 좌표로 부드럽게 표시한다. */ sample(/** localId: 현재 접속자의 개체 식별자. */ localId, /** input: 현재 프레임에 적용할 이동 입력. */ input, /** now: 현재 처리 시각(밀리초). */ now) {

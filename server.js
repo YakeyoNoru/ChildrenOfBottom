@@ -1,3 +1,5 @@
+import './public/pit-map-rules.js';
+import { /** generateRoomMap: 원본 구덩이 규칙으로 서버 맵을 생성한다. */ generateRoomMap } from './game/map-generator.js';
 import './public/room-timer.js';
 import './public/movement.js';
 import { /** castSkill: 슬롯의 쿨타임과 상태를 검사하고 기술을 시전한다. */ castSkill, /** skillCooldownRemaining: 슬롯의 서버 쿨타임 잔여 시간을 구한다. */ skillCooldownRemaining, /** skillSnapshot: 판정 내부 기록을 제외한 전송 데이터를 만든다. */ skillSnapshot, /** updateSkillCooldowns: 서버 기준 잔여 대기를 갱신한다. */ updateSkillCooldowns, /** getSkillSlotNames: 할당된 기술의 표시 이름을 조회한다. */ getSkillSlotNames } from './game/skills.js';
@@ -14,7 +16,7 @@ export const MAX_PLAYERS=5;
 export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증을 제공하는 서버를 생성한다. */ function createGameServer(/** heartbeatMs: 연결 생존 확인 주기(밀리초); authOptions: 인증 서비스 생성 옵션; roomClock: 방 수명 검증에 사용할 서버 시계 함수. */ { heartbeatMs = 15000, auth: authOptions = {}, roomClock = Date.now } = {}) {
   const /** rooms: 접속코드별 방 상태를 보관하는 맵. */ rooms = new Map();
   const /** auth: 앱 로그인과 계정 API를 처리하는 인증 서비스. */ auth = createAuthService(authOptions);
-  const /** files: 외부에 제공할 정적 파일 경로와 MIME 형식. */ files = { '/room-timer.js': ['room-timer.js', 'text/javascript'], '/movement.js': ['movement.js', 'text/javascript'], '/pit-map.html': ['pit-map.html', 'text/html'], '/motion.js': ['motion.js', 'text/javascript'], '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/viewport.js': ['viewport.js', 'text/javascript'], '/client-mode.js': ['client-mode.js', 'text/javascript'], '/app': ['index.html', 'text/html'], '/style.css': ['style.css', 'text/css'] };
+  const /** files: 외부에 제공할 정적 파일 경로와 MIME 형식. */ files = { '/pit-map-rules.js': ['pit-map-rules.js','text/javascript'], '/map-renderer.js': ['map-renderer.js','text/javascript'], '/room-timer.js': ['room-timer.js', 'text/javascript'], '/movement.js': ['movement.js', 'text/javascript'], '/pit-map.html': ['pit-map.html', 'text/html'], '/motion.js': ['motion.js', 'text/javascript'], '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/viewport.js': ['viewport.js', 'text/javascript'], '/client-mode.js': ['client-mode.js', 'text/javascript'], '/app': ['index.html', 'text/html'], '/style.css': ['style.css', 'text/css'] };
   const /** server: 정적 파일과 WebSocket 연결을 제공하는 HTTP 서버. */ server = http.createServer(/** 현재 비동기 작업의 완료 또는 후속 처리를 수행한다. */ async (/** req: 수신한 HTTP 요청. */ req, /** res: HTTP 응답 작성 객체. */ res) => {
     if (await auth.handle(req,res)) return;
     if (req.url === '/health') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end('{"ok":true,"protocolVersion":1}'); }
@@ -36,15 +38,15 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
   const /** objectSnapshot: 개체를 전송용 상태로 복사하는 함수. */ objectSnapshot = /** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** objectSnapshot: 개체의 최종 수치를 계산하고 전송 가능한 상태만 복사한다. */ p => {
     updateSkillCooldowns(p);
     const /** effective: 추가 수치를 합산한 최종 스테이터스. */ effective = normalizeVitals(p.status);
-    return { id: p.id, name: p.name, x: p.x, y: p.y, action: p.action, facing: p.facing ?? -Math.PI / 2, skillNames:getSkillSlotNames(p.status), lastProcessedInput: p.lastProcessedInput ?? 0, roll:p.roll?{...p.roll}:null, lastMovementInput:p.lastMovementInput??{x:0,y:0}, status: { ...p.status, effective } };
+    return { id: p.id, name: p.name, x: p.x, y: p.y, action: p.action, facing: p.facing ?? -Math.PI / 2, playerNumber:p.playerNumber??null,spawnTileId:p.spawnTileId??null,skillNames:getSkillSlotNames(p.status), lastProcessedInput: p.lastProcessedInput ?? 0, roll:p.roll?{...p.roll}:null, lastMovementInput:p.lastMovementInput??{x:0,y:0}, status: { ...p.status, effective } };
   };
   const /** allObjects: 방의 플레이어와 일반 개체를 함께 조회하는 함수. */ allObjects = /** room: 현재 처리하는 방의 상태. */ /** allObjects: 방 안의 플레이어와 NPC·적을 하나의 목록으로 모은다. */ room => [...room.players.values(), ...room.objects.values()];
-  const /** snapshot: 방 상태를 전송용 데이터로 변환하는 함수. */ snapshot = /** room: 현재 처리하는 방의 상태. */ /** snapshot: 현재 방의 참가자·개체·기술 효과를 전송용 스냅샷으로 만든다. */ room => {
+  const /** snapshot: 방 상태를 전송용 데이터로 변환하는 함수. */ snapshot = /** room: 현재 처리하는 방의 상태. */ /** snapshot: 현재 방의 참가자·개체·기술 효과를 전송용 스냅샷으로 만든다. */ (room, /** includeMap: 지도는 초기 상태에만 포함하고 틱 전송에서는 생략한다. */ includeMap=true) => {
     const /** objects: 처리할 월드 개체 목록. */ objects = allObjects(room);
     for (const /** object: 현재 처리하는 월드 개체. */ object of objects) normalizeVitals(object.status);
     // 대상 참조는 100밀리초 주기의 서버 시뮬레이션에서 갱신한다.
     return {
-      code: room.code, hostId: room.hostId, phase: room.phase, maxPlayers:MAX_PLAYERS, timer:globalThis.RoomTimerRules.snapshot(room,roomClock()),
+      ...(includeMap&&room.map?{map:room.map}:{}), mapId:room.map?.id??null, code: room.code, hostId: room.hostId, phase: room.phase, maxPlayers:MAX_PLAYERS, timer:globalThis.RoomTimerRules.snapshot(room,roomClock()),
       players: [...room.players.values()].map(/** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** 각 항목을 현재 계산에 필요한 값으로 변환한다. */ p => ({ ...objectSnapshot(p), ready: p.ready })),
       objects: objects.map(objectSnapshot),
       skillEffects: (room.skillEffects ?? []).map(/** effect: 시전 위치·피해 결과·표시 만료 시각을 담은 기술 효과. */ /** 각 항목을 현재 계산에 필요한 값으로 변환한다. */ effect => skillSnapshot(effect)),
@@ -160,8 +162,16 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
         } else {
           if (room.hostId !== ws.id) return fail('FORBIDDEN', '방장만 시작할 수 있습니다.');
           if ([...room.players.values()].some(/** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ p => p.id !== room.hostId && !p.ready)) return fail('NOT_READY', '모든 참가자가 준비해야 합니다.');
+          try {
+            const /** seed: 서버가 정한 이번 게임의 재현 가능한 지도 시드. */ seed=randomBytes(4).readUInt32LE(0);
+            room.map=generateRoomMap(seed);
+          } catch {return fail('MAP_GENERATION_FAILED','맵 생성에 실패했습니다. 다시 시작해 주세요.');}
           room.phase = 'started';
-          [...room.players.values()].forEach(/** 각 항목에 현재 단계의 상태 갱신 또는 표시 처리를 적용한다. */ (/** p: 현재 처리하는 플레이어 또는 검증 개체. */ p, /** i: 현재 반복 항목의 순번. */ i) => { p.x = (i % 2) * 120 - 60; p.y = Math.floor(i / 2) * 120 - 60; });
+          [...room.players.values()].forEach(/** 입장 순서별 지정 타일 중심에 배치한다. */ (/** player: 배치할 참가자. */ player,/** index: 현재 참가자의 입장 순서. */ index)=>{
+            const /** tile: 플레이어 순번과 같은 번호의 지형타일. */ tile=room.map.tiles.find(/** 시작 타일을 찾는다. */ (/** item: 지도 타일. */ item)=>item.id===index+1);
+            Object.assign(player,globalThis.PitMapRules.center(tile,room.map));
+            player.playerNumber=index+1;player.spawnTileId=tile.id;player.roll=null;player.input={x:0,y:0};player.inputQueue=[];
+          });
           broadcast(room);
         }
       } else return fail('UNKNOWN_TYPE', '알 수 없는 요청입니다.');
@@ -182,7 +192,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
           const /** command: 이번 서버 틱에 실제 반영할 단 하나의 고정 스텝 입력. */ command=p.inputQueue.shift();
           const /** wasRolling: 이번 틱이 구르기 동작으로 시작됐는지 여부. */ wasRolling=!!p.roll;
           if (command || wasRolling) {
-            Object.assign(p,globalThis.MovementRules.step(p,command??{x:0,y:0},p.status));
+            Object.assign(p,globalThis.MovementRules.step(p,command??{x:0,y:0},p.status,room.map));
             /** p.lastProcessedInput: 실제 이동 계산에 반영한 입력 번호. 클라이언트 재계산 기준이다. */
             if(command) p.lastProcessedInput=command.seq;
             p.action=p.status.stunned||p.status.state===LifeState.DEAD?null:wasRolling?'roll':command?.action??null;
@@ -190,7 +200,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
           continue;
         }
         if(p.roll) {
-          Object.assign(p,globalThis.MovementRules.step(p,{x:0,y:0},p.status));
+          Object.assign(p,globalThis.MovementRules.step(p,{x:0,y:0},p.status,room.map));
           p.action=p.status.stunned||p.status.state===LifeState.DEAD?null:'roll';
           continue;
         }
@@ -199,10 +209,14 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
         const /** previousX: 이동 전 가로 좌표. */ previousX = p.x, /** previousY: 이동 전 세로 좌표. */ previousY = p.y;
         p.x = Math.max(-1500, Math.min(1500, p.x + p.input.x * effectiveStats(p.status).moveSpeed * 110 * dt));
         p.y = Math.max(-1500, Math.min(1500, p.y + p.input.y * effectiveStats(p.status).moveSpeed * 110 * dt));
+        if(room.map) {
+          const /** allowed: 구형 입력도 동일한 맵의 통행 구역으로 제한한다. */ allowed=globalThis.PitMapRules.constrain(room.map,{x:previousX,y:previousY},p,(p.status.hitboxDiameter??24)/2);
+          p.x=allowed.x;p.y=allowed.y;
+        }
         if (p.x !== previousX || p.y !== previousY) p.facing = Math.atan2(p.y - previousY, p.x - previousX);
       }
       if (now - (room.targetsAt ?? 0) >= 100) { updateNearestObjects(objects); room.targetsAt = now; }
-      const /** state: 현재 상태 스냅샷. */ state = snapshot(room);
+      const /** state: 현재 상태 스냅샷. */ state = snapshot(room,false);
       for (const /** p: 현재 처리하는 플레이어 또는 검증 개체. */ p of room.players.values()) send(p.ws, 'game.state', { room: state });
     }
   }, 50);

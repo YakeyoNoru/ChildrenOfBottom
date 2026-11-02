@@ -54,7 +54,7 @@ const /** messages: 연결 종료 등에 사용할 안내 문구 모음. */ mess
     let /** m: 수신 메시지 또는 문자열 패턴 일치 결과. */ m; try { m = JSON.parse(data); } catch { return; }
     if (m.v !== 1) return;
     if (m.type === 'welcome') { playerId = m.playerId; $('connection').textContent = '● 실시간 서버 연결됨'; }
-    if (m.type === 'game.state') { if (room?.code === m.room.code) { room = m.room; timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); updateSkillControls(); } return; }
+    if (m.type === 'game.state') { if (room?.code === m.room.code) { room = {...m.room,map:m.room.map??room.map}; timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); updateSkillControls(); } return; }
     if (m.type === 'room.state') { const /** entering: 새로운 방 상태로 진입했는지 여부. */ entering = !room || room.code !== m.room.code; room = m.room; timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); if (entering) syncTargetPriority(); notice(''); }
     if (m.type === 'room.closed' || m.type === 'room.left') { room = null; notice(m.type === 'room.closed' ? (m.message??messages.closed) : '방에서 나왔습니다.'); if(m.type==='room.closed') settle(); }
     if (m.type === 'error') notice(m.message);
@@ -234,10 +234,8 @@ const /** canvas: 월드 화면을 그리는 캔버스 요소. */ canvas = $('wo
   if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) { canvas.width = pixelWidth; canvas.height = pixelHeight; }
   ctx.setTransform(pixelWidth/w,0,0,pixelHeight/h,0,0); ctx.fillStyle = '#14251e'; ctx.fillRect(0,0,w,h);
   const /** ox: 카메라 중심을 맞추는 월드 가로 오프셋. */ ox = w/2-me.x, /** oy: 카메라 중심을 맞추는 월드 세로 오프셋. */ oy = h/2-me.y;
-  ctx.strokeStyle = '#284035'; ctx.lineWidth = 1; ctx.beginPath();
-  for (let /** x: 가로 좌표·이동 입력 또는 반복 비교 항목. */ x = ((ox % 80)+80)%80; x < w; x += 80) { ctx.moveTo(x,0); ctx.lineTo(x,h); }
-  for (let /** y: 세로 좌표 또는 이동 입력. */ y = ((oy % 80)+80)%80; y < h; y += 80) { ctx.moveTo(0,y); ctx.lineTo(w,y); } ctx.stroke();
-  ctx.strokeStyle = '#96a47b'; ctx.strokeRect(ox-1520,oy-1520,3040,3040);
+  if(room.map) globalThis.MapRenderer.draw(ctx,room.map,ox,oy,w,h);
+  else {ctx.strokeStyle='#284035';ctx.lineWidth=1;ctx.strokeRect(ox-1500,oy-1500,3000,3000);}
   drawSkillEffects(ctx, room.skillEffects ?? [], ox, oy);
   displayObjects.forEach(/** 각 항목에 현재 단계의 상태 갱신 또는 표시 처리를 적용한다. */ (/** p: 현재 처리하는 플레이어 또는 검증 개체. */ p,/** i: 현재 반복 항목의 순번. */ i) => {
     const /** x: 가로 좌표·이동 입력 또는 반복 비교 항목. */ x = p.x+ox, /** y: 세로 좌표 또는 이동 입력. */ y = p.y+oy;
