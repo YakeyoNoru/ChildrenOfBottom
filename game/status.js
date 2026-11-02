@@ -96,12 +96,18 @@ export function gainExperience(/** status: 경험치 진행 필드를 가진 플
     level+=1;
     required+=level*20;
     levelsGained+=1;
+    status.bonusHealth+=10;
+    status.bonusAttack+=2;
+    status.bonusDefense+=1;
+    status.skillPoints+=2;
+    if(level%2===0)status.maxSkillResource+=1;
+    // 각 레벨의 최대체력 증가를 먼저 적용한 뒤 해당 레벨의 회복량을 계산한다.
+    status.currentHealth=Math.min(effectiveStats(status).maxHealth,status.currentHealth+10+level*2);
+    normalizeVitals(status);
   }
   status.currentExperience=experience;
   status.level=level;
   status.requiredExperience=required;
-  status.bonusHealth+=levelsGained*10;
-  status.bonusAttack+=levelsGained*2;
   return levelsGained;
 }
 

@@ -83,11 +83,25 @@ test('experience awards carry remainder and apply per-level bonuses using the ne
  const /** player: 레벨업 검증 플레이어. */ player=status('player',{bonusHealth:5,bonusAttack:3});
  assert.equal(gainExperience(player,49),0);assert.equal(player.currentExperience,49);assert.equal(player.level,1);
  assert.equal(gainExperience(player,1),1);assert.equal(player.level,2);assert.equal(player.currentExperience,0);assert.equal(player.requiredExperience,90);
- assert.equal(player.bonusHealth,15);assert.equal(player.bonusAttack,5);assert.equal(player.currentHealth,10);
+ assert.equal(player.bonusHealth,15);assert.equal(player.bonusAttack,5);assert.equal(player.currentHealth,24);
  assert.equal(gainExperience(player,250),2);assert.equal(player.level,4);assert.equal(player.currentExperience,10);assert.equal(player.requiredExperience,230);
- assert.equal(player.bonusHealth,35);assert.equal(player.bonusAttack,9);assert.equal(player.skillPoints,0);
+ assert.equal(player.bonusHealth,35);assert.equal(player.bonusAttack,9);assert.equal(player.skillPoints,6);
  assert.equal(effectiveStats(player).maxHealth,45);assert.equal(effectiveStats(player).attack,10);
  const /** before: 잘못된 지급 요청 이전 상태 복사. */ before=structuredClone(player);
  for(const /** amount: 허용되지 않는 획득 경험치. */ amount of [-1,NaN,Infinity,'20'])assert.throws(/** 잘못된 지급을 실행한다. */ ()=>gainExperience(player,amount),TypeError);
  assert.deepEqual(player,before);assert.throws(/** 적에게 플레이어 경험치를 지급한다. */ ()=>gainExperience(status('enemy'),20),TypeError);
+});
+
+
+test('level-up rewards apply each intermediate level and preserve resource and health caps',/** 연속 상승의 짝수 보상과 회복량·최대치·기존 포인트 보존을 검증한다. */ ()=>{
+ const /** player: 기존 보상과 낮은 체력을 가진 검증 개체. */ player=status('player',{maxHealth:100,currentHealth:1,bonusDefense:3,skillPoints:5,maxSkillResource:4,currentSkillResource:2});
+ assert.equal(gainExperience(player,290),3);
+ assert.equal(player.level,4);assert.equal(player.bonusDefense,6);assert.equal(player.skillPoints,11);
+ assert.equal(player.maxSkillResource,6);assert.equal(player.currentSkillResource,2);
+ assert.equal(player.currentHealth,49);assert.equal(effectiveStats(player).maxHealth,130);
+ const /** capped: 최대체력 제한을 검사할 기본 개체. */ capped=status('player');
+ gainExperience(capped,50);assert.equal(capped.currentHealth,20);assert.equal(capped.maxSkillResource,1);
+ gainExperience(capped,90);assert.equal(capped.level,3);assert.equal(capped.currentHealth,30);assert.equal(capped.maxSkillResource,1);
+ const /** unchanged: 레벨업 없는 지급 전 상태. */ unchanged=structuredClone(capped);
+ gainExperience(capped,1);assert.equal(capped.currentHealth,unchanged.currentHealth);assert.equal(capped.skillPoints,unchanged.skillPoints);assert.equal(capped.bonusDefense,unchanged.bonusDefense);
 });
