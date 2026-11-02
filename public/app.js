@@ -1,6 +1,8 @@
 const /** $: HTML 요소 조회 보조 함수. */ $ = /** id: 대상 개체 또는 요소의 식별자. */ /** $: 식별자로 HTML 요소를 조회한다. */ id => document.getElementById(id);
 let /** socket: 브라우저의 현재 게임 서버 연결. */ socket, /** playerId: 서버에서 발급받은 본인 개체 식별자. */ playerId, /** room: 현재 처리하는 방의 상태. */ room = null, /** reconnectTimer: 연결 재시도 예약 타이머. */ reconnectTimer, /** pending: 응답을 기다리는 로비 요청 식별자. */ pending = null, /** timeout: 요청 응답 제한 시간 타이머. */ timeout;
 const /** motionView: 서버 좌표와 분리한 표시용 이동 보간 상태. */ motionView = new MotionView();
+/** timerReceivedAt: 마지막 방 시간 스냅샷을 받은 로컬 시각. */
+let timerReceivedAt=0;
 const /** messages: 연결 종료 등에 사용할 안내 문구 모음. */ messages = { closed: '방이 해제되었습니다.', offline: '연결이 끊어졌습니다. 방에서 퇴장했습니다. 다시 연결 중…' };
 /** notice: 안내 문구를 표시하거나 비어 있으면 숨긴다. */ function notice(/** message: 사용자나 연결에 전달할 안내 내용. */ message) { $('notice').textContent = message; $('notice').hidden = !message; }
 /** settle: 요청 대기 상태와 제한 시간을 해제하고 UI를 다시 그린다. */ function settle() { pending = null; clearTimeout(timeout); render(); }
@@ -20,6 +22,7 @@ const /** messages: 연결 종료 등에 사용할 안내 문구 모음. */ mess
   $('game').hidden = !playing; document.body.classList.toggle('playing', playing);
   updateViewport();
   updateSkillControls();
+  updateRoomTimer();
   $('game-leave').disabled = !online || !!pending;
   if (!playing) { motionView.clear(); closeMenu(); resetInput(); }
   if (playing) $('game-status').textContent = `${room.players.length}명 생존 · ${room.players.find(/** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ p => p.id === playerId)?.name ?? ''}`;
@@ -51,9 +54,9 @@ const /** messages: 연결 종료 등에 사용할 안내 문구 모음. */ mess
     let /** m: 수신 메시지 또는 문자열 패턴 일치 결과. */ m; try { m = JSON.parse(data); } catch { return; }
     if (m.v !== 1) return;
     if (m.type === 'welcome') { playerId = m.playerId; $('connection').textContent = '● 실시간 서버 연결됨'; }
-    if (m.type === 'game.state') { if (room?.code === m.room.code) { room = m.room; motionView.receive(room,playerId,Date.now()); updateSkillControls(); } return; }
-    if (m.type === 'room.state') { const /** entering: 새로운 방 상태로 진입했는지 여부. */ entering = !room || room.code !== m.room.code; room = m.room; motionView.receive(room,playerId,Date.now()); if (entering) syncTargetPriority(); notice(''); }
-    if (m.type === 'room.closed' || m.type === 'room.left') { room = null; notice(m.type === 'room.closed' ? messages.closed : '방에서 나왔습니다.'); }
+    if (m.type === 'game.state') { if (room?.code === m.room.code) { room = m.room; timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); updateSkillControls(); } return; }
+    if (m.type === 'room.state') { const /** entering: 새로운 방 상태로 진입했는지 여부. */ entering = !room || room.code !== m.room.code; room = m.room; timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); if (entering) syncTargetPriority(); notice(''); }
+    if (m.type === 'room.closed' || m.type === 'room.left') { room = null; notice(m.type === 'room.closed' ? (m.message??messages.closed) : '방에서 나왔습니다.'); if(m.type==='room.closed') settle(); }
     if (m.type === 'error') notice(m.message);
     if ((m.type === 'ack' || m.type === 'error') && m.requestId === pending) settle();
     render();
@@ -126,6 +129,17 @@ function updateSkillControls() {
   const /** y: 세로 좌표 또는 이동 입력. */ y = blocked ? 0 : ((keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) - (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) || axis.y);
   return {x,y,blocked};
 }
+/** 서버 잔여 시간에 수신 이후의 경과만 반영해 메뉴 왼쪽 타이머를 갱신한다. 종료 판정은 서버만 한다. */
+function updateRoomTimer() {
+  const /** elapsed: 마지막 서버 시간 정보를 받은 뒤 경과한 로컬 시간(밀리초). */ elapsed=Math.max(0,Date.now()-timerReceivedAt);
+  const /** remaining: 10분 카운트다운의 표시 잔여 시간. */ remaining=Math.max(0,(room?.timer?.remainingMs??600000)-(room?.timer?elapsed:0));
+  const /** grace: 0 이후 강제 종료까지의 표시 잔여 시간. */ grace=Math.max(0,(room?.timer?.closeRemainingMs??660000)-elapsed);
+  $('room-timer-value').textContent=globalThis.RoomTimerRules.format(remaining);
+  $('room-timer-grace').hidden=remaining>0||!room?.timer;
+  $('room-timer-grace').textContent='종료까지 '+globalThis.RoomTimerRules.format(grace);
+  $('room-timer').classList.toggle('expired',remaining===0);
+}
+setInterval(updateRoomTimer,100);
 /** inputPacket: 현재 이동과 기술 버튼 상태를 서버에 주기적으로 전송한다. */ function inputPacket() {
   if (room?.phase !== 'started' || socket?.readyState !== WebSocket.OPEN) return;
   const /** x: 가로 좌표·이동 입력 또는 반복 비교 항목; y: 세로 좌표 또는 이동 입력; blocked: 메뉴·기절 등으로 현재 조작이 차단되는지 여부. */ {x,y,blocked} = movementInput();

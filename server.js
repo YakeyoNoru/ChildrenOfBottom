@@ -1,3 +1,4 @@
+import './public/room-timer.js';
 import './public/movement.js';
 import { /** castSkill: 슬롯의 쿨타임과 상태를 검사하고 기술을 시전한다. */ castSkill, /** skillCooldownRemaining: 슬롯의 서버 쿨타임 잔여 시간을 구한다. */ skillCooldownRemaining, /** skillSnapshot: 판정 내부 기록을 제외한 전송 데이터를 만든다. */ skillSnapshot, /** updateSkillCooldowns: 서버 기준 잔여 대기를 갱신한다. */ updateSkillCooldowns, /** getSkillSlotNames: 할당된 기술의 표시 이름을 조회한다. */ getSkillSlotNames } from './game/skills.js';
 import /** http: 게임 HTTP 서버 생성 기능을 제공한다. */ http from 'node:http';
@@ -10,10 +11,10 @@ import { /** WebSocketServer: 서버의 WebSocket 연결과 프레임 처리를 
 
 /** MAX_PLAYERS: 방장을 포함한 방 정원. */
 export const MAX_PLAYERS=5;
-export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증을 제공하는 서버를 생성한다. */ function createGameServer(/** heartbeatMs: 연결 생존 확인 주기(밀리초); authOptions: 인증 서비스 생성 옵션. */ { heartbeatMs = 15000, auth: authOptions = {} } = {}) {
+export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증을 제공하는 서버를 생성한다. */ function createGameServer(/** heartbeatMs: 연결 생존 확인 주기(밀리초); authOptions: 인증 서비스 생성 옵션; roomClock: 방 수명 검증에 사용할 서버 시계 함수. */ { heartbeatMs = 15000, auth: authOptions = {}, roomClock = Date.now } = {}) {
   const /** rooms: 접속코드별 방 상태를 보관하는 맵. */ rooms = new Map();
   const /** auth: 앱 로그인과 계정 API를 처리하는 인증 서비스. */ auth = createAuthService(authOptions);
-  const /** files: 외부에 제공할 정적 파일 경로와 MIME 형식. */ files = { '/movement.js': ['movement.js', 'text/javascript'], '/pit-map.html': ['pit-map.html', 'text/html'], '/motion.js': ['motion.js', 'text/javascript'], '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/viewport.js': ['viewport.js', 'text/javascript'], '/client-mode.js': ['client-mode.js', 'text/javascript'], '/app': ['index.html', 'text/html'], '/style.css': ['style.css', 'text/css'] };
+  const /** files: 외부에 제공할 정적 파일 경로와 MIME 형식. */ files = { '/room-timer.js': ['room-timer.js', 'text/javascript'], '/movement.js': ['movement.js', 'text/javascript'], '/pit-map.html': ['pit-map.html', 'text/html'], '/motion.js': ['motion.js', 'text/javascript'], '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/viewport.js': ['viewport.js', 'text/javascript'], '/client-mode.js': ['client-mode.js', 'text/javascript'], '/app': ['index.html', 'text/html'], '/style.css': ['style.css', 'text/css'] };
   const /** server: 정적 파일과 WebSocket 연결을 제공하는 HTTP 서버. */ server = http.createServer(/** 현재 비동기 작업의 완료 또는 후속 처리를 수행한다. */ async (/** req: 수신한 HTTP 요청. */ req, /** res: HTTP 응답 작성 객체. */ res) => {
     if (await auth.handle(req,res)) return;
     if (req.url === '/health') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end('{"ok":true,"protocolVersion":1}'); }
@@ -43,13 +44,22 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
     for (const /** object: 현재 처리하는 월드 개체. */ object of objects) normalizeVitals(object.status);
     // 대상 참조는 100밀리초 주기의 서버 시뮬레이션에서 갱신한다.
     return {
-      code: room.code, hostId: room.hostId, phase: room.phase, maxPlayers:MAX_PLAYERS,
+      code: room.code, hostId: room.hostId, phase: room.phase, maxPlayers:MAX_PLAYERS, timer:globalThis.RoomTimerRules.snapshot(room,roomClock()),
       players: [...room.players.values()].map(/** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** 각 항목을 현재 계산에 필요한 값으로 변환한다. */ p => ({ ...objectSnapshot(p), ready: p.ready })),
       objects: objects.map(objectSnapshot),
       skillEffects: (room.skillEffects ?? []).map(/** effect: 시전 위치·피해 결과·표시 만료 시각을 담은 기술 효과. */ /** 각 항목을 현재 계산에 필요한 값으로 변환한다. */ effect => skillSnapshot(effect)),
     };
   };
   const /** broadcast: 방 참가자 전체에 상태를 전송하는 함수. */ broadcast = /** room: 현재 처리하는 방의 상태. */ /** broadcast: 방 참가자 모두에게 최신 방 상태를 알린다. */ room => { for (const /** p: 현재 처리하는 플레이어 또는 검증 개체. */ p of room.players.values()) send(p.ws, 'room.state', { room: snapshot(room) }); };
+  /** 시간 만료 시 전원을 방에서 분리하고 방 데이터·효과를 정리한다. 소켓 연결 자체는 유지한다. */
+  function closeExpiredRoom(/** room: 종료할 방. */ room) {
+    rooms.delete(room.code);
+    for(const /** player: 퇴장시킬 방 참가자. */ player of room.players.values()) {
+      player.ws.roomCode=null;
+      send(player.ws,'room.closed',{reason:'TIME_LIMIT',message:'제한 시간이 지나 방이 종료되었습니다.'});
+    }
+    room.players.clear();room.objects.clear();room.skillEffects=[];
+  }
   /** leave: 대기실·진행 중 상태에 맞춰 퇴장과 방장 승계·방 삭제를 처리한다. */ function leave(/** ws: 현재 처리 중인 WebSocket 연결. */ ws) {
     const /** room: 현재 처리하는 방의 상태. */ room = rooms.get(ws.roomCode);
     ws.roomCode = null;
@@ -86,16 +96,18 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
       if (binary || !m || Array.isArray(m) || m.v !== 1 || typeof m.type !== 'string' || (m.requestId !== undefined && (typeof m.requestId !== 'string' || m.requestId.length > 64))) return error('BAD_MESSAGE', '지원하지 않는 메시지입니다.');
       const /** fail: 현재 요청 식별자를 포함해 오류를 반환하는 함수. */ fail = /** fail: 현재 요청 ID와 함께 게임 명령 실패를 전달한다. */ (/** code: 개체·기술·방 또는 오류를 식별하는 코드. */ code, /** message: 사용자나 연결에 전달할 안내 내용. */ message) => error(code, message, m.requestId);
       let /** room: 현재 처리하는 방의 상태. */ room = rooms.get(ws.roomCode);
+      if(room && globalThis.RoomTimerRules.expired(room,roomClock())) {closeExpiredRoom(room);room=null;}
       if (m.type === 'room.create' || m.type === 'room.join') {
         if (room) return fail('ALREADY_IN_ROOM', '이미 방에 참여 중입니다.');
         if (typeof m.name !== 'string' || !m.name.trim() || m.name.trim().length > 20 || /[\x00-\x1f]/.test(m.name)) return fail('INVALID_NAME', '이름은 1~20자로 입력하세요.');
         if (m.type === 'room.create') {
           if (rooms.size >= 1000) return fail('SERVER_FULL', '서버가 가득 찼습니다.');
           let /** code: 개체·기술·방 또는 오류를 식별하는 코드. */ code; do { code = randomBytes(4).toString('hex').slice(0, 6).toUpperCase(); } while (rooms.has(code));
-          room = { code, hostId: ws.id, phase: 'lobby', players: new Map(), objects: new Map() }; rooms.set(code, room);
+          room = { ...globalThis.RoomTimerRules.create(roomClock()), code, hostId: ws.id, phase: 'lobby', players: new Map(), objects: new Map() }; rooms.set(code, room);
         } else {
           if (typeof m.code !== 'string' || !/^[A-F0-9]{6}$/.test(m.code.trim().toUpperCase())) return fail('INVALID_CODE', '접속코드 6자리를 확인하세요.');
           room = rooms.get(m.code.trim().toUpperCase());
+          if(room && globalThis.RoomTimerRules.expired(room,roomClock())) {closeExpiredRoom(room);room=null;}
           if (!room) return fail('ROOM_NOT_FOUND', '방을 찾을 수 없습니다.');
           if (room.phase !== 'lobby') return fail('GAME_STARTED', '이미 시작한 방입니다.');
           if (room.players.size >= MAX_PLAYERS) return fail('ROOM_FULL', '방이 꽉찼습니다');
@@ -160,6 +172,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
   const /** simulation: 게임 시뮬레이션 반복 타이머. */ simulation = setInterval(/** 등록한 주기에 맞춰 상태 갱신이나 정리 작업을 반복한다. */ () => {
     const /** now: 현재 처리 시각(밀리초). */ now = Date.now(), /** dt: 현재 프레임 또는 틱의 경과 시간(초). */ dt = Math.min((now - lastTick) / 1000, 0.1); lastTick = now;
     for (const /** room: 현재 처리하는 방의 상태. */ room of rooms.values()) {
+      if(globalThis.RoomTimerRules.expired(room,roomClock())) {closeExpiredRoom(room);continue;}
       if (room.phase !== 'started') continue;
       room.skillEffects = (room.skillEffects ?? []).filter(/** e: 현재 처리하는 이벤트 또는 검증 개체. */ /** 조건에 맞는 항목만 다음 처리 대상으로 남긴다. */ e=>e.expiresAt>now);
       const /** objects: 처리할 월드 개체 목록. */ objects = allObjects(room);

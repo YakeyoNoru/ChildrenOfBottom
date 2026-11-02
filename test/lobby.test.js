@@ -252,3 +252,36 @@ test('roll moves without further inputs, rejects casts and ends after 72 units',
  do {await a.next('game.state');}while(caster.roll);
  assert.ok(Math.abs(caster.x-startX-72)<1e-8);assert.equal(caster.status.skillB,'BAS0002');
 });
+
+test('room countdown starts at creation, allows grace, then removes all five players without disconnecting',/** 10분·1분 경계와 모든 참가자 퇴장·소켓 재사용을 검증한다. */ async (/** t: 테스트 정리 문맥. */ t)=>{
+ let /** clock: 실제 11분을 기다리지 않고 진행할 서버 방 시각. */ clock=0;
+ const /** client: 연결 생성 함수; rooms: 실제 방 목록. */ {client,rooms}=await setup(t,{/** 테스트 시각을 반환한다. */ roomClock:()=>clock});
+ const /** clients: 방에 참가할 5개 연결. */ clients=await Promise.all(Array.from({length:5},client));
+ await clients[0].command('room.create',{name:'방장'});
+ const /** code: 만료를 검증할 방 코드. */ code=(await clients[0].next('room.state')).room.code;
+ for(const /** connection: 입장할 일반 참가자. */ connection of clients.slice(1)) {await connection.command('room.join',{name:'참가자',code});await connection.command('room.ready',{ready:true});}
+ clock=599999;await clients[0].command('room.start');
+ let /** state: 시간 경계를 검증할 서버 스냅샷. */ state=await clients[0].next('game.state');
+ assert.equal(state.room.timer.remainingMs,1);assert.equal(state.room.timer.createdAt,0);
+ clock=600000;do{state=await clients[0].next('game.state');}while(state.room.timer.remainingMs!==0);
+ assert.equal(rooms.has(code),true);assert.equal(state.room.timer.closeRemainingMs,60000);
+ clock=659999;do{state=await clients[0].next('game.state');}while(state.room.timer.closeRemainingMs!==1);
+ assert.equal(rooms.has(code),true);
+ clock=660000;
+ for(const /** connection: 강제 퇴장을 받아야 하는 참가자. */ connection of clients)assert.equal((await connection.next('room.closed')).reason,'TIME_LIMIT');
+ assert.equal(rooms.has(code),false);
+ await clients[0].command('room.create',{name:'다시 시작'});
+ assert.equal((await clients[0].next('room.state')).room.timer.remainingMs,600000);
+ assert.equal((await clients[1].command('room.join',{name:'만료된 방',code},'error')).code,'ROOM_NOT_FOUND');
+});
+
+test('lobby also expires and requests cannot reopen the expired room',/** 게임을 시작하지 않아도 생성 후 11분이면 정리되는지 검증한다. */ async (/** t: 테스트 정리 문맥. */ t)=>{
+ let /** clock: 제어할 방 시각. */ clock=0;
+ const /** client: 연결 생성 함수; rooms: 서버 방 목록. */ {client,rooms}=await setup(t,{/** 지정한 시각을 반환한다. */ roomClock:()=>clock});
+ const /** host: 방장 연결; guest: 입장을 시도할 연결. */ [host,guest]=await Promise.all([client(),client()]);
+ await host.command('room.create',{name:'방장'});
+ const /** code: 만료시킬 방 코드. */ code=(await host.next('room.state')).room.code;
+ clock=660000;
+ assert.equal((await guest.command('room.join',{name:'참가자',code},'error')).code,'ROOM_NOT_FOUND');
+ assert.equal((await host.next('room.closed')).reason,'TIME_LIMIT');assert.equal(rooms.has(code),false);
+});

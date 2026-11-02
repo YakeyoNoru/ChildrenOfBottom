@@ -31,3 +31,10 @@ body.playing{overflow:hidden}body.playing main>header,body.playing main>footer{d
 #action-controls button{font-size:13px;line-height:1.2;padding:4px;white-space:normal;overflow-wrap:anywhere}
 /* --skill-cooldown-font-size: 화면 배율을 반영한 캐릭터 이름과 같은 크기의 UI 글자 크기. */
 .skill-cooldown{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);font:var(--skill-cooldown-font-size,14px) system-ui;color:#fff;text-shadow:0 1px 3px #000;white-space:nowrap;pointer-events:none}
+
+/* 타이머를 메뉴 버튼 왼쪽에 붙이고 터치 조작부 표시 옵션과 독립적으로 유지한다. */
+#game-topbar{position:absolute;top:max(18px,env(safe-area-inset-top));left:max(18px,env(safe-area-inset-left));display:flex;align-items:center;gap:10px}
+#game-topbar #game-menu{position:static}
+#room-timer{min-width:72px;text-align:center;font:700 22px system-ui;font-variant-numeric:tabular-nums;color:#eff7e8;background:#20392ddd;border:1px solid #60745b;border-radius:9px;padding:8px;pointer-events:none}
+#room-timer-grace{display:block;font-size:12px;font-weight:400;white-space:nowrap}
+#room-timer.expired{color:#ffaaa0;border-color:#c77970}

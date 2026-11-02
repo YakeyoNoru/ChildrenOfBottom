@@ -35,6 +35,7 @@ class Socket {
   vm.runInContext(readFileSync(new URL('../public/viewport.js',import.meta.url),'utf8'),context);
   vm.runInContext(readFileSync(new URL('../public/movement.js',import.meta.url),'utf8'),context);
   vm.runInContext(readFileSync(new URL('../public/motion.js',import.meta.url),'utf8'),context);
+  vm.runInContext(readFileSync(new URL('../public/room-timer.js',import.meta.url),'utf8'),context);
   vm.runInContext(readFileSync(new URL('../public/app.js',import.meta.url),'utf8'),context);
   const /** run: 격리 문맥 안에서 테스트 코드를 실행하는 함수. */ run=/** script: 격리 문맥에서 실행할 테스트 코드 문자열. */ /** run: 격리 문맥에서 실제 클라이언트 코드를 실행해 결과를 확인한다. */ script=>vm.runInContext(script,context);
   const /** receive: 서버 메시지 수신을 재현하는 테스트 함수. */ receive=/** message: 사용자나 연결에 전달할 안내 내용. */ /** receive: 서버 스냅샷을 표시용 이력으로 복사하고 방 변경·순간이동을 반영한다. */ message=>run(`socket.onmessage({data:${JSON.stringify(JSON.stringify({v:1,...message}))}})`);
@@ -165,4 +166,14 @@ test('assigned skill names and cooldown labels update from server state',/** 이
  assert.equal(e.get('cooldown-a').textContent,'0.5초');assert.equal(e.get('cooldown-b').textContent,'2.0초');assert.equal(e.get('cooldown-c').hidden,true);
  receive({type:'game.state',room:{...state,players:[{...state.players[0],skillNames:{A:'구르기',B:'기본공격'},status:{skillACooldownRemaining:0}}]}});
  assert.equal(e.get('cooldown-a').hidden,true);assert.equal(e.get('skill-name-a').textContent,'구르기');
+});
+
+test('room timer displays countdown and grace then returns home with server closure message',/** 서버 시간 표시와 종료 시 입력·대기 해제를 검증한다. */ ()=>{
+ const /** e: UI 요소; receive: 메시지 수신; state: 기본 방; run: 격리 실행. */ {elements:e,receive,state,run}=client();
+ receive({type:'room.state',room:{...state,timer:{remainingMs:600000,closeRemainingMs:660000}}});
+ assert.equal(e.get('room-timer-value').textContent,'10:00');assert.equal(e.get('room-timer-grace').hidden,true);
+ receive({type:'game.state',room:{...state,timer:{remainingMs:0,closeRemainingMs:60000}}});run('updateRoomTimer()');
+ assert.equal(e.get('room-timer-value').textContent,'00:00');assert.equal(e.get('room-timer-grace').hidden,false);
+ run('pending="waiting"');receive({type:'room.closed',reason:'TIME_LIMIT',message:'제한 시간이 지나 방이 종료되었습니다.'});
+ assert.equal(e.get('home').hidden,false);assert.equal(e.get('notice').textContent,'제한 시간이 지나 방이 종료되었습니다.');assert.equal(run('pending'),null);assert.equal(run('socket.readyState'),1);
 });
