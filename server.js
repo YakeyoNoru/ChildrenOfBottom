@@ -1,3 +1,4 @@
+import './public/items.js';
 import './public/pit-map-rules.js';
 import { /** generateRoomMap: 원본 구덩이 규칙으로 서버 맵을 생성한다. */ generateRoomMap } from './game/map-generator.js';
 import './public/room-timer.js';
@@ -16,7 +17,7 @@ export const MAX_PLAYERS=5;
 export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증을 제공하는 서버를 생성한다. */ function createGameServer(/** heartbeatMs: 연결 생존 확인 주기(밀리초); authOptions: 인증 서비스 생성 옵션; roomClock: 방 수명 검증에 사용할 서버 시계 함수. */ { heartbeatMs = 15000, auth: authOptions = {}, roomClock = Date.now } = {}) {
   const /** rooms: 접속코드별 방 상태를 보관하는 맵. */ rooms = new Map();
   const /** auth: 앱 로그인과 계정 API를 처리하는 인증 서비스. */ auth = createAuthService(authOptions);
-  const /** files: 외부에 제공할 정적 파일 경로와 MIME 형식. */ files = { '/pit-map-rules.js': ['pit-map-rules.js','text/javascript'], '/map-renderer.js': ['map-renderer.js','text/javascript'], '/room-timer.js': ['room-timer.js', 'text/javascript'], '/movement.js': ['movement.js', 'text/javascript'], '/pit-map.html': ['pit-map.html', 'text/html'], '/motion.js': ['motion.js', 'text/javascript'], '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/viewport.js': ['viewport.js', 'text/javascript'], '/client-mode.js': ['client-mode.js', 'text/javascript'], '/app': ['index.html', 'text/html'], '/style.css': ['style.css', 'text/css'] };
+  const /** files: 외부에 제공할 정적 파일 경로와 MIME 형식. */ files = { '/pit-map-rules.js': ['pit-map-rules.js','text/javascript'], '/items.js': ['items.js','text/javascript'], '/map-renderer.js': ['map-renderer.js','text/javascript'], '/room-timer.js': ['room-timer.js', 'text/javascript'], '/movement.js': ['movement.js', 'text/javascript'], '/pit-map.html': ['pit-map.html', 'text/html'], '/motion.js': ['motion.js', 'text/javascript'], '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/viewport.js': ['viewport.js', 'text/javascript'], '/client-mode.js': ['client-mode.js', 'text/javascript'], '/app': ['index.html', 'text/html'], '/style.css': ['style.css', 'text/css'] };
   const /** server: 정적 파일과 WebSocket 연결을 제공하는 HTTP 서버. */ server = http.createServer(/** 현재 비동기 작업의 완료 또는 후속 처리를 수행한다. */ async (/** req: 수신한 HTTP 요청. */ req, /** res: HTTP 응답 작성 객체. */ res) => {
     if (await auth.handle(req,res)) return;
     if (req.url === '/health') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end('{"ok":true,"protocolVersion":1}'); }
@@ -49,6 +50,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
       ...(includeMap&&room.map?{map:room.map}:{}), mapId:room.map?.id??null, code: room.code, hostId: room.hostId, phase: room.phase, maxPlayers:MAX_PLAYERS, timer:globalThis.RoomTimerRules.snapshot(room,roomClock()),
       players: [...room.players.values()].map(/** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** 각 항목을 현재 계산에 필요한 값으로 변환한다. */ p => ({ ...objectSnapshot(p), ready: p.ready })),
       objects: objects.map(objectSnapshot),
+      ...(includeMap?{items:[...(room.items??new Map()).values()]}:{itemChanges:room.itemChanges}),
       skillEffects: (room.skillEffects ?? []).map(/** effect: 시전 위치·피해 결과·표시 만료 시각을 담은 기술 효과. */ /** 각 항목을 현재 계산에 필요한 값으로 변환한다. */ effect => skillSnapshot(effect)),
     };
   };
@@ -165,6 +167,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
           try {
             const /** seed: 서버가 정한 이번 게임의 재현 가능한 지도 시드. */ seed=randomBytes(4).readUInt32LE(0);
             room.map=generateRoomMap(seed);
+            room.items=globalThis.ItemRules.spawn(room.map);
           } catch {return fail('MAP_GENERATION_FAILED','맵 생성에 실패했습니다. 다시 시작해 주세요.');}
           room.phase = 'started';
           [...room.players.values()].forEach(/** 입장 순서별 지정 타일 중심에 배치한다. */ (/** player: 배치할 참가자. */ player,/** index: 현재 참가자의 입장 순서. */ index)=>{
@@ -217,6 +220,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
         if (p.x !== previousX || p.y !== previousY) p.facing = Math.atan2(p.y - previousY, p.x - previousX);
       }
       if (now - (room.targetsAt ?? 0) >= 100) { updateNearestObjects(objects); room.targetsAt = now; }
+      room.itemChanges=globalThis.ItemRules.tick(room.items??new Map(),objects,now);
       const /** state: 현재 상태 스냅샷. */ state = snapshot(room,false);
       for (const /** p: 현재 처리하는 플레이어 또는 검증 개체. */ p of room.players.values()) send(p.ws, 'game.state', { room: state });
     }

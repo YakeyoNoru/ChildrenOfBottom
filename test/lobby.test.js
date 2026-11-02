@@ -177,7 +177,7 @@ test('world snapshots share player/NPC/enemy stats; stun/death and speed use ser
   const /** npc: 검증용 우호 NPC 개체. */ npc=createWorldObject({objectType:'npc',classificationCode:'NPC001',name:'주민',x:300,maxSkillResource:5,currentSkillResource:2});
   const /** enemy: 선택한 적대 개체 또는 해당 대상까지의 제곱 거리. */ enemy=createWorldObject({objectType:'enemy',classificationCode:'ENEMY001',name:'몬스터',x:400});
   room.objects.set(npc.id,npc);room.objects.set(enemy.id,enemy);
-  let /** state: 현재 상태 스냅샷. */ state;do{state=await b.next('game.state');}while(state.room.objects.length!==4);
+  let /** state: 현재 상태 스냅샷. */ state;do{state=await b.next('game.state');}while(state.room.objects.length!==4||!state.room.players.find(/** 대상 갱신이 끝난 본인 상태를 확인한다. */ (/** player: 수신 플레이어. */ player)=>player.id===b.id).status.nearestEnemyId);
   assert.equal(state.room.players.find(/** x: 검증 좌표·비교 항목 또는 위치 조회 함수. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ x=>x.id===b.id).status.moveSpeed,2);
   assert.equal(state.room.players.find(/** x: 검증 좌표·비교 항목 또는 위치 조회 함수. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ x=>x.id===b.id).status.classificationCode,b.id);
   assert.equal(state.room.objects.find(/** x: 검증 좌표·비교 항목 또는 위치 조회 함수. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ x=>x.id===npc.id).status.objectType,'npc');
@@ -299,4 +299,17 @@ test('lobby also expires and requests cannot reopen the expired room',/** 게임
  clock=660000;
  assert.equal((await guest.command('room.join',{name:'참가자',code},'error')).code,'ROOM_NOT_FOUND');
  assert.equal((await host.next('room.closed')).reason,'TIME_LIMIT');assert.equal(rooms.has(code),false);
+});
+
+
+test('room start spawns fragments and authoritative pickup awards competition points',/** 멀티플레이 전송에서 초기 아이템·획득 변경분·점수를 검증한다. */ async (/** t: 테스트 정리 문맥. */ t)=>{
+ const /** a: 첫 접속자; rooms: 서버 방 목록; code: 방 코드. */ {a,rooms,code}=await startedPair(t);
+ const /** room: 실제 게임 방; player: 서버 플레이어. */ room=rooms.get(code),player=room.players.get(a.id);
+ assert.ok(room.items.size>500);
+ const /** fragment: 획득시킬 한 조각. */ fragment=room.items.values().next().value;
+ room.items=new Map([[fragment.id,fragment]]);Object.assign(player,{x:fragment.x,y:fragment.y});
+ const /** before: 획득 전 경쟁포인트. */ before=player.status.competitionPoints;
+ let /** state: 점수 반영까지 기다릴 상태. */ state;
+ do{state=await a.next('game.state');}while(player.status.competitionPoints===before);
+ assert.equal(player.status.competitionPoints,before+10);assert.equal(room.items.size,0);assert.equal(state.room.items,undefined);
 });

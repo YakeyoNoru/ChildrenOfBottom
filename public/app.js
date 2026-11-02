@@ -54,7 +54,10 @@ const /** messages: 연결 종료 등에 사용할 안내 문구 모음. */ mess
     let /** m: 수신 메시지 또는 문자열 패턴 일치 결과. */ m; try { m = JSON.parse(data); } catch { return; }
     if (m.v !== 1) return;
     if (m.type === 'welcome') { playerId = m.playerId; $('connection').textContent = '● 실시간 서버 연결됨'; }
-    if (m.type === 'game.state') { if (room?.code === m.room.code) { room = {...m.room,map:m.room.map??room.map}; timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); updateSkillControls(); } return; }
+    if (m.type === 'game.state') { if (room?.code === m.room.code) { const /** items: 이전 틱의 아이템을 변경분과 합칠 ID 목록. */ items=new Map((room.items??[]).map(/** ID별 자료를 만든다. */ (/** item: 필드 아이템. */ item)=>[item.id,item]));
+      for(const /** item: 이번 틱 변경 아이템. */ item of m.room.itemChanges?.updates??[])items.set(item.id,item);
+      for(const /** id: 획득 완료 ID. */ id of m.room.itemChanges?.removed??[])items.delete(id);
+      room = {...m.room,map:m.room.map??room.map,items:m.room.items??[...items.values()]}; timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); updateSkillControls(); $('game-status').textContent=`${room.players.length}명 · 경쟁포인트 ${room.players.find(/** 본인 점수를 조회한다. */ (/** player: 수신 플레이어. */ player)=>player.id===playerId)?.status?.competitionPoints??0}`; } return; }
     if (m.type === 'room.state') { const /** entering: 새로운 방 상태로 진입했는지 여부. */ entering = !room || room.code !== m.room.code; room = m.room; timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); if (entering) syncTargetPriority(); notice(''); }
     if (m.type === 'room.closed' || m.type === 'room.left') { room = null; notice(m.type === 'room.closed' ? (m.message??messages.closed) : '방에서 나왔습니다.'); if(m.type==='room.closed') settle(); }
     if (m.type === 'error') notice(m.message);
@@ -236,6 +239,13 @@ const /** canvas: 월드 화면을 그리는 캔버스 요소. */ canvas = $('wo
   const /** ox: 카메라 중심을 맞추는 월드 가로 오프셋. */ ox = w/2-me.x, /** oy: 카메라 중심을 맞추는 월드 세로 오프셋. */ oy = h/2-me.y;
   if(room.map) globalThis.MapRenderer.draw(ctx,room.map,ox,oy,w,h);
   else {ctx.strokeStyle='#284035';ctx.lineWidth=1;ctx.strokeRect(ox-1500,oy-1500,3000,3000);}
+  for(const /** item: 충돌 없는 필드 아이템. */ item of room.items??[]) {
+    const /** target: 비행 중 조각의 표시 대상. */ target=displayObjects.find(/** 획득자를 찾는다. */ (/** object: 표시 개체. */ object)=>object.id===item.targetId);
+    const /** progress: 수신 후 비행 표시 진행률. */ progress=item.state==='flying'?Math.min(1,(Date.now()-item.startedAt)/200):0;
+    const /** x: 표시 가로 좌표; y: 표시 세로 좌표. */ x=item.x+(target?target.x-item.x:0)*progress+ox,y=item.y+(target?target.y-item.y:0)*progress+oy;
+    if(x<-5||x>w+5||y<-5||y>h+5)continue;
+    ctx.beginPath();ctx.arc(x,y,2.5,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();ctx.strokeStyle='#000';ctx.lineWidth=1;ctx.stroke();
+  }
   drawSkillEffects(ctx, room.skillEffects ?? [], ox, oy);
   displayObjects.forEach(/** 각 항목에 현재 단계의 상태 갱신 또는 표시 처리를 적용한다. */ (/** p: 현재 처리하는 플레이어 또는 검증 개체. */ p,/** i: 현재 반복 항목의 순번. */ i) => {
     const /** x: 가로 좌표·이동 입력 또는 반복 비교 항목. */ x = p.x+ox, /** y: 세로 좌표 또는 이동 입력. */ y = p.y+oy;
