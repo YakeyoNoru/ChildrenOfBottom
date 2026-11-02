@@ -81,6 +81,30 @@ export /** createStatus: 모든 개체가 공유하는 수치·기술 슬롯·�
   return status;
 }
 
+/** 경험치를 지급하고 남은 경험치로 가능한 모든 레벨업과 추가 능력치를 서버에서 반영한다. */
+export function gainExperience(/** status: 경험치 진행 필드를 가진 플레이어 스테이터스. */ status,/** amount: 이번에 획득한 0 이상 유한 경험치. */ amount) {
+  if(status.objectType!==ObjectType.PLAYER)throw new TypeError('Experience progression requires player status');
+  if(typeof amount!=='number'||!Number.isFinite(amount)||amount<0)throw new TypeError('Invalid experience amount');
+  if(!Number.isFinite(status.requiredExperience)||status.requiredExperience<=0||!Number.isFinite(status.currentExperience)||status.currentExperience<0)throw new TypeError('Invalid experience progress');
+  let /** experience: 아직 레벨업 비용으로 소비하지 않은 합산 경험치. */ experience=status.currentExperience+amount;
+  if(!Number.isFinite(experience))throw new TypeError('Experience overflow');
+  let /** level: 계산 중인 레벨. */ level=status.level;
+  let /** required: 계산 중인 다음 레벨 필요경험치. */ required=status.requiredExperience;
+  let /** levelsGained: 이번 지급으로 상승한 레벨 수. */ levelsGained=0;
+  while(experience>=required) {
+    experience-=required;
+    level+=1;
+    required+=level*20;
+    levelsGained+=1;
+  }
+  status.currentExperience=experience;
+  status.level=level;
+  status.requiredExperience=required;
+  status.bonusHealth+=levelsGained*10;
+  status.bonusAttack+=levelsGained*2;
+  return levelsGained;
+}
+
 /** 기본값은 유지하고 추가 수치를 최종 능력치에 합산한다. */
 export /** effectiveStats: 기본 수치에 추가 수치를 합산하고 음수를 방지한 최종 능력치를 계산한다. */ function effectiveStats(/** s: 현재 처리하는 공통 스테이터스. */ s) {
   return {

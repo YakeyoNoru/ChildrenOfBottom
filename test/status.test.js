@@ -1,6 +1,6 @@
 import { /** test: 테스트 시나리오와 비동기 정리 절차를 등록한다. */ test } from 'node:test';
 import /** assert: 실제 결과와 기대 조건을 비교해 테스트 실패를 검출한다. */ assert from 'node:assert/strict';
-import { /** createStatus: 모든 개체가 공유하는 수치·기술 슬롯·상태를 검증해 생성한다. */ createStatus, /** createWorldObject: 외부 모듈에서 제공하는 createWorldObject 기능. */ createWorldObject, /** effectiveStats: 기본 수치에 추가 수치를 합산하고 음수를 방지한 최종 능력치를 계산한다. */ effectiveStats, /** regenerate: 생존 개체의 체력과 스킬자원을 경과 시간만큼 회복한다. */ regenerate, /** normalizeVitals: 체력·자원을 최종 최대치 안으로 제한하고 사망 상태를 정규화한다. */ normalizeVitals, /** updateNearestObjects: 생존 개체의 최근접 개체와 설정 우선순위에 맞는 적 ID를 갱신한다. */ updateNearestObjects } from '../game/status.js';
+import { /** createStatus: 모든 개체가 공유하는 수치·기술 슬롯·상태를 검증해 생성한다. */ createStatus, gainExperience, /** createWorldObject: 외부 모듈에서 제공하는 createWorldObject 기능. */ createWorldObject, /** effectiveStats: 기본 수치에 추가 수치를 합산하고 음수를 방지한 최종 능력치를 계산한다. */ effectiveStats, /** regenerate: 생존 개체의 체력과 스킬자원을 경과 시간만큼 회복한다. */ regenerate, /** normalizeVitals: 체력·자원을 최종 최대치 안으로 제한하고 사망 상태를 정규화한다. */ normalizeVitals, /** updateNearestObjects: 생존 개체의 최근접 개체와 설정 우선순위에 맞는 적 ID를 갱신한다. */ updateNearestObjects } from '../game/status.js';
 
 const /** status: 개체 상태 또는 응답 상태. */ status = /** status: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ (/** objectType: 생성하거나 검사할 개체 분류. */ objectType = 'player', /** values: 기본 스테이터스를 재정의할 전달값. */ values = {}) => createStatus({objectType,classificationCode:'TEST',...values});
 test('all object kinds share defaults; skills belong only to players and arrays are independent',/** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ ()=>{
@@ -76,4 +76,18 @@ test('progression defaults and reward/effect lists are independent per object',/
  assert.throws(/** 잘못된 보상 목록을 생성한다. */ ()=>status('enemy',{rewards:{}}),TypeError);
  assert.throws(/** 음수 보상 경험치를 생성한다. */ ()=>status('enemy',{experience:-1}),TypeError);
  assert.equal(status('player',{bonusTracePoints:-2}).bonusTracePoints,-2);
+});
+
+
+test('experience awards carry remainder and apply per-level bonuses using the new level',/** 미달·정확한 경계·연속 레벨업의 경험치와 추가 능력치를 검증한다. */ ()=>{
+ const /** player: 레벨업 검증 플레이어. */ player=status('player',{bonusHealth:5,bonusAttack:3});
+ assert.equal(gainExperience(player,49),0);assert.equal(player.currentExperience,49);assert.equal(player.level,1);
+ assert.equal(gainExperience(player,1),1);assert.equal(player.level,2);assert.equal(player.currentExperience,0);assert.equal(player.requiredExperience,90);
+ assert.equal(player.bonusHealth,15);assert.equal(player.bonusAttack,5);assert.equal(player.currentHealth,10);
+ assert.equal(gainExperience(player,250),2);assert.equal(player.level,4);assert.equal(player.currentExperience,10);assert.equal(player.requiredExperience,230);
+ assert.equal(player.bonusHealth,35);assert.equal(player.bonusAttack,9);assert.equal(player.skillPoints,0);
+ assert.equal(effectiveStats(player).maxHealth,45);assert.equal(effectiveStats(player).attack,10);
+ const /** before: 잘못된 지급 요청 이전 상태 복사. */ before=structuredClone(player);
+ for(const /** amount: 허용되지 않는 획득 경험치. */ amount of [-1,NaN,Infinity,'20'])assert.throws(/** 잘못된 지급을 실행한다. */ ()=>gainExperience(player,amount),TypeError);
+ assert.deepEqual(player,before);assert.throws(/** 적에게 플레이어 경험치를 지급한다. */ ()=>gainExperience(status('enemy'),20),TypeError);
 });
