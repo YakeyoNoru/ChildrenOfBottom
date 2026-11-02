@@ -62,3 +62,18 @@ test('every object kind has zero slot cooldowns and elapsed time clamps remainin
   regenerate(value,5);assert.equal(value.skillACooldownRemaining,0);assert.equal(value.skillBCooldownRemaining,0);
  }
 });
+
+
+test('progression defaults and reward/effect lists are independent per object',/** 플레이어·적 전용 기본값과 중첩 목록의 독립성을 검증한다. */ ()=>{
+ const /** player: 기본 플레이어. */ player=status('player');
+ for(const /** field: 검사할 수치 이름; value: 기대 기본값. */ [field,value] of Object.entries({level:1,requiredExperience:50,currentExperience:0,skillPoints:0,competitionPoints:0,tracePoints:20,bonusTracePoints:0,trackingPoints:20,bonusTrackingPoints:0}))assert.equal(player[field],value);
+ const /** source: 중첩된 보상·상태이상 검증 자료. */ source=[{code:'TEST',data:{remainingSeconds:4}}];
+ const /** enemy: 자료를 지정한 적; other: 기본 적. */ enemy=status('enemy',{rewards:source,statusEffects:source}),other=status('enemy');
+ assert.equal(enemy.level,1);assert.equal(enemy.experience,20);assert.deepEqual(other.rewards,[]);assert.deepEqual(other.statusEffects,[]);
+ enemy.rewards[0].data.remainingSeconds=1;enemy.statusEffects[0].data.remainingSeconds=2;
+ assert.equal(source[0].data.remainingSeconds,4);assert.equal('requiredExperience' in enemy,false);assert.equal('experience' in player,false);assert.deepEqual(player.statusEffects,[]);
+ for(const /** values: 잘못된 플레이어 입력. */ values of [{requiredExperience:-1},{skillPoints:NaN},{trackingPoints:Infinity},{statusEffects:{}}])assert.throws(/** 잘못된 생성 요청을 실행한다. */ ()=>status('player',values),TypeError);
+ assert.throws(/** 잘못된 보상 목록을 생성한다. */ ()=>status('enemy',{rewards:{}}),TypeError);
+ assert.throws(/** 음수 보상 경험치를 생성한다. */ ()=>status('enemy',{experience:-1}),TypeError);
+ assert.equal(status('player',{bonusTracePoints:-2}).bonusTracePoints,-2);
+});

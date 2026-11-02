@@ -73,3 +73,24 @@ room.objects.set(npc.id, npc);
 ## 기술 잔여 재사용 대기
 
 모든 개체가 `skillACooldownRemaining`, `skillBCooldownRemaining`, `skillCCooldownRemaining`을 공통으로 보유합니다. 초 단위, 기본값 0이며 시전 성공 시 설정하고 경과 시간에 따라 0까지 감소합니다. BAS0001은 0.5초, BAS0002는 2초입니다. 서버가 관리하며 클라이언트 전달값으로 수정할 수 없습니다.
+
+
+## 진행·탐색·보상 추가 필드
+
+레벨 `level`은 기존 공통 필드를 그대로 사용하며 기본 1이다.
+
+| 대상 | 항목 | 필드 | 기본값 |
+|---|---|---|---|
+| 플레이어 | 필요경험치 | `requiredExperience` | 50 |
+| 플레이어 | 현재경험치 | `currentExperience` | 0 |
+| 플레이어 | 스킬포인트 | `skillPoints` | 0 |
+| 플레이어 | 경쟁포인트 | `competitionPoints` | 0 |
+| 플레이어 | 흔적포인트 | `tracePoints` | 20 |
+| 플레이어 | 추가흔적포인트 | `bonusTracePoints` | 0 |
+| 플레이어 | 추적포인트 | `trackingPoints` | 20 |
+| 플레이어 | 추가추적포인트 | `bonusTrackingPoints` | 0 |
+| 적 | 보상 경험치 | `experience` | 20 |
+| 적 | 보상리스트 | `rewards` | 빈 목록 `[]` |
+| 공통 | 상태이상리스트 | `statusEffects` | 빈 목록 `[]` |
+
+목록은 중첩 자료까지 개체별로 독립 복사한다. 상태이상 목록은 NPC에도 공통 제공한다. 기본 수치는 유한한 0 이상 값이며 추가 수치는 음수도 허용한다. 기존 서버 스냅샷의 `status`에 함께 전송한다. 경험치 지급·레벨업·포인트 소비·드랍 및 버프/디버프 잔여시간 계산은 이번 변경 범위에 포함하지 않는다. 목록 내부의 상세 형식은 해당 기능을 구현할 때 정의한다.

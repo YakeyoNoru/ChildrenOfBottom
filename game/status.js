@@ -18,6 +18,13 @@ const /** defaults: 공통 스테이터스의 기본 수치. */ defaults = Objec
   /** bountyPoints: 해당 개체의 보상 포인트. 실제 보상 지급 규칙은 미구현. */ bountyPoints: 1,
 });
 
+/** 생성 요청의 목록을 깊게 복사하여 다른 개체나 원본 자료와 공유하지 않게 한다. */
+function copyStatusList(/** value: 복사할 선택적 목록. */ value,/** field: 검증 오류에 표시할 필드 이름. */ field) {
+  if(value===undefined)return [];
+  if(!Array.isArray(value))throw new TypeError(`Invalid ${field}`);
+  return structuredClone(value);
+}
+
 /** 플레이어·NPC·적이 공유하는 서버 소유 데이터. 불리언 false는 N을 뜻한다. */
 export /** createStatus: 모든 개체가 공유하는 수치·기술 슬롯·상태를 검증해 생성한다. */ function createStatus(/** objectType: 생성하거나 검사할 개체 분류; classificationCode: 개체 종류 또는 계정의 분류 코드; instanceId: 월드 개체의 고유 인스턴스 식별자; values: 기본 스테이터스를 재정의할 전달값. */ { objectType, classificationCode, instanceId = randomUUID(), ...values }) {
   if (!Object.values(ObjectType).includes(objectType)) throw new TypeError('Invalid objectType');
@@ -46,6 +53,29 @@ export /** createStatus: 모든 개체가 공유하는 수치·기술 슬롯·�
     status.skillDeckCode = values.skillDeckCode ?? '';
     status.availableSkills = [...(values.availableSkills ?? [])];
     if (typeof status.skillDeckCode !== 'string' || !Array.isArray(values.availableSkills ?? []) || !status.availableSkills.every(/** code: 개체·기술·방 또는 오류를 식별하는 코드. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ code => typeof code === 'string')) throw new TypeError('Invalid player skills');
+  }
+  // 상태이상은 향후 잔여시간·중첩 계산에 사용할 개체별 독립 목록이다.
+  /** status.statusEffects: 버프·디버프 상태 자료 목록. 현재는 저장만 하며 효과 계산은 별도 구현한다. */ status.statusEffects=copyStatusList(values.statusEffects,'statusEffects');
+  if(objectType===ObjectType.PLAYER) {
+    for(const /** field: 플레이어 전용 진행·탐색 수치 이름; fallback: 해당 수치의 기본값. */ [field,fallback] of Object.entries({
+      /** requiredExperience: 다음 레벨에 필요한 경험치. */ requiredExperience:50,
+      /** currentExperience: 현재 누적 경험치. */ currentExperience:0,
+      /** skillPoints: 사용 가능한 스킬 포인트. */ skillPoints:0,
+      /** competitionPoints: 경쟁 포인트. */ competitionPoints:0,
+      /** tracePoints: 기본 흔적 포인트. */ tracePoints:20,
+      /** bonusTracePoints: 기본 흔적에 합산할 추가 포인트. */ bonusTracePoints:0,
+      /** trackingPoints: 기본 추적 포인트. */ trackingPoints:20,
+      /** bonusTrackingPoints: 기본 추적에 합산할 추가 포인트. */ bonusTrackingPoints:0,
+    })) {
+      const /** value: 서버 생성 시 지정한 수치 또는 기본값. */ value=values[field]??fallback;
+      if(typeof value!=='number'||!Number.isFinite(value)||(!field.startsWith('bonus')&&value<0))throw new TypeError(`Invalid ${field}`);
+      status[field]=value;
+    }
+  }
+  if(objectType===ObjectType.ENEMY) {
+    /** status.experience: 처치 보상용 경험치. 지급 로직은 별도 구현한다. */ status.experience=values.experience??20;
+    if(typeof status.experience!=='number'||!Number.isFinite(status.experience)||status.experience<0)throw new TypeError('Invalid experience');
+    /** status.rewards: 아이템 등 보상 자료 목록. 지급 로직은 별도 구현한다. */ status.rewards=copyStatusList(values.rewards,'rewards');
   }
   normalizeVitals(status);
   return status;
