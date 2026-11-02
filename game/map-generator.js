@@ -8,5 +8,5 @@ const generator=globalThis.PitGeneratorFactory(layouts);
 export function generateRoomMap(/** seed: 서버가 선택한 32비트 지도 시드. */ seed) {
   const /** map: 원본 생성기가 검증을 마친 지도. */ map=generator.generate(seed);
   const /** tileRadius: 한 변 600인 지형 사이의 수직 간격을 30으로 만드는 격자 반지름. */ tileRadius=600+30/Math.sqrt(3);
-  return {...map,id:map.version+':'+map.seed,tileRadius,landScale:600/tileRadius,bridgeWidth:500};
+  return {...map,id:map.version+':'+map.seed,tileRadius,landScale:600/tileRadius,bridgeWidth:500,heightBridgeWidth:100};
 }

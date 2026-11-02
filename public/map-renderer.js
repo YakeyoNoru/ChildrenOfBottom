@@ -9,7 +9,7 @@ globalThis.MapRenderer=Object.freeze({
     context.lineCap='butt';
     for(const /** bridge: 실제 존재하는 다리. */ bridge of geometry.bridges) {
       context.beginPath();context.moveTo(bridge.start.x+ox,bridge.start.y+oy);context.lineTo(bridge.end.x+ox,bridge.end.y+oy);
-      context.strokeStyle='#667e76';context.lineWidth=map.bridgeWidth;context.stroke();
+      context.strokeStyle='#667e76';context.lineWidth=bridge.width;context.stroke();
     }
     map.tiles.forEach(/** 지형과 번호를 표시한다. */ (/** tile: 표시할 타일. */ tile,/** index: 중심 좌표 인덱스. */ index)=>{
       const /** center: 화면상의 지형 중심. */ center={x:geometry.centers[index].x+ox,y:geometry.centers[index].y+oy};

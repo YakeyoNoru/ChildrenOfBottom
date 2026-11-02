@@ -17,7 +17,8 @@ globalThis.PitMapRules=Object.freeze({
       const /** a: 첫 타일 인덱스; b: 둘째 타일 인덱스. */ [a,b]=ends;
       const /** start: 첫 중심; end: 둘째 중심. */ [start,end]=[centers[a],centers[b]];
       const /** length: 다리 중심 간 거리. */ length=Math.hypot(end.x-start.x,end.y-start.y);
-      return {a,b,start,end,length,ux:(end.x-start.x)/length,uy:(end.y-start.y)/length,
+      return {a,b,start,end,length,
+        /** width: 연결 지형의 높이가 다르면 좁은 폭을 사용하며 화면과 이동 판정에서 공유한다. */ width:map.tiles[a].height===map.tiles[b].height?(map.bridgeWidth??48):(map.heightBridgeWidth??100),ux:(end.x-start.x)/length,uy:(end.y-start.y)/length,
         oneWay:map.tiles[a].height===2&&map.tiles[b].height===3?1:map.tiles[a].height===3&&map.tiles[b].height===2?-1:0};
     });
     const /** geometry: 이동 판정과 렌더링이 재사용할 변환 자료. */ geometry={centers,bridges};geometryCache.set(map,geometry);return geometry;
@@ -37,7 +38,7 @@ globalThis.PitMapRules=Object.freeze({
     for(const /** bridge: 검사할 실제 다리. */ bridge of geometry.bridges) {
       const /** along: 다리 시작부터 전방 거리. */ along=(x-bridge.start.x)*bridge.ux+(y-bridge.start.y)*bridge.uy;
       const /** across: 다리 중심선에서 수직 거리. */ across=Math.abs((x-bridge.start.x)*bridge.uy-(y-bridge.start.y)*bridge.ux);
-      if(along>=0&&along<=bridge.length&&across<=(map.bridgeWidth??48)/2-radius+1e-8)return true;
+      if(along>=0&&along<=bridge.length&&across<=bridge.width/2-radius+1e-8)return true;
     }
     return false;
   },
@@ -50,7 +51,7 @@ globalThis.PitMapRules=Object.freeze({
       if(before>=0&&after<0) {
         const /** fraction: 선분의 중앙 경계 교차 비율. */ fraction=before/(before-after);
         const /** cross: 다리 중앙에서 교차점의 수직 거리. */ cross=Math.abs((from.x+(to.x-from.x)*fraction-bridge.start.x)*bridge.uy-(from.y+(to.y-from.y)*fraction-bridge.start.y)*bridge.ux);
-        if(cross<=(map.bridgeWidth??48)/2+12)return false;
+        if(cross<=bridge.width/2+12)return false;
       }
     }
     return true;

@@ -68,3 +68,16 @@ test('wide bridges leave a 30-unit terrain gap without opening unlinked edges',/
  assert.equal(PitMapRules.walkable(connected,b.x/2-uy*237,b.y/2+ux*237,12),true);
  assert.equal(PitMapRules.walkable(connected,b.x/2-uy*251,b.y/2+ux*251,12),false);
 });
+
+
+test('different-height bridges use 100 width for rendering geometry and collision',/** 높이 차이에 따른 폭과 실제 통행 한계를 검증한다. */ ()=>{
+ const /** map: 실제 게임 크기의 높이가 다른 두 지형. */ map={...generateRoomMap(29),tiles:[{id:1,q:0,r:0,height:2},{id:2,q:1,r:0,height:3}],bridges:[[0,1]]};
+ const /** bridge: 화면과 충돌 판정이 공유하는 다리 자료. */ bridge=PitMapRules.geometry(map).bridges[0];
+ assert.equal(bridge.width,100);
+ const /** x: 다리 중점 가로; y: 다리 중점 세로. */ [x,y]=[(bridge.start.x+bridge.end.x)/2,(bridge.start.y+bridge.end.y)/2];
+ assert.equal(PitMapRules.walkable(map,x-bridge.uy*37,y+bridge.ux*37,12),true);
+ assert.equal(PitMapRules.walkable(map,x-bridge.uy*39,y+bridge.ux*39,12),false);
+ const /** same: 높이가 같은 다리의 별도 지도. */ same={...map,tiles:map.tiles.map(/** 높이를 통일한다. */ (/** tile: 복사할 지형. */ tile)=>({...tile,height:2}))};
+ assert.equal(PitMapRules.geometry(same).bridges[0].width,500);
+ assert.equal(PitMapRules.walkable(same,x-bridge.uy*200,y+bridge.ux*200,12),true);
+});
