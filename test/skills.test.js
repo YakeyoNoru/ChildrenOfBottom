@@ -19,3 +19,14 @@ test('no target uses last facing; death normalizes and T1 N does not retain debu
  const /** p: 검증 기준이 되는 개체 또는 표시 위치. */ p=obj('p','player',0,0),/** e: 검증할 이벤트·요소 모음·적 개체. */ e=obj('e','enemy',30,0,{currentHealth:1});p.facing=0;
  const /** effect: 시전 위치·피해 결과·표시 만료 시각을 담은 기술 효과. */ effect=castSkill(p,[p,e],'A',1000,{BAS0001:{...skills.BAS0001,T1:'N'}});assert.equal(e.status.state,'dead');assert.equal(effect.expiresAt,1150);
 });
+
+
+test('basic attack damages another player or monster while sparing self and NPC',/** PvP·몬스터 간 피해와 자기 자신·NPC 보호를 검증한다. */ ()=>{
+ for(const /** kind: 시전자 종류. */ kind of ['player','enemy']){
+  const /** caster: 공격 유닛; player: 다른 플레이어; monster: 다른 몬스터; npc: 피해 제외 NPC. */ caster=obj('source',kind,0,0),player=obj('player','player',36,0),monster=obj('monster','enemy',50,0),npc=obj('npc','npc',20,0);
+  caster.facing=0;caster.status.nearestEnemyId=player.id;
+  const /** effect: 실제 기본공격 결과. */ effect=castSkill(caster,[caster,player,monster,npc],'A',1000);
+  assert.equal(player.status.currentHealth,4);assert.equal(monster.status.currentHealth,4);assert.equal(npc.status.currentHealth,10);assert.equal(caster.status.currentHealth,10);
+  assert.deepEqual(effect.hits,['player','monster']);
+ }
+});

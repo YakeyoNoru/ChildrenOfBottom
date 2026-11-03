@@ -1,6 +1,6 @@
 import { /** test: 테스트 시나리오와 비동기 정리 절차를 등록한다. */ test } from 'node:test';
 import /** assert: 실제 결과와 기대 조건을 비교해 테스트 실패를 검출한다. */ assert from 'node:assert/strict';
-import { /** createStatus: 모든 개체가 공유하는 수치·기술 슬롯·상태를 검증해 생성한다. */ createStatus, gainExperience, /** createWorldObject: 외부 모듈에서 제공하는 createWorldObject 기능. */ createWorldObject, /** effectiveStats: 기본 수치에 추가 수치를 합산하고 음수를 방지한 최종 능력치를 계산한다. */ effectiveStats, /** regenerate: 생존 개체의 체력과 스킬자원을 경과 시간만큼 회복한다. */ regenerate, /** normalizeVitals: 체력·자원을 최종 최대치 안으로 제한하고 사망 상태를 정규화한다. */ normalizeVitals, /** updateNearestObjects: 생존 개체의 최근접 개체와 설정 우선순위에 맞는 적 ID를 갱신한다. */ updateNearestObjects } from '../game/status.js';
+import { /** createStatus: 모든 개체가 공유하는 수치·기술 슬롯·상태를 검증해 생성한다. */ createStatus, gainExperience, areEnemies, /** createWorldObject: 외부 모듈에서 제공하는 createWorldObject 기능. */ createWorldObject, /** effectiveStats: 기본 수치에 추가 수치를 합산하고 음수를 방지한 최종 능력치를 계산한다. */ effectiveStats, /** regenerate: 생존 개체의 체력과 스킬자원을 경과 시간만큼 회복한다. */ regenerate, /** normalizeVitals: 체력·자원을 최종 최대치 안으로 제한하고 사망 상태를 정규화한다. */ normalizeVitals, /** updateNearestObjects: 생존 개체의 최근접 개체와 설정 우선순위에 맞는 적 ID를 갱신한다. */ updateNearestObjects } from '../game/status.js';
 
 const /** status: 개체 상태 또는 응답 상태. */ status = /** status: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ (/** objectType: 생성하거나 검사할 개체 분류. */ objectType = 'player', /** values: 기본 스테이터스를 재정의할 전달값. */ values = {}) => createStatus({objectType,classificationCode:'TEST',...values});
 test('all object kinds share defaults; skills belong only to players and arrays are independent',/** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ ()=>{
@@ -34,7 +34,7 @@ test('nearest references exclude self/dead, distinguish enemy, and clear when a 
   dead.status.currentHealth=0;normalizeVitals(dead.status);
   updateNearestObjects([p,npc,enemy,dead]);
   assert.equal(p.status.nearestObjectId,npc.id);assert.equal(p.status.nearestEnemyId,enemy.id);
-  assert.equal(enemy.status.nearestEnemyId,npc.id);assert.equal(dead.status.nearestEnemyId,null);
+  assert.equal(enemy.status.nearestEnemyId,p.id);assert.equal(dead.status.nearestEnemyId,null);
   updateNearestObjects([p]);assert.equal(p.status.nearestObjectId,null);assert.equal(p.status.nearestEnemyId,null);
 });
 test('invalid statuses are rejected rather than leaking NaN, invalid levels or string flags',/** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ ()=>{
@@ -104,4 +104,14 @@ test('level-up rewards apply each intermediate level and preserve resource and h
  gainExperience(capped,90);assert.equal(capped.level,3);assert.equal(capped.currentHealth,30);assert.equal(capped.maxSkillResource,1);
  const /** unchanged: 레벨업 없는 지급 전 상태. */ unchanged=structuredClone(capped);
  gainExperience(capped,1);assert.equal(capped.currentHealth,unchanged.currentHealth);assert.equal(capped.skillPoints,unchanged.skillPoints);assert.equal(capped.bonusDefense,unchanged.bonusDefense);
+});
+
+
+test('unit hostility excludes self and NPC targets but includes other players and monsters',/** 유닛 종류별 적대 관계와 자기 자신 제외를 검사한다. */ ()=>{
+ for(const /** source: 공격 유닛 종류. */ source of ['player','enemy','npc']){
+  const /** attacker: 시전자 상태. */ attacker=status(source);
+  assert.equal(areEnemies(attacker,attacker),false);
+  assert.equal(areEnemies(attacker,status(source,{instanceId:attacker.instanceId})),false);
+  for(const /** target: 대상 유닛 종류. */ target of ['player','enemy','npc'])assert.equal(areEnemies(attacker,status(target)),target!=='npc');
+ }
 });

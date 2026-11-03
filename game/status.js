@@ -142,9 +142,10 @@ export /** regenerate: 생존 개체의 체력과 스킬자원을 경과 시간�
   s.currentSkillResource = Math.min(effective.maxSkillResource, s.currentSkillResource + effective.skillResourceRegen * seconds);
 }
 
-/** 기본 적대 관계는 적 대 플레이어·NPC이며 다른 플레이어는 PvP 대상이 아니다. */
-export /** areEnemies: 적과 플레이어·NPC 사이의 기본 적대 관계를 판정한다. */ function areEnemies(/** a: 적대 관계를 검사할 기준 스테이터스. */ a, /** b: 적대 관계를 검사할 비교 스테이터스. */ b) {
-  return (a.objectType === ObjectType.ENEMY) !== (b.objectType === ObjectType.ENEMY);
+/** 플레이어·몬스터(적)·NPC를 유닛 오브젝트라 부르며 자신과 NPC 대상은 공격에서 제외한다. */
+export /** areEnemies: 자신·NPC를 제외한 다른 플레이어와 몬스터 유닛을 적대로 판정한다. */ function areEnemies(/** a: 적대 관계를 검사할 기준 스테이터스. */ a, /** b: 적대 관계를 검사할 비교 스테이터스. */ b) {
+  if(a===b||(a.instanceId&&a.instanceId===b.instanceId))return false;
+  return b.objectType===ObjectType.PLAYER||b.objectType===ObjectType.ENEMY;
 }
 export const /** TargetPriority: 허용하는 공격 우선대상 선택 방식. */ TargetPriority = Object.freeze(['nearest', 'lowestHealth', 'lowestHealthRatio']);
 export /** updateNearestObjects: 생존 개체의 최근접 개체와 설정 우선순위에 맞는 적 ID를 갱신한다. */ function updateNearestObjects(/** objects: 처리할 월드 개체 목록. */ objects, /** hostile: 두 개체의 적대 여부를 판단하는 함수. */ hostile = areEnemies) {

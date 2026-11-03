@@ -1,6 +1,6 @@
 import { /** intersectsSkill: 공통 기술 영역과 대상의 교차를 검사한다. */ intersectsSkill, /** resolveSkillContacts: 접촉부터 피해 결과까지 공통 처리한다. */ resolveSkillContacts } from './combat.js';
 export { resolveSkillContacts, skillSnapshot } from './combat.js';
-import { /** areEnemies: 적과 플레이어·NPC 사이의 기본 적대 관계를 판정한다. */ areEnemies, /** LifeState: 생존·사망 상태 상수. */ LifeState, /** normalizeVitals: 체력·자원을 최종 최대치 안으로 제한하고 사망 상태를 정규화한다. */ normalizeVitals } from './status.js';
+import { /** areEnemies: 자신·NPC를 제외한 유닛 대상의 적대 관계를 판정한다. */ areEnemies, /** LifeState: 생존·사망 상태 상수. */ LifeState, /** normalizeVitals: 체력·자원을 최종 최대치 안으로 제한하고 사망 상태를 정규화한다. */ normalizeVitals } from './status.js';
 
 // 기술 정의는 서버가 관리한다. T1은 테스트 범위 표시의 유지 시간만 제어한다.
 export const /** skills: 기술 코드별 공통 기술 정의. */ skills = Object.freeze({
@@ -69,7 +69,7 @@ export function createSkillInstance(
     /** id: 시전자와 증가 번호로 구성한 시전 고유 ID. */ id:caster.id+':'+caster.skillCastSequence,
     /** casterId: 공격자의 개체 ID. */ casterId:caster.id,
     /** code: 원본 기술 코드. */ code:skill.code,
-    /** sourceStatus: 시전 순간의 소속을 보존해 공격자 퇴장 후에도 적대를 판정한다. */ sourceStatus:{objectType:caster.status.objectType},
+    /** sourceStatus: 시전 순간의 소속을 보존해 공격자 퇴장 후에도 적대를 판정한다. */ sourceStatus:{objectType:caster.status.objectType,instanceId:caster.status.instanceId},
     /** attack: 시전 순간의 기본공격력. */ attack:caster.status.attack,
     /** bonusAttack: 시전 순간의 추가공격력. */ bonusAttack:caster.status.bonusAttack,
     /** bonusDamage: 기술 고유 추가 피해. */ bonusDamage:skill.bonusDamage ?? 0,

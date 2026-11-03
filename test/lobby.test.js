@@ -174,8 +174,8 @@ test('input is rejected before game start', /** 이 테스트 시나리오의 �
 test('world snapshots share player/NPC/enemy stats; stun/death and speed use server status', /** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ async /** t: 테스트 정리·검증 문맥 또는 프레임 시각. */ t => {
   const /** createWorldObject: 공통 스테이터스와 위치를 가진 NPC·적·검증용 플레이어 개체를 만든다.. */ {createWorldObject}=await import('../game/status.js');
   const /** a: 첫 번째 검증용 값·개체·접속 결과; b: 두 번째 검증용 값·개체·접속 결과; rooms: 접속코드별 방 상태를 보관하는 맵; code: 개체·기술·방 또는 오류를 식별하는 코드. */ {a,b,rooms,code}=await startedPair(t),/** room: 현재 처리하는 방의 상태. */ room=rooms.get(code),/** p: 검증 기준이 되는 개체 또는 표시 위치. */ p=room.players.get(b.id);
-  const /** npc: 검증용 우호 NPC 개체. */ npc=createWorldObject({objectType:'npc',classificationCode:'NPC001',name:'주민',x:300,maxSkillResource:5,currentSkillResource:2});
-  const /** enemy: 선택한 적대 개체 또는 해당 대상까지의 제곱 거리. */ enemy=createWorldObject({objectType:'enemy',classificationCode:'ENEMY001',name:'몬스터',x:400});
+  const /** npc: 검증용 우호 NPC 개체. */ npc=createWorldObject({objectType:'npc',classificationCode:'NPC001',name:'주민',x:p.x+20,y:p.y,maxSkillResource:5,currentSkillResource:2});
+  const /** enemy: 선택한 적대 개체 또는 해당 대상까지의 제곱 거리. */ enemy=createWorldObject({objectType:'enemy',classificationCode:'ENEMY001',name:'몬스터',x:p.x+50,y:p.y});
   room.objects.set(npc.id,npc);room.objects.set(enemy.id,enemy);
   let /** state: 현재 상태 스냅샷. */ state;do{state=await b.next('game.state');}while(state.room.objects.length!==4||!state.room.players.find(/** 대상 갱신이 끝난 본인 상태를 확인한다. */ (/** player: 수신 플레이어. */ player)=>player.id===b.id).status.nearestEnemyId);
   assert.equal(state.room.players.find(/** x: 검증 좌표·비교 항목 또는 위치 조회 함수. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ x=>x.id===b.id).status.moveSpeed,2);
@@ -219,7 +219,7 @@ test('per-player targeting options are validated and propagated on the 100 ms ti
   a.ws.send(JSON.stringify({v:1,type:'game.options',targetPriority:'lowestHealth'}));await nextTarget('low');
   assert.equal(room.players.get(b.id).targetPriority,'nearest');
   assert.equal((await a.command('game.options',{targetPriority:'bad'},'error')).code,'INVALID_OPTIONS');
-  room.objects.delete('low');await nextTarget('near');room.objects.clear();await nextTarget(null);
+  room.objects.delete('low');await nextTarget('near');room.objects.clear();await nextTarget(b.id);
 });
 
 test('game.cast resolves server slot and selected target without trusting supplied damage or caster',/** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ async /** t: 테스트 정리·검증 문맥 또는 프레임 시각. */ t=>{
@@ -369,4 +369,16 @@ test('server poison starts three minutes after game start rather than room creat
  clock=239999;do{await host.next('game.state');}while(room.poisonPulse<59);assert.equal(player.status.currentHealth,10);
  clock=240000;do{await host.next('game.state');}while(room.poisonPulse<60);assert.equal(player.status.currentHealth,7);
  clock=243000;do{await host.next('game.state');}while(room.poisonPulse<61);assert.equal(player.status.currentHealth,4);
+});
+
+test('multiplayer PvP targets and damages the other player without hurting NPCs',/** 서버에서 플레이어 자동 타겟·피해 동기화·NPC 보호를 검증한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
+ const /** a: 공격자 연결; b: 피격자 연결; rooms: 방 목록; code: 방 코드. */ {a,b,rooms,code}=await startedPair(t);
+ const /** room: 게임 방; attacker: 공격자; target: 피격자. */ room=rooms.get(code),attacker=room.players.get(a.id),target=room.players.get(b.id);
+ target.x=attacker.x+40;target.y=attacker.y;attacker.status.healthRegen=0;target.status.healthRegen=0;
+ const /** createWorldObject: 공통 유닛 생성기. */ {createWorldObject}=await import('../game/status.js');
+ const /** npc: 공격 범위 안 보호 대상. */ npc=createWorldObject({objectType:'npc',classificationCode:'NPC',x:attacker.x+20,y:attacker.y});room.objects.set(npc.id,npc);
+ a.ws.send(JSON.stringify({v:1,type:'game.cast',slot:'A'}));
+ do{await b.next('game.state');}while(!room.skillEffects.length);
+ assert.equal(attacker.status.nearestEnemyId,target.id);assert.equal(target.status.currentHealth,4);assert.equal(npc.status.currentHealth,10);assert.equal(attacker.status.currentHealth,10);
+ assert.deepEqual(room.skillEffects[0].hits,[target.id]);
 });
