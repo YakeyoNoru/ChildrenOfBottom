@@ -1,5 +1,6 @@
 const /** $: HTML 요소 조회 보조 함수. */ $ = /** id: 대상 개체 또는 요소의 식별자. */ /** $: 식별자로 HTML 요소를 조회한다. */ id => document.getElementById(id);
 let /** socket: 브라우저의 현재 게임 서버 연결. */ socket, /** playerId: 서버에서 발급받은 본인 개체 식별자. */ playerId, /** room: 현재 처리하는 방의 상태. */ room = null, /** reconnectTimer: 연결 재시도 예약 타이머. */ reconnectTimer, /** pending: 응답을 기다리는 로비 요청 식별자. */ pending = null, /** timeout: 요청 응답 제한 시간 타이머. */ timeout;
+const /** miniMap: 본인 경로를 누적 공개하는 우측 상단 지도. */ miniMap=new MiniMap($('minimap'));
 const /** motionView: 서버 좌표와 분리한 표시용 이동 보간 상태. */ motionView = new MotionView();
 /** timerReceivedAt: 마지막 방 시간 스냅샷을 받은 로컬 시각. */
 let timerReceivedAt=0;
@@ -64,14 +65,14 @@ const /** messages: 연결 종료 등에 사용할 안내 문구 모음. */ mess
       for(const /** item: 이번 틱 변경 아이템. */ item of m.room.itemChanges?.updates??[])items.set(item.id,item);
       for(const /** id: 획득 완료 ID. */ id of m.room.itemChanges?.removed??[])items.delete(id);
       room = {...m.room,map:m.room.map??room.map,items:m.room.items??[...items.values()]}; timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); updateSkillControls(); $('game-status').textContent=`${room.players.length}명 · 경쟁포인트 ${room.players.find(/** 본인 점수를 조회한다. */ (/** player: 수신 플레이어. */ player)=>player.id===playerId)?.status?.competitionPoints??0}`; } return; }
-    if (m.type === 'room.state') { const /** entering: 새로운 방 상태로 진입했는지 여부. */ entering = !room || room.code !== m.room.code; room = m.room; itemView.receive(room,Date.now()); timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); if (entering) syncTargetPriority(); notice(''); }
-    if (m.type === 'room.closed' || m.type === 'room.left') { room = null; itemView.clear(); notice(m.type === 'room.closed' ? (m.message??messages.closed) : '방에서 나왔습니다.'); if(m.type==='room.closed') settle(); }
+    if (m.type === 'room.state') { const /** entering: 새로운 방 상태로 진입했는지 여부. */ entering = !room || room.code !== m.room.code; room = m.room; itemView.receive(room,Date.now()); timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); if (entering) {miniMap.clear();syncTargetPriority();} notice(''); }
+    if (m.type === 'room.closed' || m.type === 'room.left') { room = null; miniMap.clear(); itemView.clear(); notice(m.type === 'room.closed' ? (m.message??messages.closed) : '방에서 나왔습니다.'); if(m.type==='room.closed') settle(); }
     if (m.type === 'error') notice(m.message);
     if ((m.type === 'ack' || m.type === 'error') && m.requestId === pending) settle();
     render();
   };
   ws.onclose = /** event: 현재 처리하는 사용자 입력 또는 연결 이벤트. */ /** onclose: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ event => {
-    room = null; itemView.clear(); publicRooms=[]; playerId = null; settle(); notice(messages.offline); $('connection').textContent = '○ 연결 끊김 · 재시도 중';
+    room = null; miniMap.clear(); itemView.clear(); publicRooms=[]; playerId = null; settle(); notice(messages.offline); $('connection').textContent = '○ 연결 끊김 · 재시도 중';
     clearTimeout(reconnectTimer);
     if (CLIENT_MODE === 'app' && event?.reason === 'App login required') { accountProfile = null; initializeClient(); return; }
     reconnectTimer = setTimeout(connect, 2000);
@@ -268,6 +269,7 @@ const /** canvas: 월드 화면을 그리는 캔버스 요소. */ canvas = $('wo
     if(x<-5||x>w+5||y<-5||y>h+5)continue;
     ctx.beginPath();ctx.arc(x,y,2.5,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();ctx.strokeStyle='#000';ctx.lineWidth=1;ctx.stroke();
   }
+  miniMap.draw(room.map,room.code,me);
   drawSkillEffects(ctx, room.skillEffects ?? [], ox, oy);
   displayObjects.forEach(/** 각 항목에 현재 단계의 상태 갱신 또는 표시 처리를 적용한다. */ (/** p: 현재 처리하는 플레이어 또는 검증 개체. */ p,/** i: 현재 반복 항목의 순번. */ i) => {
     const /** x: 가로 좌표·이동 입력 또는 반복 비교 항목. */ x = p.x+ox, /** y: 세로 좌표 또는 이동 입력. */ y = p.y+oy;
