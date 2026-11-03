@@ -134,6 +134,10 @@ A/B/C의 재사용 대기는 시전자별 `skillCooldowns[slot]`에 다음 사�
 - 기존 높이 2→3 다리는 단방향이다. 일반 이동·구르기·미처리 입력 재실행은 공통 `PitMapRules`를 사용한다. 빠른 이동은 잘게 나누어 검사하므로 빈 공간을 건너뛰지 않는다.
 - 지도 좌표와 판정은 2D이며 현재 높이는 색과 방향 표시로만 표현한다. 3D 지형 에셋은 별도 작업이다.
 
+## 몬스터 생성과 인식
+
+몬스터 개체에는 `presetId`, `spawnTileId`를 전송하고 `status`에 `spawnPosition:{x,y}`, `awarenessState:'normal'|'combat'|'returning'`, `attackTargetId:string|null`을 포함한다. 위치·대상·인식·타일별 수량과 TEST001 행동은 서버가 관리하며 클라이언트가 설정하는 명령은 없다. AI 대기 시각·이동 목적지·복귀 경로는 전송하지 않는다. 몬스터 BAS0001도 기존 `skillEffects`와 피해 결과 형식을 공유한다. 상세 행동은 STATUSES.md 참조.
+
 ## 이동과 시전 순서
 
 `game.cast`는 슬롯과 `afterInputSeq`(시전 전에 서버가 처리해야 할 마지막 이동 입력 순번)를 전송한다. 클라이언트 좌표는 전송하지 않는다. 순번이 없으면 구버전 호환으로 마지막 수신 입력을 사용한다. 서버는 해당 순번 직후 시전하며, 미래·이미 지난·역순 순번은 `INVALID_CAST_SEQUENCE`, 시전 대기열 초과는 `CAST_QUEUE_FULL`을 반환한다. 쿨타임·조작 잠금은 실행 시에도 검사한다. 개체 스냅샷에는 `inputQueueLength`, `inputQueueDelayMs`를 함께 전송한다. 시간 예산 및 검증은 NETWORKING.md 참조.

@@ -5,6 +5,7 @@ import './public/pit-map-rules.js';
 import { /** generateRoomMap: 원본 구덩이 규칙으로 서버 맵을 생성한다. */ generateRoomMap } from './game/map-generator.js';
 import './public/room-timer.js';
 import './public/movement.js';
+import { /** spawnMonsters: 일반 필드타일에 프리셋별 수량을 생성한다. */ spawnMonsters, /** tickMonsters: 서버에서 배회·반격·복귀 행동을 실행한다. */ tickMonsters } from './game/monster-ai.js';
 import { /** castSkill: 슬롯의 쿨타임과 상태를 검사하고 기술을 시전한다. */ castSkill, /** skillCooldownRemaining: 슬롯의 서버 쿨타임 잔여 시간을 구한다. */ skillCooldownRemaining, /** skillSnapshot: 판정 내부 기록을 제외한 전송 데이터를 만든다. */ skillSnapshot, /** updateSkillCooldowns: 서버 기준 잔여 대기를 갱신한다. */ updateSkillCooldowns, /** getSkillSlotNames: 할당된 기술의 표시 이름을 조회한다. */ getSkillSlotNames } from './game/skills.js';
 import /** http: 게임 HTTP 서버 생성 기능을 제공한다. */ http from 'node:http';
 import { /** createAuthService: 제공자 로그인·앱 세션·계정 설정 API와 만료 정리를 구성한다. */ createAuthService } from './auth/service.js';
@@ -41,7 +42,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
   const /** objectSnapshot: 개체를 전송용 상태로 복사하는 함수. */ objectSnapshot = /** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** objectSnapshot: 개체의 최종 수치를 계산하고 전송 가능한 상태만 복사한다. */ p => {
     updateSkillCooldowns(p);
     const /** effective: 추가 수치를 합산한 최종 스테이터스. */ effective = normalizeVitals(p.status);
-    return { id: p.id, name: p.name, x: p.x, y: p.y, action: p.action, facing: p.facing ?? -Math.PI / 2, inputQueueLength:p.inputQueue?.length??0,inputQueueDelayMs:p.inputQueue?.length?Math.max(0,Date.now()-(p.inputQueue[0].receivedAt??Date.now())):0,playerNumber:p.playerNumber??null,spawnTileId:p.spawnTileId??null,skillNames:getSkillSlotNames(p.status), lastProcessedInput: p.lastProcessedInput ?? 0, roll:p.roll?{...p.roll}:null, lastMovementInput:p.lastMovementInput??{x:0,y:0}, status: { ...p.status, effective } };
+    return { id: p.id, name: p.name, x: p.x, y: p.y, action: p.action, facing: p.facing ?? -Math.PI / 2, inputQueueLength:p.inputQueue?.length??0,inputQueueDelayMs:p.inputQueue?.length?Math.max(0,Date.now()-(p.inputQueue[0].receivedAt??Date.now())):0,playerNumber:p.playerNumber??null,spawnTileId:p.spawnTileId??null,presetId:p.presetId??null,skillNames:getSkillSlotNames(p.status), lastProcessedInput: p.lastProcessedInput ?? 0, roll:p.roll?{...p.roll}:null, lastMovementInput:p.lastMovementInput??{x:0,y:0}, status: { ...p.status, effective } };
   };
   const /** allObjects: 방의 플레이어와 일반 개체를 함께 조회하는 함수. */ allObjects = /** room: 현재 처리하는 방의 상태. */ /** allObjects: 방 안의 플레이어와 NPC·적을 하나의 목록으로 모은다. */ room => [...room.players.values(), ...room.objects.values()];
   const /** snapshot: 방 상태를 전송용 데이터로 변환하는 함수. */ snapshot = /** room: 현재 처리하는 방의 상태. */ /** snapshot: 현재 방의 참가자·개체·기술 효과를 전송용 스냅샷으로 만든다. */ (room, /** includeMap: 지도는 초기 상태에만 포함하고 틱 전송에서는 생략한다. */ includeMap=true) => {
@@ -195,6 +196,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
             const /** seed: 서버가 정한 이번 게임의 재현 가능한 지도 시드. */ seed=randomBytes(4).readUInt32LE(0);
             room.map=generateRoomMap(seed);
             room.items=globalThis.ItemRules.spawn(room.map);
+            room.objects=spawnMonsters(room.map);
           } catch {return fail('MAP_GENERATION_FAILED','맵 생성에 실패했습니다. 다시 시작해 주세요.');}
           room.phase = 'started';
           /** room.gameStartedAt: 대기실 생성 시각과 별개인 실제 게임 시작 시각(ms). */ room.gameStartedAt=roomClock();
@@ -244,6 +246,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
       }
       globalThis.PoisonRules.tick(room,roomClock());
       if (now - (room.targetsAt ?? 0) >= 100) { updateNearestObjects(objects); room.targetsAt = now; }
+      room.skillEffects.push(...tickMonsters(objects,room.map,now,dt));
       room.itemChanges=globalThis.ItemRules.tick(room.items??new Map(),objects,now);
       const /** state: 현재 상태 스냅샷. */ state = snapshot(room,false);
       for (const /** p: 현재 처리하는 플레이어 또는 검증 개체. */ p of room.players.values()) send(p.ws, 'game.state', { room: state });

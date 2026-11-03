@@ -73,6 +73,12 @@ export /** createStatus: 모든 개체가 공유하는 수치·기술 슬롯·�
     }
   }
   if(objectType===ObjectType.ENEMY) {
+    /** status.spawnPosition: 최초 생성 월드 좌표. 이동·추격으로 변경하지 않는다. */ status.spawnPosition=structuredClone(values.spawnPosition??{x:0,y:0});
+    if(!status.spawnPosition||![status.spawnPosition.x,status.spawnPosition.y].every(Number.isFinite))throw new TypeError('Invalid spawnPosition');
+    /** status.awarenessState: 일반·전투·복귀 인식상태. 생존 상태와 별개다. */ status.awarenessState=values.awarenessState??'normal';
+    if(!['normal','combat','returning'].includes(status.awarenessState))throw new TypeError('Invalid awarenessState');
+    /** status.attackTargetId: 마지막 공격자의 개체ID 또는 대상 없음(null). */ status.attackTargetId=values.attackTargetId??null;
+    if(status.attackTargetId!==null&&(typeof status.attackTargetId!=='string'||!status.attackTargetId))throw new TypeError('Invalid attackTargetId');
     /** status.experience: 처치 보상용 경험치. 지급 로직은 별도 구현한다. */ status.experience=values.experience??20;
     if(typeof status.experience!=='number'||!Number.isFinite(status.experience)||status.experience<0)throw new TypeError('Invalid experience');
     /** status.rewards: 아이템 등 보상 자료 목록. 지급 로직은 별도 구현한다. */ status.rewards=copyStatusList(values.rewards,'rewards');
@@ -171,6 +177,6 @@ export /** updateNearestObjects: 생존 개체의 최근접 개체와 설정 우
 /** NPC·적 생성에 쓰는 공통 생성기. 플레이어 연결에는 서버가 발급한 ID를 사용한다. */
 export /** createWorldObject: 공통 스테이터스와 위치를 가진 NPC·적·검증용 플레이어 개체를 만든다. */ function createWorldObject(/** objectType: 생성하거나 검사할 개체 분류; classificationCode: 개체 종류 또는 계정의 분류 코드; instanceId: 월드 개체의 고유 인스턴스 식별자; name: 생성할 월드 개체의 표시 이름; x: 가로 좌표·이동 입력 또는 반복 비교 항목; y: 세로 좌표 또는 이동 입력; stats: 개체 생성 시 전달할 스테이터스 재정의 값. */ { objectType, classificationCode, instanceId, name = '', x = 0, y = 0, ...stats }) {
   if (![x,y].every(Number.isFinite)) throw new TypeError('Invalid position');
-  const /** status: 개체 상태 또는 응답 상태. */ status = createStatus({ objectType, classificationCode, instanceId, ...stats });
+  const /** status: 개체 상태 또는 응답 상태. */ status = createStatus({ objectType, classificationCode, instanceId, ...(objectType===ObjectType.ENEMY?{spawnPosition:{x,y}}:{}), ...stats });
   return { id: status.instanceId, name, x, y, action: null, facing: -Math.PI / 2, status };
 }

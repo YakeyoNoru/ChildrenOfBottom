@@ -36,6 +36,12 @@ export function applySkillDamage(
   const /** healthBefore: 피해를 적용하기 직전 체력. */ healthBefore = target.status.currentHealth;
   target.status.currentHealth=Math.max(0,healthBefore-amount);
   normalizeVitals(target.status);
+  // 피해 적용 경로를 공유하므로 즉시 공격·투사체·장판 모두 마지막 실제 공격자를 기록한다.
+  if(amount>0&&target.status.objectType==='enemy'&&target.status.state!==LifeState.DEAD&&target.status.awarenessState!=='returning') {
+    target.status.attackTargetId=instance.casterId;
+    target.status.awarenessState='combat';
+    if(target.monsterAI)target.monsterAI.hasAttacked=false;
+  }
   return {
     /** id: 반복 스냅샷에서도 중복 표시를 막는 결과 고유 ID. */ id: instance.id+':'+(++instance.resultSequence),
     /** instanceId: 이 피해를 발생시킨 시전 인스턴스 ID. */ instanceId:instance.id,

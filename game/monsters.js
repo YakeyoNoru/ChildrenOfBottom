@@ -22,7 +22,7 @@ export const MonsterPresets = Object.freeze({
   }),
 });
 
-/** 프리셋의 확정 능력치와 최대체력으로 독립된 몬스터 유닛을 생성한다. 맵 배치·AI는 호출자가 별도로 연결한다. */
+/** 프리셋의 확정 능력치와 최대체력으로 독립된 몬스터 유닛을 생성한다. 서버 배치·행동은 monster-ai.js에서 연결한다. */
 export function createMonster(
   /** presetId: 몬스터A01 또는 몬스터A02 프리셋 식별자. */ presetId,
   /** options: 서버에서 지정할 위치·개체ID·표시 이름. */ options = {},
