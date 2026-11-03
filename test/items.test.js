@@ -19,13 +19,13 @@ test('fragment counts match height/rich ranges and positions stay inside land wi
  for(let /** index: 기준 조각 순번. */ index=0;index<items.length;index++)for(let /** other: 비교 조각 순번. */ other=index+1;other<items.length;other++)assert.ok(Math.hypot(items[index].x-items[other].x,items[index].y-items[other].y)>=7);
 });
 
-test('pickup reserves closest living player within 20 then grants 10 once and removes',/** 적·범위·중복·비행 완료 지급을 검사한다. */ ()=>{
- const /** player: 적격 플레이어; enemy: 부적격 적. */ player=createWorldObject({objectType:'player',classificationCode:'P',instanceId:'p',x:21}),enemy=createWorldObject({objectType:'enemy',classificationCode:'E',x:0});
+test('pickup reserves closest living player within 30 then grants 10 once and removes',/** 적·범위·중복·비행 완료 지급을 검사한다. */ ()=>{
+ const /** player: 적격 플레이어; enemy: 부적격 적. */ player=createWorldObject({objectType:'player',classificationCode:'P',instanceId:'p',x:31}),enemy=createWorldObject({objectType:'enemy',classificationCode:'E',x:0});
  const /** items: 바닥의 조각 한 개. */ items=new Map([['one',{id:'one',code:'illusionFragment',x:0,y:0,state:'ground'}]]);
  ItemRules.tick(items,[enemy,player],0);assert.equal(items.get('one').state,'ground');
- player.x=20;ItemRules.tick(items,[enemy,player],100);assert.equal(items.get('one').targetId,'p');assert.equal(player.status.competitionPoints,0);
- ItemRules.tick(items,[player],199);assert.equal(items.size,1);
- assert.deepEqual(ItemRules.tick(items,[player],200).removed,['one']);assert.equal(player.status.competitionPoints,10);assert.equal(items.size,0);
+ player.x=30;ItemRules.tick(items,[enemy,player],100);assert.equal(items.get('one').targetId,'p');assert.equal(player.status.competitionPoints,0);
+ ItemRules.tick(items,[player],149);assert.equal(items.size,1);
+ assert.deepEqual(ItemRules.tick(items,[player],150).removed,['one']);assert.equal(player.status.competitionPoints,10);assert.equal(items.size,0);
  ItemRules.tick(items,[player],500);assert.equal(player.status.competitionPoints,10);
 });
 
