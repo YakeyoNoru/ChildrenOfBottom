@@ -215,6 +215,17 @@ test('Tab toggles expanded map and minimap touch opens it; repeat does not toggl
  const /** repeated: 자동 반복 Tab 이벤트. */ repeated=new Event('keydown',{cancelable:true});Object.defineProperty(repeated,'code',{value:'Tab'});Object.defineProperty(repeated,'repeat',{value:true});window.dispatchEvent(repeated);assert.equal(e.get('expanded-map').hidden,false);
  key(window,'keydown','Tab');assert.equal(e.get('expanded-map').hidden,true);
  e.get('minimap').click();assert.equal(e.get('expanded-map').hidden,false);
- const /** pointer: 화면 닫기 터치. */ pointer=new Event('pointerdown',{cancelable:true});window.dispatchEvent(pointer);assert.equal(e.get('expanded-map').hidden,true);assert.equal(pointer.defaultPrevented,true);
+ const /** pointer: 지도를 닫지 않는 화면 터치. */ pointer=new Event('pointerdown',{cancelable:true});window.dispatchEvent(pointer);assert.equal(e.get('expanded-map').hidden,false);
+ e.get('expanded-map-close').onclick({preventDefault(){},stopPropagation(){}});assert.equal(e.get('expanded-map').hidden,true);
  receive({type:'room.left'});assert.equal(e.get('expanded-map').hidden,true);
+});
+
+test('full map drags without closing or casting and resets center when reopened',/** 지도 드래그·포인터 취소·재열기 중심 복귀를 검증한다. */ ()=>{
+ const /** e: 화면 요소; receive: 메시지 수신; state: 기본 방; run: 실행 문맥. */ {elements:e,receive,state,run}=client();receive({type:'room.state',room:state});e.get('minimap').click();
+ const /** pointer: 드래그 시작 입력. */ pointer={pointerId:7,clientX:50,clientY:60,button:0,preventDefault(){},stopPropagation(){}};
+ e.get('expanded-map-canvas').onpointerdown(pointer);e.get('expanded-map-canvas').onpointermove({...pointer,clientX:70,clientY:90});
+ assert.ok(run('mapPan.x')<0);assert.ok(run('mapPan.y')<0);assert.equal(e.get('expanded-map').hidden,false);
+ run('useSkill("A")');assert.equal(run('socket.sent.filter(m=>m.type==="game.cast").length'),0);
+ const /** release: 포인터 취소 이벤트. */ release=new Event('pointercancel');Object.defineProperty(release,'pointerId',{value:7});e.get('expanded-map-canvas').dispatchEvent(release);assert.equal(run('mapDrag'),null);
+ run('setExpandedMap(false);setExpandedMap(true)');assert.equal(run('mapPan.x'),0);assert.equal(run('mapPan.y'),0);
 });

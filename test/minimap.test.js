@@ -44,3 +44,11 @@ test('expanded map uses rectangular bounds and keeps player at rectangular cente
  assert.ok(calls.some(/** 사각형 경계를 확인한다. */ (/** call: 기록. */ call)=>call[0]==='rect'&&call[1]===3&&call[2]===3&&call[3]===1018&&call[4]===634));
  assert.ok(calls.some(/** 직사각형 중앙의 표식을 확인한다. */ (/** call: 기록. */ call)=>call[0]==='translate'&&call[1]===512&&call[2]===320));
 });
+
+test('panning shifts terrain and player marker but never exploration center',/** 지도 드래그가 이동·탐색 좌표를 바꾸지 않음을 검증한다. */ ()=>{
+ const /** model: 지도 모델; calls: 기록. */ {model,calls}=setup();
+ const /** canvas: 전체맵 표시 대상. */ canvas={width:1024,height:640,getContext:/** 검증 문맥을 반환한다. */ ()=>model.canvas.getContext('2d')};
+ model.draw(map,'ROOM',{x:0,y:0},684*10/2.5,canvas,true,{x:684,y:0});
+ assert.equal(model.previous.x,0);assert.equal(model.previous.y,0);
+ assert.ok(calls.some(/** 실제 플레이어 표식의 이동을 확인한다. */ (/** call: 호출 기록. */ call)=>call[0]==='translate'&&Math.abs(call[1]-(512-102.4))<1e-7&&call[2]===320));
+});

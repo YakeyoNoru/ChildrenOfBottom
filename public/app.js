@@ -18,17 +18,38 @@ const /** messages: 연결 종료 등에 사용할 안내 문구 모음. */ mess
   timeout = setTimeout(/** 예약 시간이 지나면 대기·재접속·실패 처리를 실행한다. */ () => { notice('서버 응답이 없습니다. 다시 연결합니다.'); socket.close(); }, 8000);
   render();
 }
+let /** mapPan: 전체맵 중심을 플레이어 기준으로 옮긴 월드 거리. */ mapPan={x:0,y:0};
+let /** mapDrag: 현재 드래그 포인터 ID와 직전 화면 좌표. */ mapDrag=null;
 let /** mapPointerBlockUntil: 지도 닫기 터치 뒤 합성 클릭을 무시할 로컬 종료 시각. */ mapPointerBlockUntil=0;
 /** 전체맵를 열거나 닫으며 조작 입력이 지도 터치와 겹치지 않게 한다. */
 function setExpandedMap(/** open: 전체맵를 표시할지 여부. */ open){
+  if(open)mapPan={x:0,y:0};
+  mapDrag=null;
   $('expanded-map').hidden=!open;$('minimap').setAttribute('aria-expanded',String(open));resetInput();
 }
 $('minimap').onclick=/** 작은 미니맵을 눌러 전체맵을 연다. */ (/** event: 클릭 입력. */ event)=>{event?.preventDefault?.();event?.stopPropagation?.();if(room?.phase==='started')setExpandedMap(true);};
-window.addEventListener('pointerdown',/** 열린 지도를 화면 터치로 닫고 해당 입력의 게임 전달을 막는다. */ (/** event: 화면 포인터 입력. */ event)=>{
-  if($('expanded-map').hidden)return;mapPointerBlockUntil=Date.now()+300;setExpandedMap(false);event.preventDefault();event.stopImmediatePropagation();
-},true);
+$('expanded-map-close').onclick=/** 원형 X 버튼으로만 포인터 닫기를 수행한다. */ (/** event: 닫기 클릭. */ event)=>{event.preventDefault();event.stopPropagation();setExpandedMap(false);mapPointerBlockUntil=Date.now()+300;};
+$('expanded-map-canvas').onpointerdown=/** 지도 드래그를 시작하고 지도 밖에서도 같은 포인터를 추적한다. */ (/** event: 지도 포인터. */ event)=>{
+  if($('expanded-map').hidden||mapDrag||event.button>0)return;
+  event.preventDefault();event.stopPropagation();
+  mapDrag={id:event.pointerId,x:event.clientX,y:event.clientY};$('expanded-map-canvas').setPointerCapture(event.pointerId);
+};
+$('expanded-map-canvas').onpointermove=/** 화면에서 끈 거리만큼 지도 중심을 반대 방향으로 이동한다. */ (/** event: 이동 포인터. */ event)=>{
+  if(!mapDrag||event.pointerId!==mapDrag.id)return;
+  event.preventDefault();event.stopPropagation();
+  const /** width: HUD 확대·축소까지 반영한 실제 지도 가로 픽셀 크기. */ width=$('expanded-map-canvas').getBoundingClientRect().width;
+  if(width>0){
+    const /** scale: 화면 픽셀 한 칸의 월드 거리. */ scale=viewport.worldWidth*10/width;
+    mapPan.x-=(event.clientX-mapDrag.x)*scale;mapPan.y-=(event.clientY-mapDrag.y)*scale;
+  }
+  mapDrag.x=event.clientX;mapDrag.y=event.clientY;
+};
+/** 드래그 종료·취소 시 포인터 상태를 해제한다. 지도는 닫지 않는다. */
+function endMapDrag(/** event: 종료 포인터. */ event){if(mapDrag?.id!==event.pointerId)return;mapDrag=null;}
+for(const /** type: 드래그를 끝내는 이벤트 이름. */ type of ['pointerup','pointercancel','lostpointercapture'])$('expanded-map-canvas').addEventListener(type,endMapDrag);
 window.addEventListener('mousedown',/** 닫기 터치에 이어지는 마우스 공격도 막는다. */ (/** event: 마우스 입력. */ event)=>{
-  if(Date.now()>=mapPointerBlockUntil&&!event.target.closest?.('#expanded-map'))return;event.preventDefault();event.stopImmediatePropagation();
+  if(Date.now()<mapPointerBlockUntil){event.preventDefault();event.stopImmediatePropagation();return;}
+  if(event.target.closest?.('#expanded-map'))event.stopPropagation();
 },true);
 window.addEventListener('click',/** 지도 닫기 뒤 합성 클릭이 공격·메뉴·지도 열기로 이어지는 것을 막는다. */ (/** event: 합성될 수 있는 클릭. */ event)=>{
   if(Date.now()>=mapPointerBlockUntil)return;event.preventDefault();event.stopImmediatePropagation();
@@ -43,7 +64,7 @@ $('minimap').onkeydown=/** 키보드 접근성으로 전체맵를 연다. */ (/*
   updateSkillControls();
   updateRoomTimer();
   $('game-leave').disabled = !online || !!pending;
-  if (!playing) { $('expanded-map').hidden=true;$('minimap').setAttribute('aria-expanded','false'); motionView.clear(); closeMenu(); resetInput(); }
+  if (!playing) { mapDrag=null;mapPan={x:0,y:0};$('expanded-map').hidden=true;$('minimap').setAttribute('aria-expanded','false'); motionView.clear(); closeMenu(); resetInput(); }
   if (playing) $('game-status').textContent = `${room.players.length}명 생존 · ${room.players.find(/** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ p => p.id === playerId)?.name ?? ''}`;
   for (const /** id: 대상 개체 또는 요소의 식별자. */ id of ['create', 'join-open', 'join','browse-open','rooms-refresh']) $(id).disabled = !online || !!pending;
   renderPublicRooms();
@@ -289,7 +310,7 @@ const /** canvas: 월드 화면을 그리는 캔버스 요소. */ canvas = $('wo
   }
   miniMap.draw(room.map,room.code,me,viewport.worldWidth);
   if(!$('expanded-map').hidden&&miniMap.terrain){
-    miniMap.draw(room.map,room.code,me,viewport.worldWidth*10/2.5,$('expanded-map-canvas'),true);
+    miniMap.draw(room.map,room.code,me,viewport.worldWidth*10/2.5,$('expanded-map-canvas'),true,mapPan);
   }
   drawSkillEffects(ctx, room.skillEffects ?? [], ox, oy);
   displayObjects.forEach(/** 각 항목에 현재 단계의 상태 갱신 또는 표시 처리를 적용한다. */ (/** p: 현재 처리하는 플레이어 또는 검증 개체. */ p,/** i: 현재 반복 항목의 순번. */ i) => {
