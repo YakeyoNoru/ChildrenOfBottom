@@ -35,3 +35,12 @@ test('minimap spans 2.5 times main-view width and uses gray fog with white bridg
  assert.ok(calls.some(/** 미탐색 배경색을 검사한다. */ (/** call: 설정 기록. */ call)=>call[0]==='set'&&call[1]==='fillStyle'&&call[2]==='#A7A3B0'));
  assert.ok(calls.some(/** 다리 선 색상을 검사한다. */ (/** call: 설정 기록. */ call)=>call[0]==='set'&&call[1]==='strokeStyle'&&call[2]==='#ffffff'));
 });
+
+
+test('expanded map uses rectangular bounds and keeps player at rectangular center',/** 확대 지도의 사각형 클리핑과 중앙 위치를 검사한다. */ ()=>{
+ const /** model: 지도 모델; calls: 표시 호출. */ {model,calls}=setup();
+ const /** canvas: 가로가 긴 확대 캔버스. */ canvas={width:1024,height:640,getContext:/** 기존 기록 문맥을 사용한다. */ ()=>model.canvas.getContext('2d')};
+ model.draw(map,'ROOM',{x:0,y:0},684,canvas,true);
+ assert.ok(calls.some(/** 사각형 경계를 확인한다. */ (/** call: 기록. */ call)=>call[0]==='rect'&&call[1]===3&&call[2]===3&&call[3]===1018&&call[4]===634));
+ assert.ok(calls.some(/** 직사각형 중앙의 표식을 확인한다. */ (/** call: 기록. */ call)=>call[0]==='translate'&&call[1]===512&&call[2]===320));
+});

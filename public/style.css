@@ -45,8 +45,8 @@ body.playing{overflow:hidden}body.playing main>header,body.playing main>footer{d
 /* 미니맵은 게임 HUD 우측 상단에 고정하고 조작 입력을 가리지 않는다. */
 #minimap{position:absolute;top:max(14px,env(safe-area-inset-top));right:max(14px,env(safe-area-inset-right));width:clamp(100px,18vw,150px);height:auto;aspect-ratio:1;border-radius:50%;pointer-events:auto;background:#A7A3B0;box-shadow:0 2px 8px #0008}
 
-/* 확대 지도는 게임 화면 위에 놓이며 지도 전체에 불투명도 50%를 적용한다. */
+/* 확대 지도는 게임 화면 위에 놓이며 지도 전체에 투명도 30%(불투명도 70%)를 적용한다. */
 #minimap{cursor:pointer}#minimap:focus-visible{outline:3px solid #fff;outline-offset:3px}
 #expanded-map{position:absolute;inset:0;z-index:20;display:grid;place-items:center;pointer-events:auto}
 #expanded-map[hidden]{display:none}
-#expanded-map-canvas{width:min(80vw,80vh);max-width:90%;max-height:90%;height:auto;aspect-ratio:1;opacity:.5;pointer-events:none}
+#expanded-map-canvas{width:min(80vw,128vh);max-width:90%;height:auto;aspect-ratio:8/5;opacity:.7;pointer-events:none}

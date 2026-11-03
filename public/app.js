@@ -289,8 +289,8 @@ const /** canvas: 월드 화면을 그리는 캔버스 요소. */ canvas = $('wo
   }
   miniMap.draw(room.map,room.code,me,viewport.worldWidth);
   if(!$('expanded-map').hidden&&miniMap.terrain){
-    const /** halfSpan: 현재 위치 중심으로 지도 전체를 담을 절반 범위. */ halfSpan=Math.max(me.x-miniMap.left,me.y-miniMap.top,miniMap.left+miniMap.terrain.width/miniMap.atlasScale-me.x,miniMap.top+miniMap.terrain.height/miniMap.atlasScale-me.y);
-    miniMap.draw(room.map,room.code,me,halfSpan*2/2.5,$('expanded-map-canvas'));
+    const /** halfSpan: 현재 위치 중심으로 지도 전체를 담을 절반 범위. */ halfSpan=Math.max(me.x-miniMap.left,(me.y-miniMap.top)*1.6,miniMap.left+miniMap.terrain.width/miniMap.atlasScale-me.x,(miniMap.top+miniMap.terrain.height/miniMap.atlasScale-me.y)*1.6);
+    miniMap.draw(room.map,room.code,me,halfSpan*2/2.5,$('expanded-map-canvas'),true);
   }
   drawSkillEffects(ctx, room.skillEffects ?? [], ox, oy);
   displayObjects.forEach(/** 각 항목에 현재 단계의 상태 갱신 또는 표시 처리를 적용한다. */ (/** p: 현재 처리하는 플레이어 또는 검증 개체. */ p,/** i: 현재 반복 항목의 순번. */ i) => {

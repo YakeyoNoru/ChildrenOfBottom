@@ -47,19 +47,19 @@ class MiniMap {
     this.previous={x:position.x,y:position.y};
   }
   /** 본인을 중심으로 고정하고 탐색 마스크 안의 지형·다리만 표시한다. */
-  draw(/** map: 현재 지도. */ map,/** code: 방 코드. */ code,/** player: 본인 표시 좌표·방향. */ player,/** worldWidth: 본 화면의 가로 월드 범위. */ worldWidth=684,/** canvas: 기본 또는 확대 지도 표시 대상. */ canvas=this.canvas){
+  draw(/** map: 현재 지도. */ map,/** code: 방 코드. */ code,/** player: 본인 표시 좌표·방향. */ player,/** worldWidth: 본 화면의 가로 월드 범위. */ worldWidth=684,/** canvas: 기본 또는 확대 지도 표시 대상. */ canvas=this.canvas,/** rectangular: 확대 지도의 사각형 표시 여부. */ rectangular=false){
     if(!map||!player)return;
     const /** key: 방별 지도 구분자. */ key=code+':'+map.id;
     if(this.key!==key)this.prepare(map,key);
     this.reveal(player);
     const /** ctx: 화면 미니맵 문맥. */ ctx=canvas.getContext('2d');
-    const /** size: 렌더링 픽셀 크기; scale: 본 화면 가로폭의 2.5배 범위를 표시할 배율. */ size=canvas.width,scale=size/(worldWidth*2.5);
-    const /** x: 캐시를 옮길 가로 오프셋; y: 세로 오프셋. */ x=size/2+(this.left-player.x)*scale,y=size/2+(this.top-player.y)*scale;
-    ctx.clearRect(0,0,size,size);ctx.save();ctx.beginPath();ctx.arc(size/2,size/2,size/2-3,0,Math.PI*2);ctx.clip();
+    const /** size: 렌더링 픽셀 크기; scale: 본 화면 가로폭의 2.5배 범위를 표시할 배율. */ size=canvas.width,height=canvas.height,scale=size/(worldWidth*2.5);
+    const /** x: 캐시를 옮길 가로 오프셋; y: 세로 오프셋. */ x=size/2+(this.left-player.x)*scale,y=height/2+(this.top-player.y)*scale;
+    ctx.clearRect(0,0,size,height);ctx.save();ctx.beginPath();if(rectangular)ctx.rect(3,3,size-6,height-6);else ctx.arc(size/2,height/2,Math.min(size,height)/2-3,0,Math.PI*2);ctx.clip();
     ctx.drawImage(this.terrain,x,y,this.terrain.width/this.atlasScale*scale,this.terrain.height/this.atlasScale*scale);
     ctx.globalCompositeOperation='destination-in';ctx.drawImage(this.fog,x,y,this.fog.width/this.atlasScale*scale,this.fog.height/this.atlasScale*scale);
-    ctx.globalCompositeOperation='destination-over';ctx.fillStyle='#A7A3B0';ctx.fillRect(0,0,size,size);ctx.restore();
-    ctx.strokeStyle='#b9cfa9';ctx.lineWidth=4;ctx.beginPath();ctx.arc(size/2,size/2,size/2-3,0,Math.PI*2);ctx.stroke();
-    ctx.save();ctx.translate(size/2,size/2);ctx.rotate(player.facing??0);ctx.beginPath();ctx.moveTo(9,0);ctx.lineTo(-6,-5);ctx.lineTo(-6,5);ctx.closePath();ctx.fillStyle='#57e8f1';ctx.fill();ctx.strokeStyle='#102932';ctx.lineWidth=2;ctx.stroke();ctx.restore();
+    ctx.globalCompositeOperation='destination-over';ctx.fillStyle='#A7A3B0';ctx.fillRect(0,0,size,height);ctx.restore();
+    ctx.strokeStyle='#b9cfa9';ctx.lineWidth=4;ctx.beginPath();if(rectangular)ctx.rect(3,3,size-6,height-6);else ctx.arc(size/2,height/2,Math.min(size,height)/2-3,0,Math.PI*2);ctx.stroke();
+    ctx.save();ctx.translate(size/2,height/2);ctx.rotate(player.facing??0);ctx.beginPath();ctx.moveTo(9,0);ctx.lineTo(-6,-5);ctx.lineTo(-6,5);ctx.closePath();ctx.fillStyle='#57e8f1';ctx.fill();ctx.strokeStyle='#102932';ctx.lineWidth=2;ctx.stroke();ctx.restore();
   }
 }
