@@ -27,11 +27,11 @@ test('teleport avoids revealing intermediate path; room change resets and bounds
 });
 
 
-test('minimap spans twice main-view width and uses gray fog with white bridges',/** 축척·미탐색 배경·다리 색상의 표시 규칙을 검증한다. */ ()=>{
+test('minimap spans 2.5 times main-view width and uses gray fog with white bridges',/** 축척·미탐색 배경·다리 색상의 표시 규칙을 검증한다. */ ()=>{
  const /** model: 표시 모델; calls: 캔버스 호출. */ {model,calls}=setup();
  model.draw(map,'ROOM',{x:0,y:0},684);
  const /** image: 첫 지형 캐시 표시 호출. */ image=calls.find(/** 지형 이미지 호출을 선택한다. */ (/** call: 그리기 기록. */ call)=>call[0]==='drawImage'&&call[1]===model.terrain);
- assert.ok(Math.abs(image[4]/model.terrain.width*model.atlasScale-256/1368)<1e-8);
+ assert.ok(Math.abs(image[4]/model.terrain.width*model.atlasScale-256/1710)<1e-8);
  assert.ok(calls.some(/** 미탐색 배경색을 검사한다. */ (/** call: 설정 기록. */ call)=>call[0]==='set'&&call[1]==='fillStyle'&&call[2]==='#A7A3B0'));
  assert.ok(calls.some(/** 다리 선 색상을 검사한다. */ (/** call: 설정 기록. */ call)=>call[0]==='set'&&call[1]==='strokeStyle'&&call[2]==='#ffffff'));
 });
