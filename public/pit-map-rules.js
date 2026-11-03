@@ -42,6 +42,20 @@ globalThis.PitMapRules=Object.freeze({
     }
     return false;
   },
+  /** 개체 중심의 지형 높이를 조회한다. 다른 높이 다리는 중점을 경계로 가까운 쪽 층을 적용한다. */
+  heightAt(/** map: 게임 지도. */ map,/** x: 중심 가로 좌표. */ x,/** y: 중심 세로 좌표. */ y){
+    const /** geometry: 공통 지형·다리 좌표. */ geometry=this.geometry(map);
+    const /** limit: 지형 육각형의 내접 반지름. */ limit=(map.tileRadius??90)*(map.landScale??.89)*Math.sqrt(3)/2;
+    for(let /** index: 검사할 타일 순번. */ index=0;index<map.tiles.length;index++){
+      const /** center: 검사할 지형 중심. */ center=geometry.centers[index];
+      if(hexNormals.every(/** 육각형 안의 중심인지 검사한다. */ (/** normal: 변 법선. */ normal)=>(x-center.x)*normal.x+(y-center.y)*normal.y<=limit+1e-8))return map.tiles[index].height;
+    }
+    for(const /** bridge: 실제 연결 다리. */ bridge of geometry.bridges){
+      const /** along: 다리 방향 투영 거리; across: 다리 중심선 수직 거리. */ along=(x-bridge.start.x)*bridge.ux+(y-bridge.start.y)*bridge.uy,across=Math.abs((x-bridge.start.x)*bridge.uy-(y-bridge.start.y)*bridge.ux);
+      if(along>=0&&along<=bridge.length&&across<=bridge.width/2+1e-8)return map.tiles[along<=bridge.length/2?bridge.a:bridge.b].height;
+    }
+    return null;
+  },
   /** 이동 선분이 금지된 3→2 다리 중앙 경계를 통과하는지 검사한다. */
   directionAllowed(/** map: 지도. */ map,/** from: 이동 전 위치. */ from,/** to: 이동 후보 위치. */ to) {
     for(const /** bridge: 통행 방향을 검사할 다리. */ bridge of this.geometry(map).bridges) {

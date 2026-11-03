@@ -1,3 +1,4 @@
+import './public/poison.js';
 import './public/input-timeline.js';
 import './public/items.js';
 import './public/pit-map-rules.js';
@@ -196,6 +197,8 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
             room.items=globalThis.ItemRules.spawn(room.map);
           } catch {return fail('MAP_GENERATION_FAILED','맵 생성에 실패했습니다. 다시 시작해 주세요.');}
           room.phase = 'started';
+          /** room.gameStartedAt: 대기실 생성 시각과 별개인 실제 게임 시작 시각(ms). */ room.gameStartedAt=roomClock();
+          /** room.poisonPulse: 마지막 처리한 게임 시작 기준 3초 구간 번호. */ room.poisonPulse=0;
           [...room.players.values()].forEach(/** 입장 순서별 지정 타일 중심에 배치한다. */ (/** player: 배치할 참가자. */ player,/** index: 현재 참가자의 입장 순서. */ index)=>{
             const /** tile: 플레이어 순번과 같은 번호의 지형타일. */ tile=room.map.tiles.find(/** 시작 타일을 찾는다. */ (/** item: 지도 타일. */ item)=>item.id===index+1);
             Object.assign(player,globalThis.PitMapRules.center(tile,room.map));
@@ -239,6 +242,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
         }
         if (p.x !== previousX || p.y !== previousY) p.facing = Math.atan2(p.y - previousY, p.x - previousX);
       }
+      globalThis.PoisonRules.tick(room,roomClock());
       if (now - (room.targetsAt ?? 0) >= 100) { updateNearestObjects(objects); room.targetsAt = now; }
       room.itemChanges=globalThis.ItemRules.tick(room.items??new Map(),objects,now);
       const /** state: 현재 상태 스냅샷. */ state = snapshot(room,false);

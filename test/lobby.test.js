@@ -357,3 +357,16 @@ test('multiplayer snapshots expose monotonic server timestamps and ordered seque
  assert.ok(Number.isFinite(first.serverTime));assert.ok(Number.isSafeInteger(first.snapshotSequence));
  assert.ok(second.serverTime>=first.serverTime);assert.ok(second.snapshotSequence>first.snapshotSequence);
 });
+
+test('server poison starts three minutes after game start rather than room creation',/** 실제 서버 틱에서 시작 시각·방어력 무시·반복 차감을 검증한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
+ let /** clock: 제어할 방·게임 시각. */ clock=0;
+ const /** client: 접속 생성기; rooms: 실제 방 목록. */ {client,rooms}=await setup(t,{roomClock:/** 검증 시각을 반환한다. */ ()=>clock});
+ const /** host: 방장 연결. */ host=await client();await host.command('room.create',{name:'독기검증'});
+ const /** code: 생성한 방 코드. */ code=(await host.next('room.state')).room.code;
+ clock=60000;await host.command('room.start');
+ const /** room: 시작한 방; player: 시작 지형 1층 플레이어. */ room=rooms.get(code),player=room.players.get(host.id);
+ assert.equal(room.gameStartedAt,60000);player.status.healthRegen=0;player.status.defense=999;
+ clock=239999;do{await host.next('game.state');}while(room.poisonPulse<59);assert.equal(player.status.currentHealth,10);
+ clock=240000;do{await host.next('game.state');}while(room.poisonPulse<60);assert.equal(player.status.currentHealth,7);
+ clock=243000;do{await host.next('game.state');}while(room.poisonPulse<61);assert.equal(player.status.currentHealth,4);
+});
