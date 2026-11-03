@@ -269,7 +269,7 @@ const /** canvas: 월드 화면을 그리는 캔버스 요소. */ canvas = $('wo
     if(x<-5||x>w+5||y<-5||y>h+5)continue;
     ctx.beginPath();ctx.arc(x,y,2.5,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();ctx.strokeStyle='#000';ctx.lineWidth=1;ctx.stroke();
   }
-  miniMap.draw(room.map,room.code,me);
+  miniMap.draw(room.map,room.code,me,viewport.worldWidth);
   drawSkillEffects(ctx, room.skillEffects ?? [], ox, oy);
   displayObjects.forEach(/** 각 항목에 현재 단계의 상태 갱신 또는 표시 처리를 적용한다. */ (/** p: 현재 처리하는 플레이어 또는 검증 개체. */ p,/** i: 현재 반복 항목의 순번. */ i) => {
     const /** x: 가로 좌표·이동 입력 또는 반복 비교 항목. */ x = p.x+ox, /** y: 세로 좌표 또는 이동 입력. */ y = p.y+oy;

@@ -43,4 +43,4 @@ body.playing{overflow:hidden}body.playing main>header,body.playing main>footer{d
 .privacy-option{display:flex;align-items:center;gap:8px}.privacy-option input{width:auto}#public-rooms{list-style:none;padding:0;display:grid;gap:8px;max-height:360px;overflow:auto}#public-rooms button{width:100%;text-align:left}#room-browser{margin-top:18px;border-top:1px solid #47604b;padding-top:12px}
 
 /* 미니맵은 게임 HUD 우측 상단에 고정하고 조작 입력을 가리지 않는다. */
-#minimap{position:absolute;top:max(14px,env(safe-area-inset-top));right:max(14px,env(safe-area-inset-right));width:clamp(100px,18vw,150px);height:auto;aspect-ratio:1;border-radius:50%;pointer-events:none;background:#0a121a;box-shadow:0 2px 8px #0008}
+#minimap{position:absolute;top:max(14px,env(safe-area-inset-top));right:max(14px,env(safe-area-inset-right));width:clamp(100px,18vw,150px);height:auto;aspect-ratio:1;border-radius:50%;pointer-events:none;background:#A7A3B0;box-shadow:0 2px 8px #0008}
