@@ -37,6 +37,7 @@ class Socket {
   vm.runInContext(readFileSync(new URL('../public/movement.js',import.meta.url),'utf8'),context);
   vm.runInContext(readFileSync(new URL('../public/motion.js',import.meta.url),'utf8'),context);
   vm.runInContext(readFileSync(new URL('../public/room-timer.js',import.meta.url),'utf8'),context);
+  vm.runInContext(readFileSync(new URL('../public/item-view.js',import.meta.url),'utf8'),context);
   vm.runInContext(readFileSync(new URL('../public/app.js',import.meta.url),'utf8'),context);
   const /** run: 격리 문맥 안에서 테스트 코드를 실행하는 함수. */ run=/** script: 격리 문맥에서 실행할 테스트 코드 문자열. */ /** run: 격리 문맥에서 실제 클라이언트 코드를 실행해 결과를 확인한다. */ script=>vm.runInContext(script,context);
   const /** receive: 서버 메시지 수신을 재현하는 테스트 함수. */ receive=/** message: 사용자나 연결에 전달할 안내 내용. */ /** receive: 서버 스냅샷을 표시용 이력으로 복사하고 방 변경·순간이동을 반영한다. */ message=>run(`socket.onmessage({data:${JSON.stringify(JSON.stringify({v:1,...message}))}})`);

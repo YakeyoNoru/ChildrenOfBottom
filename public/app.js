@@ -3,6 +3,7 @@ let /** socket: 브라우저의 현재 게임 서버 연결. */ socket, /** play
 const /** motionView: 서버 좌표와 분리한 표시용 이동 보간 상태. */ motionView = new MotionView();
 /** timerReceivedAt: 마지막 방 시간 스냅샷을 받은 로컬 시각. */
 let timerReceivedAt=0;
+const /** itemView: 점수 판정과 분리된 조각 비행 예측. */ itemView=new ItemView();
 const /** messages: 연결 종료 등에 사용할 안내 문구 모음. */ messages = { closed: '방이 해제되었습니다.', offline: '연결이 끊어졌습니다. 방에서 퇴장했습니다. 다시 연결 중…' };
 /** notice: 안내 문구를 표시하거나 비어 있으면 숨긴다. */ function notice(/** message: 사용자나 연결에 전달할 안내 내용. */ message) { $('notice').textContent = message; $('notice').hidden = !message; }
 /** settle: 요청 대기 상태와 제한 시간을 해제하고 UI를 다시 그린다. */ function settle() { pending = null; clearTimeout(timeout); render(); }
@@ -54,18 +55,18 @@ const /** messages: 연결 종료 등에 사용할 안내 문구 모음. */ mess
     let /** m: 수신 메시지 또는 문자열 패턴 일치 결과. */ m; try { m = JSON.parse(data); } catch { return; }
     if (m.v !== 1) return;
     if (m.type === 'welcome') { playerId = m.playerId; $('connection').textContent = '● 실시간 서버 연결됨'; }
-    if (m.type === 'game.state') { if (room?.code === m.room.code) { const /** items: 이전 틱의 아이템을 변경분과 합칠 ID 목록. */ items=new Map((room.items??[]).map(/** ID별 자료를 만든다. */ (/** item: 필드 아이템. */ item)=>[item.id,item]));
+    if (m.type === 'game.state') { if (room?.code === m.room.code) { itemView.receive(m.room,Date.now()); const /** items: 이전 틱의 아이템을 변경분과 합칠 ID 목록. */ items=new Map((room.items??[]).map(/** ID별 자료를 만든다. */ (/** item: 필드 아이템. */ item)=>[item.id,item]));
       for(const /** item: 이번 틱 변경 아이템. */ item of m.room.itemChanges?.updates??[])items.set(item.id,item);
       for(const /** id: 획득 완료 ID. */ id of m.room.itemChanges?.removed??[])items.delete(id);
       room = {...m.room,map:m.room.map??room.map,items:m.room.items??[...items.values()]}; timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); updateSkillControls(); $('game-status').textContent=`${room.players.length}명 · 경쟁포인트 ${room.players.find(/** 본인 점수를 조회한다. */ (/** player: 수신 플레이어. */ player)=>player.id===playerId)?.status?.competitionPoints??0}`; } return; }
-    if (m.type === 'room.state') { const /** entering: 새로운 방 상태로 진입했는지 여부. */ entering = !room || room.code !== m.room.code; room = m.room; timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); if (entering) syncTargetPriority(); notice(''); }
-    if (m.type === 'room.closed' || m.type === 'room.left') { room = null; notice(m.type === 'room.closed' ? (m.message??messages.closed) : '방에서 나왔습니다.'); if(m.type==='room.closed') settle(); }
+    if (m.type === 'room.state') { const /** entering: 새로운 방 상태로 진입했는지 여부. */ entering = !room || room.code !== m.room.code; room = m.room; itemView.receive(room,Date.now()); timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); if (entering) syncTargetPriority(); notice(''); }
+    if (m.type === 'room.closed' || m.type === 'room.left') { room = null; itemView.clear(); notice(m.type === 'room.closed' ? (m.message??messages.closed) : '방에서 나왔습니다.'); if(m.type==='room.closed') settle(); }
     if (m.type === 'error') notice(m.message);
     if ((m.type === 'ack' || m.type === 'error') && m.requestId === pending) settle();
     render();
   };
   ws.onclose = /** event: 현재 처리하는 사용자 입력 또는 연결 이벤트. */ /** onclose: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ event => {
-    room = null; playerId = null; settle(); notice(messages.offline); $('connection').textContent = '○ 연결 끊김 · 재시도 중';
+    room = null; itemView.clear(); playerId = null; settle(); notice(messages.offline); $('connection').textContent = '○ 연결 끊김 · 재시도 중';
     clearTimeout(reconnectTimer);
     if (CLIENT_MODE === 'app' && event?.reason === 'App login required') { accountProfile = null; initializeClient(); return; }
     reconnectTimer = setTimeout(connect, 2000);
@@ -239,10 +240,8 @@ const /** canvas: 월드 화면을 그리는 캔버스 요소. */ canvas = $('wo
   const /** ox: 카메라 중심을 맞추는 월드 가로 오프셋. */ ox = w/2-me.x, /** oy: 카메라 중심을 맞추는 월드 세로 오프셋. */ oy = h/2-me.y;
   if(room.map) globalThis.MapRenderer.draw(ctx,room.map,ox,oy,w,h);
   else {ctx.strokeStyle='#284035';ctx.lineWidth=1;ctx.strokeRect(ox-1500,oy-1500,3000,3000);}
-  for(const /** item: 충돌 없는 필드 아이템. */ item of room.items??[]) {
-    const /** target: 비행 중 조각의 표시 대상. */ target=displayObjects.find(/** 획득자를 찾는다. */ (/** object: 표시 개체. */ object)=>object.id===item.targetId);
-    const /** progress: 수신 후 비행 표시 진행률. */ progress=item.state==='flying'?Math.min(1,(Date.now()-item.startedAt)/50):0;
-    const /** x: 표시 가로 좌표; y: 표시 세로 좌표. */ x=item.x+(target?target.x-item.x:0)*progress+ox,y=item.y+(target?target.y-item.y:0)*progress+oy;
+  for(const /** item: 로컬 수신 시각과 예측 위치로 계산한 조각 표시. */ item of itemView.sample(displayObjects,playerId,Date.now())) {
+    const /** x: 화면 가로 좌표; y: 화면 세로 좌표. */ x=item.x+ox,y=item.y+oy;
     if(x<-5||x>w+5||y<-5||y>h+5)continue;
     ctx.beginPath();ctx.arc(x,y,2.5,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();ctx.strokeStyle='#000';ctx.lineWidth=1;ctx.stroke();
   }
