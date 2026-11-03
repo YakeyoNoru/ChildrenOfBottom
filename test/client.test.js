@@ -207,3 +207,14 @@ test('public browser and code join are distinct; privacy follows host authority'
  e.get('room-private').checked=false;e.get('room-private').onchange();assert.equal(run('socket.sent.at(-1).type'),'room.privacy');assert.equal(run('socket.sent.at(-1).private'),false);
  receive({type:'ack',requestId:run('pending')});receive({type:'room.state',room:{...state,phase:'lobby',hostId:'other',private:true}});assert.equal(e.get('room-private').disabled,true);
 });
+
+test('Tab toggles expanded map and minimap touch opens it; repeat does not toggle',/** 확대 지도 열기·닫기와 연속 키 반복·공격 잠금을 검증한다. */ ()=>{
+ const /** e: 화면 요소; receive: 수신 대역; state: 기본 방; window: 이벤트 대상; run: 실행기. */ {elements:e,receive,state,window,run}=client();receive({type:'room.state',room:state});
+ assert.equal(e.get('expanded-map').hidden,true);key(window,'keydown','Tab');assert.equal(e.get('expanded-map').hidden,false);
+ run('useSkill("A")');assert.equal(run('socket.sent.filter(m=>m.type==="game.cast").length'),0);
+ const /** repeated: 자동 반복 Tab 이벤트. */ repeated=new Event('keydown',{cancelable:true});Object.defineProperty(repeated,'code',{value:'Tab'});Object.defineProperty(repeated,'repeat',{value:true});window.dispatchEvent(repeated);assert.equal(e.get('expanded-map').hidden,false);
+ key(window,'keydown','Tab');assert.equal(e.get('expanded-map').hidden,true);
+ e.get('minimap').click();assert.equal(e.get('expanded-map').hidden,false);
+ const /** pointer: 화면 닫기 터치. */ pointer=new Event('pointerdown',{cancelable:true});window.dispatchEvent(pointer);assert.equal(e.get('expanded-map').hidden,true);assert.equal(pointer.defaultPrevented,true);
+ receive({type:'room.left'});assert.equal(e.get('expanded-map').hidden,true);
+});

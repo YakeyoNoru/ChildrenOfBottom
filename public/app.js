@@ -18,6 +18,22 @@ const /** messages: 연결 종료 등에 사용할 안내 문구 모음. */ mess
   timeout = setTimeout(/** 예약 시간이 지나면 대기·재접속·실패 처리를 실행한다. */ () => { notice('서버 응답이 없습니다. 다시 연결합니다.'); socket.close(); }, 8000);
   render();
 }
+let /** mapPointerBlockUntil: 지도 닫기 터치 뒤 합성 클릭을 무시할 로컬 종료 시각. */ mapPointerBlockUntil=0;
+/** 확대 지도를 열거나 닫으며 조작 입력이 지도 터치와 겹치지 않게 한다. */
+function setExpandedMap(/** open: 확대 지도를 표시할지 여부. */ open){
+  $('expanded-map').hidden=!open;$('minimap').setAttribute('aria-expanded',String(open));resetInput();
+}
+$('minimap').onclick=/** 작은 미니맵을 눌러 확대한다. */ (/** event: 클릭 입력. */ event)=>{event?.preventDefault?.();event?.stopPropagation?.();if(room?.phase==='started')setExpandedMap(true);};
+window.addEventListener('pointerdown',/** 열린 지도를 화면 터치로 닫고 해당 입력의 게임 전달을 막는다. */ (/** event: 화면 포인터 입력. */ event)=>{
+  if($('expanded-map').hidden)return;mapPointerBlockUntil=Date.now()+300;setExpandedMap(false);event.preventDefault();event.stopImmediatePropagation();
+},true);
+window.addEventListener('mousedown',/** 닫기 터치에 이어지는 마우스 공격도 막는다. */ (/** event: 마우스 입력. */ event)=>{
+  if(Date.now()>=mapPointerBlockUntil&&!event.target.closest?.('#expanded-map'))return;event.preventDefault();event.stopImmediatePropagation();
+},true);
+window.addEventListener('click',/** 지도 닫기 뒤 합성 클릭이 공격·메뉴·지도 열기로 이어지는 것을 막는다. */ (/** event: 합성될 수 있는 클릭. */ event)=>{
+  if(Date.now()>=mapPointerBlockUntil)return;event.preventDefault();event.stopImmediatePropagation();
+},true);
+$('minimap').onkeydown=/** 키보드 접근성으로 확대 지도를 연다. */ (/** event: 키 입력. */ event)=>{if(['Enter','Space'].includes(event.code)){event.preventDefault();setExpandedMap(true);}};
 /** render: 접속·로비·진행 상태에 맞춰 화면과 버튼 활성 상태를 갱신한다. */ function render() {
   const /** online: 서버 연결과 본인 식별자 준비 여부. */ online = socket?.readyState === WebSocket.OPEN && !!playerId;
   const /** playing: 현재 방이 게임 진행 중인지 여부. */ playing = room?.phase === 'started';
@@ -27,7 +43,7 @@ const /** messages: 연결 종료 등에 사용할 안내 문구 모음. */ mess
   updateSkillControls();
   updateRoomTimer();
   $('game-leave').disabled = !online || !!pending;
-  if (!playing) { motionView.clear(); closeMenu(); resetInput(); }
+  if (!playing) { $('expanded-map').hidden=true;$('minimap').setAttribute('aria-expanded','false'); motionView.clear(); closeMenu(); resetInput(); }
   if (playing) $('game-status').textContent = `${room.players.length}명 생존 · ${room.players.find(/** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ p => p.id === playerId)?.name ?? ''}`;
   for (const /** id: 대상 개체 또는 요소의 식별자. */ id of ['create', 'join-open', 'join','browse-open','rooms-refresh']) $(id).disabled = !online || !!pending;
   renderPublicRooms();
@@ -147,12 +163,12 @@ function updateSkillControls() {
   }
 }
 /** useSkill: 게임 진행과 조작 가능 여부를 검사하고 슬롯 시전 요청을 보낸다. */ function useSkill(/** slot: 기술을 저장하거나 시전할 A·B·C·P 슬롯. */ slot) {
-  if (room?.phase !== 'started' || socket?.readyState !== WebSocket.OPEN || $('game-dialog').open || document.hidden || viewport.blockedPortrait || rolling() || cooldownRemaining(slot)>0) return;
+  if (room?.phase !== 'started' || socket?.readyState !== WebSocket.OPEN || $('game-dialog').open || !$('expanded-map').hidden || document.hidden || viewport.blockedPortrait || rolling() || cooldownRemaining(slot)>0) return;
   inputPacket();
   socket.send(JSON.stringify({v:1,type:'game.cast',slot,afterInputSeq:motionView.sequence}));
 }
 /** movementInput: 키보드와 조이스틱을 조합해 현재 프레임의 이동 입력을 구한다. */ function movementInput() {
-  const /** blocked: 메뉴·구르기 등으로 현재 조작이 차단되는지 여부. */ blocked = $('game-dialog').open || document.hidden || viewport.blockedPortrait || rolling();
+  const /** blocked: 메뉴·구르기 등으로 현재 조작이 차단되는지 여부. */ blocked = $('game-dialog').open || !$('expanded-map').hidden || document.hidden || viewport.blockedPortrait || rolling();
   const /** x: 가로 좌표·이동 입력 또는 반복 비교 항목. */ x = blocked ? 0 : ((keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) || axis.x);
   const /** y: 세로 좌표 또는 이동 입력. */ y = blocked ? 0 : ((keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) - (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) || axis.y);
   return {x,y,blocked};
@@ -193,6 +209,8 @@ $('game-dialog').addEventListener('close', resetInput);
 $('game-leave').onclick = /** onclick: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ () => { resetInput(); inputPacket(); send('room.leave'); };
 window.addEventListener('keydown', /** e: 현재 입력 이벤트 또는 그릴 기술 효과. */ /** keydown 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ e => {
   if (room?.phase !== 'started' || viewport.blockedPortrait) return;
+  if(e.code==='Tab'){e.preventDefault();if(!e.repeat&&!$('game-dialog').open)setExpandedMap($('expanded-map').hidden);return;}
+  if(!$('expanded-map').hidden){if(e.code==='Escape'){e.preventDefault();setExpandedMap(false);}return;}
   desktopInput = true; updateControls();
   if (e.code === 'Escape') { e.preventDefault(); if ($('game-dialog').open) closeMenu(); else $('game-menu').click(); return; }
   if ($('game-dialog').open || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -202,7 +220,7 @@ window.addEventListener('keydown', /** e: 현재 입력 이벤트 또는 그릴 
 });
 window.addEventListener('keyup', /** e: 현재 입력 이벤트 또는 그릴 기술 효과. */ /** keyup 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ e => { keys.delete(e.code); action = desktopAction(); });
 $('game-viewport').addEventListener('mousedown', /** e: 현재 입력 이벤트 또는 그릴 기술 효과. */ /** mousedown 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ e => {
-  if (![0,2].includes(e.button) || room?.phase !== 'started' || $('game-dialog').open || viewport.blockedPortrait || e.target.closest?.('button, input, select, dialog, #joystick')) return;
+  if (![0,2].includes(e.button) || room?.phase !== 'started' || $('game-dialog').open || viewport.blockedPortrait || e.target.closest?.('button, input, select, dialog, #joystick, #minimap, #expanded-map')) return;
   e.preventDefault(); desktopInput = true; updateControls();
   if (!mouseButtons.has(e.button)) useSkill(e.button === 0 ? 'A' : 'B');
   mouseButtons.add(e.button); action = desktopAction(); inputPacket();
@@ -270,6 +288,10 @@ const /** canvas: 월드 화면을 그리는 캔버스 요소. */ canvas = $('wo
     ctx.beginPath();ctx.arc(x,y,2.5,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();ctx.strokeStyle='#000';ctx.lineWidth=1;ctx.stroke();
   }
   miniMap.draw(room.map,room.code,me,viewport.worldWidth);
+  if(!$('expanded-map').hidden&&miniMap.terrain){
+    const /** halfSpan: 현재 위치 중심으로 지도 전체를 담을 절반 범위. */ halfSpan=Math.max(me.x-miniMap.left,me.y-miniMap.top,miniMap.left+miniMap.terrain.width/miniMap.atlasScale-me.x,miniMap.top+miniMap.terrain.height/miniMap.atlasScale-me.y);
+    miniMap.draw(room.map,room.code,me,halfSpan*2/2.5,$('expanded-map-canvas'));
+  }
   drawSkillEffects(ctx, room.skillEffects ?? [], ox, oy);
   displayObjects.forEach(/** 각 항목에 현재 단계의 상태 갱신 또는 표시 처리를 적용한다. */ (/** p: 현재 처리하는 플레이어 또는 검증 개체. */ p,/** i: 현재 반복 항목의 순번. */ i) => {
     const /** x: 가로 좌표·이동 입력 또는 반복 비교 항목. */ x = p.x+ox, /** y: 세로 좌표 또는 이동 입력. */ y = p.y+oy;
