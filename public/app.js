@@ -3,6 +3,7 @@ let /** socket: 브라우저의 현재 게임 서버 연결. */ socket, /** play
 const /** motionView: 서버 좌표와 분리한 표시용 이동 보간 상태. */ motionView = new MotionView();
 /** timerReceivedAt: 마지막 방 시간 스냅샷을 받은 로컬 시각. */
 let timerReceivedAt=0;
+let /** publicRooms: 마지막으로 수신한 공개 대기방 목록. */ publicRooms=[];
 const /** itemView: 점수 판정과 분리된 조각 비행 예측. */ itemView=new ItemView();
 const /** messages: 연결 종료 등에 사용할 안내 문구 모음. */ messages = { closed: '방이 해제되었습니다.', offline: '연결이 끊어졌습니다. 방에서 퇴장했습니다. 다시 연결 중…' };
 /** notice: 안내 문구를 표시하거나 비어 있으면 숨긴다. */ function notice(/** message: 사용자나 연결에 전달할 안내 내용. */ message) { $('notice').textContent = message; $('notice').hidden = !message; }
@@ -27,11 +28,14 @@ const /** messages: 연결 종료 등에 사용할 안내 문구 모음. */ mess
   $('game-leave').disabled = !online || !!pending;
   if (!playing) { motionView.clear(); closeMenu(); resetInput(); }
   if (playing) $('game-status').textContent = `${room.players.length}명 생존 · ${room.players.find(/** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ p => p.id === playerId)?.name ?? ''}`;
-  for (const /** id: 대상 개체 또는 요소의 식별자. */ id of ['create', 'join-open', 'join']) $(id).disabled = !online || !!pending;
+  for (const /** id: 대상 개체 또는 요소의 식별자. */ id of ['create', 'join-open', 'join','browse-open','rooms-refresh']) $(id).disabled = !online || !!pending;
+  renderPublicRooms();
   if (!room) return;
   const /** host: 방장 여부 또는 방장 개체. */ host = room.hostId === playerId, /** me: 현재 접속자의 개체. */ me = room.players.find(/** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ p => p.id === playerId), /** started: 방이 게임 시작 상태인지 여부. */ started = room.phase === 'started';
   $('count').textContent = `${room.players.length} / ${room.maxPlayers??5}`;
   $('room-code').textContent = room.code;
+  $('room-private').checked=room.private??false;
+  $('room-private').disabled=!host||started||!!pending;
   $('phase-title').textContent = started ? '게임 시작 완료' : '대기실';
   $('phase-message').textContent = started ? '모든 참가자에게 시작 상태가 동기화되었습니다. 생존 플레이는 이후 구현됩니다.' : '참가자가 모두 준비하면 방장이 시작할 수 있습니다.';
   $('players').replaceChildren();
@@ -54,6 +58,7 @@ const /** messages: 연결 종료 등에 사용할 안내 문구 모음. */ mess
   ws.onmessage = /** onmessage: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ (/** data: 전달하거나 해석한 데이터. */ { data }) => {
     let /** m: 수신 메시지 또는 문자열 패턴 일치 결과. */ m; try { m = JSON.parse(data); } catch { return; }
     if (m.v !== 1) return;
+    if(m.type==='room.list')publicRooms=Array.isArray(m.rooms)?m.rooms:[];
     if (m.type === 'welcome') { playerId = m.playerId; $('connection').textContent = '● 실시간 서버 연결됨'; }
     if (m.type === 'game.state') { if (room?.code === m.room.code) { itemView.receive(m.room,Date.now()); const /** items: 이전 틱의 아이템을 변경분과 합칠 ID 목록. */ items=new Map((room.items??[]).map(/** ID별 자료를 만든다. */ (/** item: 필드 아이템. */ item)=>[item.id,item]));
       for(const /** item: 이번 틱 변경 아이템. */ item of m.room.itemChanges?.updates??[])items.set(item.id,item);
@@ -66,7 +71,7 @@ const /** messages: 연결 종료 등에 사용할 안내 문구 모음. */ mess
     render();
   };
   ws.onclose = /** event: 현재 처리하는 사용자 입력 또는 연결 이벤트. */ /** onclose: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ event => {
-    room = null; itemView.clear(); playerId = null; settle(); notice(messages.offline); $('connection').textContent = '○ 연결 끊김 · 재시도 중';
+    room = null; itemView.clear(); publicRooms=[]; playerId = null; settle(); notice(messages.offline); $('connection').textContent = '○ 연결 끊김 · 재시도 중';
     clearTimeout(reconnectTimer);
     if (CLIENT_MODE === 'app' && event?.reason === 'App login required') { accountProfile = null; initializeClient(); return; }
     reconnectTimer = setTimeout(connect, 2000);
@@ -74,7 +79,24 @@ const /** messages: 연결 종료 등에 사용할 안내 문구 모음. */ mess
   ws.onerror = /** onerror: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ () => ws.close();
 }
 $('create').onclick = /** onclick: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ () => send('room.create', { name: $('name').value });
-$('join-open').onclick = /** onclick: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ () => { $('join-form').hidden = false; $('code-input').focus(); };
+$('join-open').onclick = /** onclick: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ () => { $('room-browser').hidden=true;$('join-form').hidden = false; $('code-input').focus(); };
+/** 공개 대기방을 안전한 텍스트와 입장 버튼으로 그린다. */
+function renderPublicRooms(){
+  $('public-rooms').replaceChildren();
+  $('rooms-empty').hidden=publicRooms.length>0;
+  $('rooms-empty').textContent=pending?'목록을 불러오는 중입니다.':'현재 공개된 시작 대기방이 없습니다.';
+  for(const /** entry: 서버에서 조회한 공개 방. */ entry of publicRooms){
+    const /** li: 방 한 줄; button: 해당 방 입장 버튼. */ li=document.createElement('li'),button=document.createElement('button');
+    button.textContent=`${entry.hostName}의 방 · ${entry.playerCount}/${entry.maxPlayers} · ${entry.code}`;
+    button.disabled=!!pending||socket?.readyState!==WebSocket.OPEN||entry.playerCount>=entry.maxPlayers;
+    button.onclick=/** 목록 선택 시 서버가 공개 여부·정원·시작 상태를 다시 검증하게 한다. */ ()=>send('room.join',{name:$('name').value,code:entry.code,publicOnly:true});
+    li.append(button);$('public-rooms').append(li);
+  }
+}
+$('browse-open').onclick=/** 공개 방 목록을 열고 최신 목록을 요청한다. */ ()=>{$('join-form').hidden=true;$('room-browser').hidden=false;send('room.list');};
+$('rooms-refresh').onclick=/** 서버의 대기방 목록을 다시 조회한다. */ ()=>send('room.list');
+$('rooms-close').onclick=/** 목록 화면을 닫는다. */ ()=>{$('room-browser').hidden=true;};
+$('room-private').onchange=/** 방장의 공개 여부 변경 요청을 보낸다. */ ()=>{if(room?.hostId===playerId)send('room.privacy',{private:$('room-private').checked});};
 $('cancel').onclick = /** onclick: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ () => { $('join-form').hidden = true; };
 $('join-form').onsubmit = /** e: 현재 입력 이벤트 또는 그릴 기술 효과. */ /** onsubmit: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ e => { e.preventDefault(); send('room.join', { name: $('name').value, code: $('code-input').value }); };
 $('primary').onclick = /** onclick: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ () => { if (!room) return; send(room.hostId === playerId ? 'room.start' : 'room.ready', { ready: !room.players.find(/** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ p => p.id === playerId)?.ready }); };

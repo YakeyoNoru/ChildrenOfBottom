@@ -137,3 +137,11 @@ A/B/C의 재사용 대기는 시전자별 `skillCooldowns[slot]`에 다음 사�
 ## 이동과 시전 순서
 
 `game.cast`는 슬롯과 `afterInputSeq`(시전 전에 서버가 처리해야 할 마지막 이동 입력 순번)를 전송한다. 클라이언트 좌표는 전송하지 않는다. 순번이 없으면 구버전 호환으로 마지막 수신 입력을 사용한다. 서버는 해당 순번 직후 시전하며, 미래·이미 지난·역순 순번은 `INVALID_CAST_SEQUENCE`, 시전 대기열 초과는 `CAST_QUEUE_FULL`을 반환한다. 쿨타임·조작 잠금은 실행 시에도 검사한다. 개체 스냅샷에는 `inputQueueLength`, `inputQueueDelayMs`를 함께 전송한다. 시간 예산 및 검증은 NETWORKING.md 참조.
+
+## 공개 대기방과 Private
+
+새 방의 `private`는 기본 false다. `room.privacy {private:boolean}`는 대기실 방장만 변경할 수 있으며 전체 방 상태에 동기화된다. 비공개라도 기존 `room.join {name,code}`로 입장할 수 있다.
+
+`room.list` 요청에는 `room.list {rooms:[{code,hostName,playerCount,maxPlayers}],requestId}`와 기존 ack를 반환한다. 미만료·공개·시작 대기방만 노출하며 만원 방은 인원 표시와 함께 목록에 남긴다. UI는 만원 방 선택을 비활성화한다. 시작·종료·비공개 전환 후에는 새로고침으로 목록을 갱신한다.
+
+목록 선택 입장은 `room.join {name,code,publicOnly:true}`를 사용한다. 서버는 실제 입장 시 공개 여부·정원·시작·만료를 다시 검사한다. 비공개 전환 시 `ROOM_PRIVATE`를 반환한다. 서버 목록은 비공개 방 코드나 참가자 전체 정보는 공개하지 않는다.

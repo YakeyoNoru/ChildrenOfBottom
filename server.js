@@ -48,7 +48,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
     for (const /** object: 현재 처리하는 월드 개체. */ object of objects) normalizeVitals(object.status);
     // 대상 참조는 100밀리초 주기의 서버 시뮬레이션에서 갱신한다.
     return {
-      ...(includeMap&&room.map?{map:room.map}:{}), mapId:room.map?.id??null, code: room.code, hostId: room.hostId, phase: room.phase, maxPlayers:MAX_PLAYERS, timer:globalThis.RoomTimerRules.snapshot(room,roomClock()),
+      ...(includeMap&&room.map?{map:room.map}:{}), mapId:room.map?.id??null, private:room.private??false,code: room.code, hostId: room.hostId, phase: room.phase, maxPlayers:MAX_PLAYERS, timer:globalThis.RoomTimerRules.snapshot(room,roomClock()),
       players: [...room.players.values()].map(/** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** 각 항목을 현재 계산에 필요한 값으로 변환한다. */ p => ({ ...objectSnapshot(p), ready: p.ready })),
       objects: objects.map(objectSnapshot),
       ...(includeMap?{items:[...(room.items??new Map()).values()]}:{itemChanges:room.itemChanges}),
@@ -112,18 +112,28 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
       const /** fail: 현재 요청 식별자를 포함해 오류를 반환하는 함수. */ fail = /** fail: 현재 요청 ID와 함께 게임 명령 실패를 전달한다. */ (/** code: 개체·기술·방 또는 오류를 식별하는 코드. */ code, /** message: 사용자나 연결에 전달할 안내 내용. */ message) => error(code, message, m.requestId);
       let /** room: 현재 처리하는 방의 상태. */ room = rooms.get(ws.roomCode);
       if(room && globalThis.RoomTimerRules.expired(room,roomClock())) {closeExpiredRoom(room);room=null;}
-      if (m.type === 'room.create' || m.type === 'room.join') {
+      if(m.type==='room.list'){
+        const /** available: 공개된 시작 대기방의 최소 목록 자료. */ available=[...rooms.values()].filter(/** 공개·대기·미만료 방만 노출한다. */ (/** candidate: 조회할 방. */ candidate)=>!candidate.private&&candidate.phase==='lobby'&&!globalThis.RoomTimerRules.expired(candidate,roomClock())).map(/** 선택 화면에 필요한 값만 보낸다. */ (/** candidate: 공개 방. */ candidate)=>({code:candidate.code,hostName:candidate.players.get(candidate.hostId)?.name??'',playerCount:candidate.players.size,maxPlayers:MAX_PLAYERS}));
+        send(ws,'room.list',{rooms:available,requestId:m.requestId});
+      }else if(m.type==='room.privacy'){
+        if(!room)return fail('NOT_IN_ROOM','참여 중인 방이 없습니다.');
+        if(room.phase!=='lobby')return fail('GAME_STARTED','이미 시작한 방입니다.');
+        if(room.hostId!==ws.id)return fail('FORBIDDEN','방장만 공개 여부를 변경할 수 있습니다.');
+        if(typeof m.private!=='boolean')return fail('INVALID_PRIVACY','Private 값은 체크 여부여야 합니다.');
+        room.private=m.private;broadcast(room);
+      }else if (m.type === 'room.create' || m.type === 'room.join') {
         if (room) return fail('ALREADY_IN_ROOM', '이미 방에 참여 중입니다.');
         if (typeof m.name !== 'string' || !m.name.trim() || m.name.trim().length > 20 || /[\x00-\x1f]/.test(m.name)) return fail('INVALID_NAME', '이름은 1~20자로 입력하세요.');
         if (m.type === 'room.create') {
           if (rooms.size >= 1000) return fail('SERVER_FULL', '서버가 가득 찼습니다.');
           let /** code: 개체·기술·방 또는 오류를 식별하는 코드. */ code; do { code = randomBytes(4).toString('hex').slice(0, 6).toUpperCase(); } while (rooms.has(code));
-          room = { ...globalThis.RoomTimerRules.create(roomClock()), code, hostId: ws.id, phase: 'lobby', players: new Map(), objects: new Map() }; rooms.set(code, room);
+          room = { ...globalThis.RoomTimerRules.create(roomClock()), code, hostId: ws.id, phase: 'lobby', private:false, players: new Map(), objects: new Map() }; rooms.set(code, room);
         } else {
           if (typeof m.code !== 'string' || !/^[A-F0-9]{6}$/.test(m.code.trim().toUpperCase())) return fail('INVALID_CODE', '접속코드 6자리를 확인하세요.');
           room = rooms.get(m.code.trim().toUpperCase());
           if(room && globalThis.RoomTimerRules.expired(room,roomClock())) {closeExpiredRoom(room);room=null;}
           if (!room) return fail('ROOM_NOT_FOUND', '방을 찾을 수 없습니다.');
+          if(m.publicOnly===true&&room.private)return fail('ROOM_PRIVATE','비공개로 변경된 방입니다. 접속코드로 참여해 주세요.');
           if (room.phase !== 'lobby') return fail('GAME_STARTED', '이미 시작한 방입니다.');
           if (room.players.size >= MAX_PLAYERS) return fail('ROOM_FULL', '방이 꽉찼습니다');
         }

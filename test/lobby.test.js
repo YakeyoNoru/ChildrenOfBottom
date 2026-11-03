@@ -325,3 +325,28 @@ test('attack is anchored after its movement sequence and before later queued mov
  assert.equal(room.skillEffects.length,1);assert.equal(room.skillEffects[0].x,startX+44);assert.equal(player.x,startX+88);
  assert.equal((await a.command('game.cast',{slot:'C',afterInputSeq:100},'error')).code,'INVALID_CAST_SEQUENCE');
 });
+
+test('public room listing excludes private/started rooms and code joining remains available',/** 공개 목록·방장 권한·비공개 코드 입장·목록 선택의 재검증을 검사한다. */ async (/** t: 정리 문맥. */ t)=>{
+ const /** client: 서버 접속 생성기. */ {client}=await setup(t);
+ const /** host: 방장; guest: 목록 조회자; outsider: 코드 입장자. */ host=await client(),guest=await client(),outsider=await client();
+ await host.command('room.create',{name:'공개방장'});
+ const /** initial: 생성 직후 방 상태. */ initial=(await host.next('room.state')).room;assert.equal(initial.private,false);
+ await guest.command('room.list');assert.equal((await guest.next('room.list')).rooms[0].code,initial.code);
+ await host.command('room.privacy',{private:true});
+ await guest.command('room.list');assert.deepEqual((await guest.next('room.list')).rooms,[]);
+ assert.equal((await guest.command('room.join',{name:'목록입장',code:initial.code,publicOnly:true},'error')).code,'ROOM_PRIVATE');
+ await outsider.command('room.join',{name:'코드입장',code:initial.code});
+ assert.equal((await outsider.command('room.privacy',{private:false},'error')).code,'FORBIDDEN');
+ assert.equal((await host.command('room.privacy',{private:'Y'},'error')).code,'INVALID_PRIVACY');
+ await host.command('room.privacy',{private:false});await guest.command('room.list');
+ const /** reopened: 다시 공개된 방 목록. */ reopened=(await guest.next('room.list')).rooms;assert.equal(reopened.length,1);assert.equal(reopened[0].playerCount,2);
+ await outsider.command('room.ready',{ready:true});await host.command('room.start');await guest.command('room.list');assert.deepEqual((await guest.next('room.list')).rooms,[]);
+ assert.equal((await guest.command('room.join',{name:'늦은입장',code:initial.code,publicOnly:true},'error')).code,'GAME_STARTED');
+});
+
+test('expired public rooms are excluded from listings',/** 목록 요청에서 만료된 방을 노출하지 않는다. */ async (/** t: 정리 문맥. */ t)=>{
+ let /** clock: 검증용 서버 방 시각. */ clock=0;
+ const /** client: 검증 서버 접속 생성기. */ {client}=await setup(t,{roomClock:/** 제어된 시각을 반환한다. */ ()=>clock});
+ const /** host: 방장; browser: 목록 조회자. */ host=await client(),browser=await client();await host.command('room.create',{name:'만료방'});
+ clock=660000;await browser.command('room.list');assert.deepEqual((await browser.next('room.list')).rooms,[]);
+});

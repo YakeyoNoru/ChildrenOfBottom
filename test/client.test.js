@@ -195,3 +195,14 @@ test('cast carries the latest generated input sequence without duplicate movemen
  assert.equal(run('socket.sent.find(m=>m.type==="game.cast").afterInputSeq'),1);
  assert.equal(run('socket.sent.find(m=>["game.input","game.cast"].includes(m.type)).type'),'game.input');
 });
+
+test('public browser and code join are distinct; privacy follows host authority',/** 공개 목록 요청과 코드 폼·비공개 체크 동기화를 검사한다. */ ()=>{
+ const /** e: 요소 대역; receive: 메시지 수신; state: 방 상태; run: 격리 실행기. */ {elements:e,receive,state,run}=client();
+ e.get('browse-open').click();assert.equal(e.get('room-browser').hidden,false);assert.equal(run('socket.sent.at(-1).type'),'room.list');
+ receive({type:'room.list',rooms:[{code:'ABC123',hostName:'방장',playerCount:1,maxPlayers:5}]});receive({type:'ack',requestId:run('pending')});
+ assert.equal(run('publicRooms.length'),1);assert.equal(e.get('rooms-empty').hidden,true);
+ e.get('join-open').click();assert.equal(e.get('join-form').hidden,false);assert.equal(e.get('room-browser').hidden,true);
+ receive({type:'room.state',room:{...state,phase:'lobby',private:true}});assert.equal(e.get('room-private').checked,true);assert.equal(e.get('room-private').disabled,false);
+ e.get('room-private').checked=false;e.get('room-private').onchange();assert.equal(run('socket.sent.at(-1).type'),'room.privacy');assert.equal(run('socket.sent.at(-1).private'),false);
+ receive({type:'ack',requestId:run('pending')});receive({type:'room.state',room:{...state,phase:'lobby',hostId:'other',private:true}});assert.equal(e.get('room-private').disabled,true);
+});
