@@ -62,29 +62,39 @@ test('TEST001 wanders 5 to 50 units after a 1 to 3 second idle interval without 
   assert.deepEqual(monster.status.spawnPosition,{x:0,y:0});
 });
 
-test('last actual attacker overrides nearest target, BAS0001 hits at 30 and enforces the full 2 second pause', /** 대상 선택·접근·공통 기술 피해·정지 시간 경계를 검사한다. */ () => {
+test('last attacker starts a 1.5 second fixed direction windup at 30 then rests for 2.5 seconds', /** 접근·준비 시간·저장 방향과 공격 후 정지 경계를 검사한다. */ () => {
   const /** monster: 반격할 몬스터. */ monster=createMonster('몬스터A01');
   const /** first: 먼저 공격한 개체. */ first=player(-100,'first');
   const /** last: 마지막 공격자이자 추격 대상. */ last=player(41,'last');
   hit(monster,first);hit(monster,last);monster.status.nearestEnemyId=first.id;
   assert.equal(monster.status.attackTargetId,last.id);
-  assert.equal(tickMonsters([monster,first,last],null,0,.05).length,1);
-  assert.equal(monster.x,11);assert.equal(last.status.currentHealth,92);assert.equal(first.status.currentHealth,100);
+  assert.equal(tickMonsters([monster,first,last],null,0,.05).length,0);
+  assert.equal(monster.x,11);assert.equal(last.status.currentHealth,100);assert.equal(monster.monsterAI.attackAngle,0);
+  // 대상이 옆으로 피하고 자동 타겟이 뒤에 있어도 저장한 오른쪽 방향을 유지한다.
+  last.x=11;last.y=100;
+  assert.equal(tickMonsters([monster,first,last],null,1499,.05).length,0);assert.equal(monster.x,11);assert.equal(monster.facing,0);
+  const /** effects: 정확히 준비가 끝난 시각의 공격 결과. */ effects=tickMonsters([monster,first,last],null,1500,.05);
+  assert.equal(effects.length,1);assert.equal(effects[0].angle,0);assert.equal(effects[0].code,'BAS0001');
+  assert.equal(last.status.currentHealth,100);assert.equal(first.status.currentHealth,100);
   assert.equal(monster.status.nearestEnemyId,first.id);
-  last.x=80;tickMonsters([monster,first,last],null,1999,.05);assert.equal(monster.x,11);
-  tickMonsters([monster,first,last],null,2000,.05);assert.equal(monster.x,22);
-  last.x=52;assert.equal(tickMonsters([monster,first,last],null,2050,.05).length,1);
+  tickMonsters([monster,first,last],null,3999,.05);assert.equal(monster.y,0);
+  tickMonsters([monster,first,last],null,4000,.05);assert.equal(monster.y,11);
+  last.y=41;assert.equal(tickMonsters([monster,first,last],null,4050,.05).length,0);
+  assert.equal(tickMonsters([monster,first,last],null,5550,.05).length,1);assert.equal(last.status.currentHealth,92);
 });
 
-test('after attacking, exactly 150 distance, target death or removal drops aggro after the pause', /** 추격 종료의 경계와 사망·퇴장을 각각 검사한다. */ () => {
-  for(const /** reason: 이번 종료 조건. */ reason of ['distance','dead','removed']) {
+test('after rest, targets within exactly 150 repeat while farther, dead or missing targets end combat', /** 150 포함 경계와 사망·퇴장 조건을 각각 검사한다. */ () => {
+  for(const /** reason: 이번 종료 또는 지속 조건. */ reason of ['boundary','distance','dead','removed']) {
     const /** monster: 공격 후 대기 중인 몬스터. */ monster=createMonster('몬스터A01');
     const /** target: 종료 조건을 적용할 공격자. */ target=player();
     hit(monster,target);tickMonsters([monster,target],null,0,.05);
-    if(reason==='distance')target.x=150;
+    tickMonsters([monster,target],null,1500,.05);
+    if(reason==='boundary')target.x=150;
+    if(reason==='distance')target.x=150.01;
     if(reason==='dead')target.status.state='dead';
-    tickMonsters(reason==='removed'?[monster]:[monster,target],null,2000,.05);
-    assert.equal(monster.status.attackTargetId,null);assert.equal(monster.status.awarenessState,'normal');
+    tickMonsters(reason==='removed'?[monster]:[monster,target],null,4000,.05);
+    assert.equal(monster.status.attackTargetId,reason==='boundary'?target.id:null);
+    assert.equal(monster.status.awarenessState,reason==='boundary'?'combat':'normal');
   }
 });
 
@@ -131,9 +141,10 @@ test('zero damage never acquires a target and new attacks during the pause do no
   const /** second: 대기 중 마지막 공격자. */ second=player(60,'second');
   hit(monster,first,0);assert.equal(monster.status.attackTargetId,null);
   hit(monster,first);tickMonsters([monster,first,second],null,0,.05);
+  tickMonsters([monster,first,second],null,1500,.05);
   hit(monster,second);assert.equal(monster.status.attackTargetId,second.id);
-  tickMonsters([monster,first,second],null,1999,.05);assert.equal(monster.x,0);
-  tickMonsters([monster,first,second],null,2000,.05);assert.equal(monster.x,11);
+  tickMonsters([monster,first,second],null,3999,.05);assert.equal(monster.x,0);
+  tickMonsters([monster,first,second],null,4000,.05);assert.equal(monster.x,11);
 });
 
 test('return follows recorded bridge waypoints instead of crossing an unconnected gap', /** 직선 귀환이 막힌 지형에서 저장 경로를 따라 복귀하는지 검사한다. */ () => {
@@ -148,4 +159,35 @@ test('return follows recorded bridge waypoints instead of crossing an unconnecte
     assert.ok(globalThis.PitMapRules.walkable(map,monster.x,monster.y,13));
   }
   assert.deepEqual({x:monster.x,y:monster.y},centers[0]);assert.equal(monster.status.awarenessState,'normal');
+});
+
+test('a new attacker during windup changes the next target but cannot rotate or accelerate the committed attack', /** 준비 중 피격에도 저장 방향과 준비 시간이 유지되는지 검사한다. */ () => {
+  const /** monster: 공격을 준비할 몬스터. */ monster=createMonster('몬스터A01');
+  const /** first: 준비 시작 시 오른쪽 대상. */ first=player(30,'first');
+  const /** second: 준비 중 뒤에서 공격하는 새 대상. */ second=player(-30,'second');
+  hit(monster,first);tickMonsters([monster,first,second],null,0,.05);
+  hit(monster,second);assert.equal(monster.status.attackTargetId,second.id);
+  assert.equal(tickMonsters([monster,first,second],null,1499,.05).length,0);
+  const /** effects: 준비 종료 시 저장 방향으로 시전한 결과. */ effects=tickMonsters([monster,first,second],null,1500,.05);
+  assert.equal(effects[0].angle,0);assert.equal(first.status.currentHealth,92);assert.equal(second.status.currentHealth,100);
+  assert.equal(monster.monsterAI.pauseUntil,4000);
+});
+
+test('stun, caster death and the 400 leash cancel a pending windup without releasing a delayed shot', /** 준비 중 기절·사망·복귀가 예약 공격을 취소하는지 각각 검사한다. */ () => {
+  for(const /** reason: 공격 준비를 취소할 조건. */ reason of ['stunned','dead','returning']){
+    const /** monster: 취소할 공격을 준비하는 몬스터. */ monster=createMonster('몬스터A01');
+    const /** target: 공격 준비의 대상. */ target=player();
+    hit(monster,target);tickMonsters([monster,target],null,0,.05);
+    if(reason==='stunned')monster.status.stunned=true;
+    if(reason==='dead')monster.status.state='dead';
+    if(reason==='returning')monster.x=400;
+    assert.equal(tickMonsters([monster,target],null,1500,.05).length,0);
+    assert.equal(monster.monsterAI.attackAngle,null);assert.equal(monster.monsterAI.windupUntil,0);
+    assert.equal(target.status.currentHealth,100);
+    if(reason==='stunned'){
+      monster.status.stunned=false;
+      assert.equal(tickMonsters([monster,target],null,2000,.05).length,0);
+      assert.equal(monster.monsterAI.windupUntil,3500);
+    }
+  }
 });

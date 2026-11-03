@@ -44,6 +44,8 @@ function getAI(/** monster: 행동을 실행할 유닛. */ monster, /** now: 서
       /** nextWanderAt: 다음 무작위 이동 시작 시각(ms). */ nextWanderAt:0,
       /** destination: 배회 목적지 또는 정지(null). */ destination:null,
       /** pauseUntil: 공격 후 이동·시전을 금지할 종료 시각(ms). */ pauseUntil:0,
+      /** windupUntil: 저장 방향으로 공격할 준비 종료 시각(ms). 준비하지 않을 때는 0. */ windupUntil:0,
+      /** attackAngle: 30거리에서 저장한 시전 방향(라디안). 공격 준비가 없으면 null. */ attackAngle:null,
       /** hasAttacked: 마지막 대상에게 시전하여 150거리 이탈 조건이 활성화되었는지 여부. */ hasAttacked:false,
       /** returnPath: 지도 장애물을 통과하지 않고 돌아올 수 있게 기록한 이동 전 좌표. */ returnPath:[],
     };
@@ -57,6 +59,7 @@ function startReturn(/** monster: 생성점에서 400거리 이상 벗어난 몬
   monster.status.awarenessState='returning';monster.status.attackTargetId=null;
   monster.status.currentHealth=effectiveStats(monster.status).maxHealth;
   monster.monsterAI.destination=null;monster.monsterAI.pauseUntil=0;monster.monsterAI.hasAttacked=false;
+  monster.monsterAI.windupUntil=0;monster.monsterAI.attackAngle=null;
   const /** direct: 생성점까지 직선 이동으로 도달 가능한 마지막 위치. */ direct=map?globalThis.PitMapRules.constrain(map,monster,monster.status.spawnPosition,monster.status.hitboxDiameter/2,false):monster.status.spawnPosition;
   // 빈 공간·금지 통행이 없는 직선이면 지나온 배회 경로를 모두 거슬러 올라가지 않는다.
   if(distance(direct,monster.status.spawnPosition)<1e-6)monster.monsterAI.returnPath=[];
@@ -104,12 +107,16 @@ export function tickMonsters(
     if(monster.status.objectType!=='enemy'||monster.status.classificationCode!=='TEST001')continue;
     const /** status: 복귀 좌표·인식상태·공격대상을 가진 서버 수치. */ status=monster.status;
     monster.action=null;
-    if(status.state===LifeState.DEAD){status.attackTargetId=null;continue;}
+    if(status.state===LifeState.DEAD){
+      status.attackTargetId=null;
+      if(monster.monsterAI){monster.monsterAI.windupUntil=0;monster.monsterAI.attackAngle=null;}
+      continue;
+    }
     const /** ai: 이 개체만의 서버 행동 시간표. */ ai=getAI(monster,now,random);
     if(status.awarenessState!=='returning'&&distance(monster,status.spawnPosition)>=400) {
       startReturn(monster,map);
     }
-    if(status.stunned)continue;
+    if(status.stunned){ai.windupUntil=0;ai.attackAngle=null;continue;}
     if(status.awarenessState==='returning') {
       const /** waypoint: 지나왔던 마지막 좌표 또는 최초 생성 좌표. */ waypoint=ai.returnPath.at(-1)??status.spawnPosition;
       moveToward(monster,waypoint,map,seconds,0,true);
@@ -122,8 +129,16 @@ export function tickMonsters(
       continue;
     }
     if(now<ai.pauseUntil)continue;
+    if(ai.attackAngle!==null) {
+      monster.facing=ai.attackAngle;
+      if(now<ai.windupUntil){monster.action='windup';continue;}
+      const /** effect: 준비 시작 시 저장한 방향으로 실행한 공통 BAS0001 시전 결과. */ effect=castSkill(monster,objects,'A',now,undefined,ai.attackAngle);
+      if(effect){effects.push(effect);ai.pauseUntil=now+2500;ai.hasAttacked=true;monster.action='A';}
+      ai.windupUntil=0;ai.attackAngle=null;
+      continue;
+    }
     const /** target: 마지막 실제 공격자의 현재 개체. */ target=byId.get(status.attackTargetId);
-    if(status.awarenessState==='combat'&&(!target||target.status.state===LifeState.DEAD||(ai.hasAttacked&&distance(monster,target)>=150))) {
+    if(status.awarenessState==='combat'&&(!target||target.status.state===LifeState.DEAD||(ai.hasAttacked&&distance(monster,target)>150))) {
       status.attackTargetId=null;status.awarenessState='normal';ai.hasAttacked=false;scheduleWander(ai,now,random);
     }
     if(status.awarenessState==='combat'&&target) {
@@ -131,11 +146,9 @@ export function tickMonsters(
       // 이동 직후 400거리 경계를 넘었으면 다음 공격보다 복귀 판정을 우선한다.
       if(distance(monster,status.spawnPosition)>=400)continue;
       if(distance(monster,target)<=30+1e-6) {
-        const /** previousNearest: 자동 타겟 필드를 잠시 보존할 값. */ previousNearest=status.nearestEnemyId;
-        status.nearestEnemyId=target.id;monster.facing=Math.atan2(target.y-monster.y,target.x-monster.x);
-        const /** effect: 마지막 공격자를 조준한 BAS0001 공통 시전 결과. */ effect=castSkill(monster,objects,'A',now);
-        status.nearestEnemyId=previousNearest;
-        if(effect){effects.push(effect);ai.pauseUntil=now+2000;ai.hasAttacked=true;monster.action='A';}
+        ai.attackAngle=Math.atan2(target.y-monster.y,target.x-monster.x);
+        ai.windupUntil=now+1500;
+        monster.facing=ai.attackAngle;monster.action='windup';
       }
       continue;
     }

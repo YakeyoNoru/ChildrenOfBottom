@@ -408,7 +408,7 @@ test('room start spawns monsters and synchronizes server AI, retaliation effects
   const /** applySkillDamage: 공통 기술 피해 함수. */ {applySkillDamage}=await import('../game/combat.js');
   applySkillDamage({id:'integration-hit',casterId:attacker.id,code:'BAS0001',resultSequence:0},monster,1,Date.now());
   let /** retaliated: 서버 AI가 공격 표시를 생성했는지 여부. */ retaliated=false;
-  for(let /** attempt: 반격 스냅샷 대기 횟수. */ attempt=0;attempt<10;attempt++) {
+  for(let /** attempt: 1.5초 공격 준비와 전송 여유를 포함한 반격 스냅샷 대기 횟수. */ attempt=0;attempt<60;attempt++) {
     state=(await connection.next('game.state')).room;
     if(state.skillEffects.some(/** 해당 몬스터의 시전을 찾는다. */ (/** effect: 수신 기술 표시. */ effect)=>effect.casterId===monster.id&&effect.code==='BAS0001')){retaliated=true;break;}
   }

@@ -30,13 +30,14 @@ export const /** skills: 기술 코드별 공통 기술 정의. */ skills = Obje
 export /** circleIntersectsSkill: 공격 방향으로 좌표를 투영해 원형 히트박스와 전방 사각형의 교차를 검사한다. */ function circleIntersectsSkill(/** caster: 기술을 사용하는 개체. */ caster, /** target: 선택된 적대 개체 또는 히트박스를 검사할 대상. */ target, /** angle: 방향을 나타내는 라디안 각도. */ angle, /** skill: 이번 시전에 적용할 기술 정의. */ skill) {
   return intersectsSkill({x:caster.x,y:caster.y,angle,shape:skill.shape,width:skill.width,length:skill.length,radius:skill.radius},target);
 }
-export /** castSkill: 서버 기술 슬롯과 선택 대상을 기준으로 적에게 한 번 피해를 적용하고 표시 효과를 만든다. */ function castSkill(/** caster: 기술을 사용하는 개체. */ caster, /** objects: 처리할 월드 개체 목록. */ objects, /** slot: 기술을 저장하거나 시전할 A·B·C·P 슬롯. */ slot, /** now: 현재 처리 시각(밀리초). */ now = Date.now(), /** definitions: 시전에 사용할 기술 코드별 정의 모음. */ definitions = skills) {
+export /** castSkill: 서버 기술 슬롯과 선택 대상 또는 저장 방향으로 피해와 표시 효과를 만든다. */ function castSkill(/** caster: 기술을 사용하는 개체. */ caster, /** objects: 처리할 월드 개체 목록. */ objects, /** slot: 기술을 저장하거나 시전할 A·B·C·P 슬롯. */ slot, /** now: 현재 처리 시각(밀리초). */ now = Date.now(), /** definitions: 시전에 사용할 기술 코드별 정의 모음. */ definitions = skills, /** aimAngle: 서버 AI가 저장한 고정 시전 방향(라디안). null이면 기존 자동 조준. 클라이언트 입력으로 받지 않는다. */ aimAngle = null) {
+  if(aimAngle!==null&&!Number.isFinite(aimAngle))return null;
   if (!['A','B','C'].includes(slot) || caster.status.stunned || caster.status.state === LifeState.DEAD || caster.roll?.remaining>0) return null;
   const /** skill: 이번 시전에 적용할 기술 정의. */ skill = definitions[caster.status['skill'+slot]];
   if (!skill || skillCooldownRemaining(caster,slot,now)>0) return null;
   if(skill.kind==='roll') return startRoll(caster,skill,slot,now);
   const /** target: 선택된 적대 개체 또는 히트박스를 검사할 대상. */ target = objects.find(/** o: 현재 비교하거나 변환할 개체. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ o=>o.id===caster.status.nearestEnemyId && o.status.state!==LifeState.DEAD && areEnemies(caster.status,o.status));
-  const /** angle: 방향을 나타내는 라디안 각도. */ angle = target ? Math.atan2(target.y-caster.y,target.x-caster.x) : caster.facing ?? -Math.PI/2;
+  const /** angle: 서버 지정 방향이 있으면 현재 대상 위치와 무관하게 사용하는 라디안 각도. */ angle = aimAngle ?? (target ? Math.atan2(target.y-caster.y,target.x-caster.x) : caster.facing ?? -Math.PI/2);
   const /** instance: 이번 시전만의 위치·공격 수치·피격 기록을 가진 서버 객체. */ instance=createSkillInstance(caster,skill,angle,now);
   resolveSkillContacts(instance,objects,now);
   /** caster.skillCooldowns: 각 슬롯에서 다음 시전이 허용되는 서버 시각. */
