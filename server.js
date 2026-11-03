@@ -1,3 +1,4 @@
+import './public/input-timeline.js';
 import './public/items.js';
 import './public/pit-map-rules.js';
 import { /** generateRoomMap: 원본 구덩이 규칙으로 서버 맵을 생성한다. */ generateRoomMap } from './game/map-generator.js';
@@ -39,7 +40,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
   const /** objectSnapshot: 개체를 전송용 상태로 복사하는 함수. */ objectSnapshot = /** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** objectSnapshot: 개체의 최종 수치를 계산하고 전송 가능한 상태만 복사한다. */ p => {
     updateSkillCooldowns(p);
     const /** effective: 추가 수치를 합산한 최종 스테이터스. */ effective = normalizeVitals(p.status);
-    return { id: p.id, name: p.name, x: p.x, y: p.y, action: p.action, facing: p.facing ?? -Math.PI / 2, playerNumber:p.playerNumber??null,spawnTileId:p.spawnTileId??null,skillNames:getSkillSlotNames(p.status), lastProcessedInput: p.lastProcessedInput ?? 0, roll:p.roll?{...p.roll}:null, lastMovementInput:p.lastMovementInput??{x:0,y:0}, status: { ...p.status, effective } };
+    return { id: p.id, name: p.name, x: p.x, y: p.y, action: p.action, facing: p.facing ?? -Math.PI / 2, inputQueueLength:p.inputQueue?.length??0,inputQueueDelayMs:p.inputQueue?.length?Math.max(0,Date.now()-(p.inputQueue[0].receivedAt??Date.now())):0,playerNumber:p.playerNumber??null,spawnTileId:p.spawnTileId??null,skillNames:getSkillSlotNames(p.status), lastProcessedInput: p.lastProcessedInput ?? 0, roll:p.roll?{...p.roll}:null, lastMovementInput:p.lastMovementInput??{x:0,y:0}, status: { ...p.status, effective } };
   };
   const /** allObjects: 방의 플레이어와 일반 개체를 함께 조회하는 함수. */ allObjects = /** room: 현재 처리하는 방의 상태. */ /** allObjects: 방 안의 플레이어와 NPC·적을 하나의 목록으로 모은다. */ room => [...room.players.values(), ...room.objects.values()];
   const /** snapshot: 방 상태를 전송용 데이터로 변환하는 함수. */ snapshot = /** room: 현재 처리하는 방의 상태. */ /** snapshot: 현재 방의 참가자·개체·기술 효과를 전송용 스냅샷으로 만든다. */ (room, /** includeMap: 지도는 초기 상태에만 포함하고 틱 전송에서는 생략한다. */ includeMap=true) => {
@@ -79,6 +80,16 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
         broadcast(room);
       }
     }
+  }
+  /** 이동 순서가 도달한 기술을 실행 시점의 상태·쿨타임으로 검증한다. */
+  function executeCast(/** room: 현재 방. */ room,/** caster: 시전자. */ caster,/** command: 예약한 슬롯·요청 ID. */ command,/** now: 서버 실행 시각. */ now){
+    if(!room.players.has(caster.id))return;
+    if(caster.roll?.remaining>0){send(caster.ws,'error',{code:'ACTION_LOCKED',message:'구르는 동안에는 기술을 사용할 수 없습니다.',requestId:command.requestId});return;}
+    if(skillCooldownRemaining(caster,command.slot,now)>0){send(caster.ws,'error',{code:'SKILL_COOLDOWN',message:'기술 재사용 대기 중입니다.',requestId:command.requestId});return;}
+    updateNearestObjects(allObjects(room));
+    const /** effect: 이동을 반영한 시전자 위치에서 생성된 효과. */ effect=castSkill(caster,allObjects(room),command.slot,now);
+    if(effect?.kind==='roll'){caster.movementClock??={last:now,credit:0};caster.movementClock.last=now;caster.movementClock.credit=0;}
+    if(effect&&effect.kind!=='roll'){room.skillEffects??=[];room.skillEffects.push(effect);}
   }
   wss.on('connection', /** connection 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ (/** ws: 현재 처리 중인 WebSocket 연결. */ ws, /** req: 수신한 HTTP 요청. */ req) => {
     const /** allowed: 서버에서 허용하는 브라우저 출처. */ allowed = process.env.ALLOWED_ORIGIN;
@@ -129,8 +140,10 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
         const /** caster: 기술을 사용하는 개체. */ caster = room.players.get(ws.id), /** now: 현재 처리 시각(밀리초). */ now = Date.now();
         if (caster.roll?.remaining>0) return fail('ACTION_LOCKED','구르는 동안에는 기술을 사용할 수 없습니다.');
         if (skillCooldownRemaining(caster,m.slot,now)>0) return fail('SKILL_COOLDOWN', '기술 재사용 대기 중입니다.');
-        const /** effect: 시전 위치·피해 결과·표시 만료 시각을 담은 기술 효과. */ effect=castSkill(caster,allObjects(room),m.slot,now);
-        if (effect && effect.kind!=='roll') { room.skillEffects ??= []; room.skillEffects.push(effect); }
+        const /** sequence: 요청에 연결한 이동 순번. 구버전은 마지막 수신 입력에 연결한다. */ sequence=m.afterInputSeq??caster.lastReceivedInput??0;
+        const /** errorCode: 순번·대기열 검증 오류. */ errorCode=globalThis.InputTimeline.enqueue(caster,m.slot,sequence,m.requestId);
+        if(errorCode)return fail(errorCode,'시전 입력 순서를 다시 확인해 주세요.');
+        globalThis.InputTimeline.ready(caster,/** 순서가 이미 도달한 시전을 처리한다. */ (/** command: 예약 요청. */ command)=>executeCast(room,caster,command,Date.now()));
         return;
       } else if (m.type === 'game.input') {
         if (!room) return fail('NOT_IN_ROOM', '참여 중인 방이 없습니다.');
@@ -143,7 +156,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
           if (m.seq !== (p.lastReceivedInput ?? 0)+1 || (p.inputQueue?.length ?? 0)>=32) return fail('INVALID_INPUT_SEQUENCE','입력 순서를 다시 확인해야 합니다.');
           /** p.inputQueue: 서버가 아직 이동에 반영하지 않은 고정 시간 입력 목록. */
           p.inputQueue ??= [];
-          p.inputQueue.push({seq:m.seq,x:m.x,y:m.y,action:m.action ?? null});
+          p.inputQueue.push({seq:m.seq,x:m.x,y:m.y,action:m.action ?? null,receivedAt:Date.now()});
           /** p.lastReceivedInput: 수신 검증을 마친 마지막 입력 번호. 처리 확인 번호와 다르다. */
           p.lastReceivedInput=m.seq;
           /** p.sequencedInput: 고정 스텝 입력 프로토콜 사용 여부. */ p.sequencedInput=true;
@@ -173,6 +186,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
           [...room.players.values()].forEach(/** 입장 순서별 지정 타일 중심에 배치한다. */ (/** player: 배치할 참가자. */ player,/** index: 현재 참가자의 입장 순서. */ index)=>{
             const /** tile: 플레이어 순번과 같은 번호의 지형타일. */ tile=room.map.tiles.find(/** 시작 타일을 찾는다. */ (/** item: 지도 타일. */ item)=>item.id===index+1);
             Object.assign(player,globalThis.PitMapRules.center(tile,room.map));
+            player.pendingCasts=[];player.movementClock={last:Date.now(),credit:50};
             player.playerNumber=index+1;player.spawnTileId=tile.id;player.roll=null;player.input={x:0,y:0};player.inputQueue=[];
           });
           broadcast(room);
@@ -192,14 +206,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
       for (const /** object: 현재 처리하는 월드 개체. */ object of objects) { regenerate(object.status, dt); updateSkillCooldowns(object,now); }
       for (const /** p: 현재 처리하는 플레이어 또는 검증 개체. */ p of room.players.values()) {
         if (p.sequencedInput) {
-          const /** command: 이번 서버 틱에 실제 반영할 단 하나의 고정 스텝 입력. */ command=p.inputQueue.shift();
-          const /** wasRolling: 이번 틱이 구르기 동작으로 시작됐는지 여부. */ wasRolling=!!p.roll;
-          if (command || wasRolling) {
-            Object.assign(p,globalThis.MovementRules.step(p,command??{x:0,y:0},p.status,room.map));
-            /** p.lastProcessedInput: 실제 이동 계산에 반영한 입력 번호. 클라이언트 재계산 기준이다. */
-            if(command) p.lastProcessedInput=command.seq;
-            p.action=p.status.stunned||p.status.state===LifeState.DEAD?null:wasRolling?'roll':command?.action??null;
-          } else p.action=null;
+          globalThis.InputTimeline.advance(p,room.map,now,/** 해당 이동 직후 시전을 실행한다. */ (/** command: 예약 시전. */ command)=>executeCast(room,p,command,now));
           continue;
         }
         if(p.roll) {

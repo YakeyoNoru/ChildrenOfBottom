@@ -30,7 +30,9 @@ class MotionView {
     /** now: 입력 생성 시각(밀리초). */ now,
   ) {
     if(!this.predicted || now-(this.frames.at(-1)?.time??0)>250 || this.pendingInputs.length>=32 || (this.lastCommandTime!==null&&now-this.lastCommandTime<50)) return null;
-    this.lastCommandTime=this.lastCommandTime===null||now-this.lastCommandTime>250?now:this.lastCommandTime+50;
+    const /** queuedOnServer: 최근 서버 스냅샷의 실제 대기 입력 수. 왕복 중인 입력과 구분한다. */ queuedOnServer=this.frames.at(-1)?.objects.find(/** 본인 대기열을 조회한다. */ (/** object: 수신 개체. */ object)=>object.id===input.localId)?.inputQueueLength??0;
+    if(queuedOnServer>=3)return null;
+    this.lastCommandTime=now;
     const /** command: 순번과 한 스텝의 방향을 가진 이동 전용 기록. */ command={seq:++this.sequence,x:input.x,y:input.y};
     this.pendingInputs.push(command);
     const /** me: 현재 예측에 적용할 서버 확정 스테이터스. */ me=this.frames.at(-1).objects.find(/** 본인 상태를 조회한다. */ (/** object: 수신 개체. */ object)=>object.id===input.localId);

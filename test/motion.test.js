@@ -68,3 +68,11 @@ test('roll replay preserves authoritative state without restarting skill',/** �
  view.receive(room([confirmed]),'me',50);assert.equal(view.predicted.x,33);assert.equal(view.pendingInputs.length,0);
  view.command({x:0,y:-1,localId:'me'},50);assert.equal(view.predicted.x,66);assert.equal(view.predicted.y,0);
 });
+
+test('server queue pressure pauses new prediction until queued commands drain',/** 서버 적체에 새 입력을 계속 추가하지 않고 처리 확인 후 재개함을 검사한다. */ ()=>{
+ const /** view: 표시·예측 이동기. */ view=create();
+ view.receive(room([{...object('me',0),inputQueueLength:3}]),'me',0);
+ assert.equal(view.command({x:1,y:0,localId:'me'},0),null);assert.equal(view.sequence,0);
+ view.receive(room([{...object('me',0),inputQueueLength:1}]),'me',50);
+ assert.equal(view.command({x:1,y:0,localId:'me'},50).seq,1);assert.equal(view.predicted.x,11);
+});

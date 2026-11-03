@@ -55,7 +55,7 @@ test('client enters own game, hides touch on keyboard, sends input and stops for
   key(window,'keydown','KeyD');run('inputPacket()');
   assert.equal(e.get('touch-controls').hidden,true);assert.equal(run('socket.sent.at(-1).x'),1);
   e.get('game-menu').click();assert.equal(e.get('game-dialog').open,true);
-  run('inputPacket()');assert.equal(run('socket.sent.at(-1).x'),0);
+  run('motionView.lastCommandTime-=50;inputPacket()');assert.equal(run('socket.sent.at(-1).x'),0);
   e.get('resume').click();assert.equal(e.get('game-dialog').open,false);
   receive({type:'game.state',room:{...state,players:[{...state.players[0],x:40}]}});
   assert.equal(run('room.players[0].x'),40);
@@ -67,8 +67,8 @@ test('touch joystick and A can be held together; cancellation and disconnect cle
   const /** e: 검증할 이벤트·요소 모음·적 개체; receive: 서버 메시지 수신을 재현하는 테스트 함수; state: 현재 상태 스냅샷; run: 격리 문맥 안에서 테스트 코드를 실행하는 함수. */ {elements:e,receive,state,run}=client();receive({type:'room.state',room:state});
   const /** touch: 터치 입력을 재현하는 테스트 이벤트. */ touch={pointerId:1,clientX:120,clientY:66};
   e.get('joystick').onpointerdown(touch);e.get('action-a').onpointerdown({pointerId:2});run('inputPacket()');
-  assert.equal(run('socket.sent.at(-1).x'),1);assert.equal(run('socket.sent.at(-1).action'),'A');
-  const /** cancel: 포인터 취소를 재현하는 테스트 이벤트. */ cancel=new Event('pointercancel');Object.defineProperty(cancel,'pointerId',{value:1});e.get('joystick').dispatchEvent(cancel);
+  assert.equal(run('socket.sent.filter(m=>m.type==="game.input").at(-1).x'),1);assert.equal(run('socket.sent.filter(m=>m.type==="game.input").at(-1).action'),'A');
+  const /** cancel: 포인터 취소를 재현하는 테스트 이벤트. */ cancel=new Event('pointercancel');Object.defineProperty(cancel,'pointerId',{value:1});e.get('joystick').dispatchEvent(cancel);run('motionView.lastCommandTime-=50;inputPacket()');
   assert.equal(run('socket.sent.at(-1).x'),0);
   run('socket.close()');assert.equal(e.get('home').hidden,false);assert.equal(run('action'),null);assert.equal(run('axis.x'),0);
 });
@@ -186,4 +186,12 @@ test('client retains initial map through lightweight snapshots and clears it on 
  receive({type:'room.state',room:{...state,map}});receive({type:'game.state',room:{...state,mapId:map.id}});
  assert.equal(run('room.map.id'),map.id);assert.equal(run('motionView.map.id'),map.id);
  receive({type:'room.left'});assert.equal(run('motionView.map'),null);
+});
+
+test('cast carries the latest generated input sequence without duplicate movement packets',/** 동일 프레임 호출이 입력을 늘리지 않고 시전이 이동 순번에 연결되는지 검사한다. */ ()=>{
+ const /** receive: 서버 수신 대역; state: 방 상태; run: 격리 실행기. */ {receive,state,run}=client();receive({type:'room.state',room:state});
+ run('useSkill("A");inputPacket();inputPacket()');
+ assert.equal(run('socket.sent.filter(m=>m.type==="game.input").length'),1);
+ assert.equal(run('socket.sent.find(m=>m.type==="game.cast").afterInputSeq'),1);
+ assert.equal(run('socket.sent.find(m=>["game.input","game.cast"].includes(m.type)).type'),'game.input');
 });

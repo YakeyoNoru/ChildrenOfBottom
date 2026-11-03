@@ -313,3 +313,15 @@ test('room start spawns fragments and authoritative pickup awards competition po
  do{state=await a.next('game.state');}while(player.status.competitionPoints===before);
  assert.equal(player.status.competitionPoints,before+10);assert.equal(room.items.size,0);assert.equal(state.room.items,undefined);
 });
+
+test('attack is anchored after its movement sequence and before later queued movement',/** 실제 WebSocket에서 이동·공격 요청 순서와 피해 원점을 검사한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
+ const /** a: 첫 접속자; rooms: 방 목록; code: 방 코드. */ {a,rooms,code}=await startedPair(t);
+ const /** room: 서버 방; player: 서버 플레이어. */ room=rooms.get(code),player=room.players.get(a.id);
+ const /** startX: 공격 전 시작 좌표. */ startX=player.x;
+ for(let /** seq: 공격 이전 입력. */ seq=1;seq<=4;seq++)a.ws.send(JSON.stringify({v:1,type:'game.input',seq,x:1,y:0}));
+ a.ws.send(JSON.stringify({v:1,type:'game.cast',slot:'A',afterInputSeq:4}));
+ for(let /** seq: 공격 이후 입력. */ seq=5;seq<=8;seq++)a.ws.send(JSON.stringify({v:1,type:'game.input',seq,x:1,y:0}));
+ do{await a.next('game.state');}while((player.lastProcessedInput??0)<8);
+ assert.equal(room.skillEffects.length,1);assert.equal(room.skillEffects[0].x,startX+44);assert.equal(player.x,startX+88);
+ assert.equal((await a.command('game.cast',{slot:'C',afterInputSeq:100},'error')).code,'INVALID_CAST_SEQUENCE');
+});

@@ -125,7 +125,8 @@ function updateSkillControls() {
 }
 /** useSkill: 게임 진행과 조작 가능 여부를 검사하고 슬롯 시전 요청을 보낸다. */ function useSkill(/** slot: 기술을 저장하거나 시전할 A·B·C·P 슬롯. */ slot) {
   if (room?.phase !== 'started' || socket?.readyState !== WebSocket.OPEN || $('game-dialog').open || document.hidden || viewport.blockedPortrait || rolling() || cooldownRemaining(slot)>0) return;
-  socket.send(JSON.stringify({v:1,type:'game.cast',slot}));
+  inputPacket();
+  socket.send(JSON.stringify({v:1,type:'game.cast',slot,afterInputSeq:motionView.sequence}));
 }
 /** movementInput: 키보드와 조이스틱을 조합해 현재 프레임의 이동 입력을 구한다. */ function movementInput() {
   const /** blocked: 메뉴·구르기 등으로 현재 조작이 차단되는지 여부. */ blocked = $('game-dialog').open || document.hidden || viewport.blockedPortrait || rolling();
@@ -148,8 +149,8 @@ setInterval(updateRoomTimer,100);
   if (room?.phase !== 'started' || socket?.readyState !== WebSocket.OPEN) return;
   const /** x: 가로 좌표·이동 입력 또는 반복 비교 항목; y: 세로 좌표 또는 이동 입력; blocked: 메뉴·기절 등으로 현재 조작이 차단되는지 여부. */ {x,y,blocked} = movementInput();
   const /** command: 이번 고정 스텝에 생성한 입력. */ command=motionView.command({x,y,localId:playerId},Date.now());
-  if (!command && !motionView.sequence) return;
-  socket.send(JSON.stringify({ v: 1, type: 'game.input', seq:command?.seq??motionView.sequence, x, y, action: blocked ? null : action }));
+  if (!command) return;
+  socket.send(JSON.stringify({ v: 1, type: 'game.input', seq:command.seq, x, y, action: blocked ? null : action }));
 }
 /** showMenuPage: 게임 메뉴·테스트설정·옵션 중 선택한 화면만 표시한다. */ function showMenuPage(/** page: 메뉴에서 표시할 하위 화면 이름. */ page) {
   for (const /** name: 현재 항목이나 사용자에게 표시할 이름. */ name of ['main','test','options']) $('menu-' + name).hidden = name !== page;
