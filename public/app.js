@@ -240,7 +240,7 @@ const /** canvas: 월드 화면을 그리는 캔버스 요소. */ canvas = $('wo
   const /** ox: 카메라 중심을 맞추는 월드 가로 오프셋. */ ox = w/2-me.x, /** oy: 카메라 중심을 맞추는 월드 세로 오프셋. */ oy = h/2-me.y;
   if(room.map) globalThis.MapRenderer.draw(ctx,room.map,ox,oy,w,h);
   else {ctx.strokeStyle='#284035';ctx.lineWidth=1;ctx.strokeRect(ox-1500,oy-1500,3000,3000);}
-  for(const /** item: 로컬 수신 시각과 예측 위치로 계산한 조각 표시. */ item of itemView.sample(displayObjects,playerId,Date.now())) {
+  for(const /** item: 로컬 수신 시각과 예측 위치로 계산한 조각 표시. */ item of itemView.sample(displayObjects,playerId,Date.now(),motionView.sequence)) {
     const /** x: 화면 가로 좌표; y: 화면 세로 좌표. */ x=item.x+ox,y=item.y+oy;
     if(x<-5||x>w+5||y<-5||y>h+5)continue;
     ctx.beginPath();ctx.arc(x,y,2.5,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();ctx.strokeStyle='#000';ctx.lineWidth=1;ctx.stroke();

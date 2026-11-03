@@ -25,6 +25,15 @@ class ItemView {
       }else if(record.flight?.confirmed){record.flight=null;record.blocked=true;}
     }
     for(const /** id: 서버에서 획득 완료한 ID. */ id of room.itemChanges?.removed??[])this.remove(id,now);
+    // 시간 경과만으로 취소하지 않는다. 예측 때의 입력을 처리한 서버 위치로 미획득을 확인한다.
+    for(const /** record: 승인 대기 중인 표시 기록. */ record of this.records.values()) {
+      const /** flight: 예측한 비행 상태. */ flight=record.flight;
+      if(!flight||flight.confirmed||record.removed||record.item.state!=='ground')continue;
+      const /** player: 서버가 확정한 획득 후보 상태. */ player=room.players?.find(/** 예약 대상을 조회한다. */ (/** object: 수신 플레이어. */ object)=>object.id===flight.targetId);
+      if(player&&Number.isSafeInteger(player.lastProcessedInput)&&player.lastProcessedInput>=flight.inputSequence&&(player.status?.state!=='alive'||Math.hypot(player.x-record.item.x,player.y-record.item.y)>30)) {
+        record.flight=null;record.blocked=true;
+      }
+    }
   }
   /** 완료 메시지가 먼저 도착해도 진행 중인 50ms 비행은 끝까지 보존한다. */
   remove(/** id: 완료된 아이템 ID. */ id,/** now: 로컬 수신 시각. */ now){
@@ -33,14 +42,13 @@ class ItemView {
     if(!record.flight||now-record.flight.start>=50)this.records.delete(id);
   }
   /** 내 예측 위치에서 즉시 비행을 시작하고 서버 미승인 시 원위치로 복구한다. 점수는 변경하지 않는다. */
-  sample(/** objects: 보간·예측된 표시 개체. */ objects,/** localId: 본인 ID. */ localId,/** now: 로컬 화면 시각(ms). */ now){
+  sample(/** objects: 보간·예측된 표시 개체. */ objects,/** localId: 본인 ID. */ localId,/** now: 로컬 화면 시각(ms). */ now,/** inputSequence: 예측 위치까지 생성한 마지막 이동 입력 번호. */ inputSequence=0){
     const /** me: 본인 표시 개체. */ me=objects.find(/** 본인을 조회한다. */ (/** object: 표시 개체. */ object)=>object.id===localId);
     const /** output: 이번 프레임에 그릴 조각 좌표. */ output=[];
     for(const /** id: 조각 ID; record: 서버와 표시 상태. */ [id,record] of this.records){
       const /** near: 생존한 본인 중심이 반경 30 안에 있는지 여부. */ near=me?.status?.state==='alive'&&Math.hypot(me.x-record.item.x,me.y-record.item.y)<=30;
       if(!near)record.blocked=false;
-      if(!record.flight&&!record.removed&&!record.blocked&&record.item.state==='ground'&&record.item.code==='illusionFragment'&&near)record.flight={start:now,targetId:localId,confirmed:false};
-      if(record.flight&&!record.flight.confirmed&&now-record.flight.start>=500){record.flight=null;record.blocked=true;}
+      if(!record.flight&&!record.removed&&!record.blocked&&record.item.state==='ground'&&record.item.code==='illusionFragment'&&near)record.flight={start:now,targetId:localId,confirmed:false,inputSequence};
       const /** flight: 현재 표시 비행. */ flight=record.flight;
       const /** progress: 로컬 시작 기준 비행 진행률. */ progress=flight?Math.max(0,Math.min(1,(now-flight.start)/50)):0;
       if(record.removed&&progress>=1){this.records.delete(id);continue;}
