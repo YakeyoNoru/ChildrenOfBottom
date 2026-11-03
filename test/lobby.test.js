@@ -350,3 +350,10 @@ test('expired public rooms are excluded from listings',/** 목록 요청에서 �
  const /** host: 방장; browser: 목록 조회자. */ host=await client(),browser=await client();await host.command('room.create',{name:'만료방'});
  clock=660000;await browser.command('room.list');assert.deepEqual((await browser.next('room.list')).rooms,[]);
 });
+
+test('multiplayer snapshots expose monotonic server timestamps and ordered sequence',/** 서버 전송 시각·순번이 상대 보간에 사용할 수 있는 형태인지 검사한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
+ const /** a: 접속 클라이언트. */ {a}=await startedPair(t);
+ const /** first: 먼저 생성된 상태; second: 다음 상태. */ first=(await a.next('game.state')).room,second=(await a.next('game.state')).room;
+ assert.ok(Number.isFinite(first.serverTime));assert.ok(Number.isSafeInteger(first.snapshotSequence));
+ assert.ok(second.serverTime>=first.serverTime);assert.ok(second.snapshotSequence>first.snapshotSequence);
+});

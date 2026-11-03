@@ -47,7 +47,10 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
     const /** objects: 처리할 월드 개체 목록. */ objects = allObjects(room);
     for (const /** object: 현재 처리하는 월드 개체. */ object of objects) normalizeVitals(object.status);
     // 대상 참조는 100밀리초 주기의 서버 시뮬레이션에서 갱신한다.
+    /** room.snapshotSequence: 방별 상태 전송 순번. */ room.snapshotSequence=(room.snapshotSequence??0)+1;
+    /** room.snapshotTime: 시계 역행 시에도 감소하지 않는 상태 생성 시각(ms). */ room.snapshotTime=Math.max(room.snapshotTime??0,Date.now());
     return {
+      snapshotSequence:room.snapshotSequence,serverTime:room.snapshotTime,
       ...(includeMap&&room.map?{map:room.map}:{}), mapId:room.map?.id??null, private:room.private??false,code: room.code, hostId: room.hostId, phase: room.phase, maxPlayers:MAX_PLAYERS, timer:globalThis.RoomTimerRules.snapshot(room,roomClock()),
       players: [...room.players.values()].map(/** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** 각 항목을 현재 계산에 필요한 값으로 변환한다. */ p => ({ ...objectSnapshot(p), ready: p.ready })),
       objects: objects.map(objectSnapshot),

@@ -145,3 +145,7 @@ A/B/C의 재사용 대기는 시전자별 `skillCooldowns[slot]`에 다음 사�
 `room.list` 요청에는 `room.list {rooms:[{code,hostName,playerCount,maxPlayers}],requestId}`와 기존 ack를 반환한다. 미만료·공개·시작 대기방만 노출하며 만원 방은 인원 표시와 함께 목록에 남긴다. UI는 만원 방 선택을 비활성화한다. 시작·종료·비공개 전환 후에는 새로고침으로 목록을 갱신한다.
 
 목록 선택 입장은 `room.join {name,code,publicOnly:true}`를 사용한다. 서버는 실제 입장 시 공개 여부·정원·시작·만료를 다시 검사한다. 비공개 전환 시 `ROOM_PRIVATE`를 반환한다. 서버 목록은 비공개 방 코드나 참가자 전체 정보는 공개하지 않는다.
+
+## 상태 생성 시각
+
+`room.state.room` 및 `game.state.room`에 `serverTime`(서버 상태 생성 시각 ms), `snapshotSequence`(방별 증가하는 상태 순번)를 포함한다. 클라이언트는 상대 표시만 서버 생성 시각 기준으로 보간하고, 내 입력 확인·시전 순서는 기존 규칙을 유지한다. 같은 생성 시각의 새 순번은 이력 한 칸을 갱신하며 이전 순번은 이동 표시 모델에서 무시한다.

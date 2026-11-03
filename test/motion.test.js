@@ -76,3 +76,32 @@ test('server queue pressure pauses new prediction until queued commands drain',/
  view.receive(room([{...object('me',0),inputQueueLength:1}]),'me',50);
  assert.equal(view.command({x:1,y:0,localId:'me'},50).seq,1);assert.equal(view.predicted.x,11);
 });
+
+/** 서버 생성 시각과 전송 순번이 있는 상태를 만든다. */
+function timed(/** time: 서버 생성 시각. */ time,/** seq: 전송 순번. */ seq,/** x: 상대 좌표. */ x){return {...room([object('me',0),object('enemy',x)]),serverTime:time,snapshotSequence:seq};}
+test('remote uses server timeline despite clock offset and jittery packet arrivals',/** 서버 시계가 달라도 생성 간격으로 보간하며 도착 시점은 위치 간격을 왜곡하지 않음을 검사한다. */ ()=>{
+ const /** view: 서버 시각 표시기. */ view=create();
+ view.receive(timed(10000,1,0),'me',50000);view.receive(timed(10050,2,11),'me',50060);view.receive(timed(10100,3,22),'me',50130);view.receive(timed(10150,4,33),'me',50131);
+ const /** sample: 첫 표시 시점의 상대 좌표. */ sample=view.sample('me',{},50150).find(/** 상대를 찾는다. */ (/** value: 표시 개체. */ value)=>value.id==='enemy');
+ assert.ok(Math.abs(sample.x-(view.remoteTime-10000)*.22)<1e-7);assert.ok(view.remoteDelay>=100&&view.remoteDelay<=175);
+ const /** before: 재생 이전 시각. */ before=view.remoteTime;
+ view.sample('me',{},50166);assert.ok(view.remoteTime>=before);assert.ok(view.remoteTime<=10150);
+});
+test('duplicate snapshots are ignored and local replay stays independent of remote buffering',/** 역순 수신이 본인 예측과 상대 이력을 되돌리지 않음을 검사한다. */ ()=>{
+ const /** view: 서버 시각 표시기. */ view=create();view.receive(timed(1000,1,0),'me',0);view.command({x:1,y:0,localId:'me'},0);
+ view.receive(timed(1050,2,11),'me',50);assert.equal(view.predicted.x,11);assert.equal(view.pendingInputs.length,1);
+ view.receive(timed(1000,1,-100),'me',60);assert.equal(view.frames.length,2);assert.equal(view.predicted.x,11);
+ view.receive({...timed(1100,3,22),objects:[object('me',11,0,1),object('enemy',22)]},'me',100);
+ assert.equal(view.pendingInputs.length,0);assert.equal(view.predicted.x,11);
+ view.clear();assert.equal(view.remoteTime,null);assert.equal(view.clockSamples.length,0);
+});
+test('remote playback never runs past received data or rewinds when jitter grows',/** 버퍼 부족·수신 폭주에서도 과도한 외삽이나 되감기가 없음을 검사한다. */ ()=>{
+ const /** view: 서버 시각 표시기. */ view=create();
+ view.receive(timed(0,1,0),'me',0);view.sample('me',{},0);view.receive(timed(50,2,11),'me',50);
+ assert.equal(view.sample('me',{},50).find(/** 상대를 조회한다. */ (/** value: 표시 개체. */ value)=>value.id==='enemy').x,0);
+ view.receive(timed(100,3,22),'me',100);
+ let /** previous: 이전 상대 재생 시각. */ previous=view.remoteTime;
+ for(let /** now: 화면 갱신 시각. */ now=100;now<=500;now+=16){view.sample('me',{},now);assert.ok(view.remoteTime>=previous);assert.ok(view.remoteTime<=100);previous=view.remoteTime;}
+ view.receive(timed(150,4,33),'me',501);view.receive(timed(200,5,44),'me',502);
+ view.sample('me',{},516);assert.ok(view.remoteTime>=previous);assert.ok(view.remoteDelay<=175);
+});
