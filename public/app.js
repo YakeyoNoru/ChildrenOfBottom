@@ -19,11 +19,11 @@ const /** messages: 연결 종료 등에 사용할 안내 문구 모음. */ mess
   render();
 }
 let /** mapPointerBlockUntil: 지도 닫기 터치 뒤 합성 클릭을 무시할 로컬 종료 시각. */ mapPointerBlockUntil=0;
-/** 확대 지도를 열거나 닫으며 조작 입력이 지도 터치와 겹치지 않게 한다. */
-function setExpandedMap(/** open: 확대 지도를 표시할지 여부. */ open){
+/** 전체맵를 열거나 닫으며 조작 입력이 지도 터치와 겹치지 않게 한다. */
+function setExpandedMap(/** open: 전체맵를 표시할지 여부. */ open){
   $('expanded-map').hidden=!open;$('minimap').setAttribute('aria-expanded',String(open));resetInput();
 }
-$('minimap').onclick=/** 작은 미니맵을 눌러 확대한다. */ (/** event: 클릭 입력. */ event)=>{event?.preventDefault?.();event?.stopPropagation?.();if(room?.phase==='started')setExpandedMap(true);};
+$('minimap').onclick=/** 작은 미니맵을 눌러 전체맵을 연다. */ (/** event: 클릭 입력. */ event)=>{event?.preventDefault?.();event?.stopPropagation?.();if(room?.phase==='started')setExpandedMap(true);};
 window.addEventListener('pointerdown',/** 열린 지도를 화면 터치로 닫고 해당 입력의 게임 전달을 막는다. */ (/** event: 화면 포인터 입력. */ event)=>{
   if($('expanded-map').hidden)return;mapPointerBlockUntil=Date.now()+300;setExpandedMap(false);event.preventDefault();event.stopImmediatePropagation();
 },true);
@@ -33,7 +33,7 @@ window.addEventListener('mousedown',/** 닫기 터치에 이어지는 마우스 
 window.addEventListener('click',/** 지도 닫기 뒤 합성 클릭이 공격·메뉴·지도 열기로 이어지는 것을 막는다. */ (/** event: 합성될 수 있는 클릭. */ event)=>{
   if(Date.now()>=mapPointerBlockUntil)return;event.preventDefault();event.stopImmediatePropagation();
 },true);
-$('minimap').onkeydown=/** 키보드 접근성으로 확대 지도를 연다. */ (/** event: 키 입력. */ event)=>{if(['Enter','Space'].includes(event.code)){event.preventDefault();setExpandedMap(true);}};
+$('minimap').onkeydown=/** 키보드 접근성으로 전체맵를 연다. */ (/** event: 키 입력. */ event)=>{if(['Enter','Space'].includes(event.code)){event.preventDefault();setExpandedMap(true);}};
 /** render: 접속·로비·진행 상태에 맞춰 화면과 버튼 활성 상태를 갱신한다. */ function render() {
   const /** online: 서버 연결과 본인 식별자 준비 여부. */ online = socket?.readyState === WebSocket.OPEN && !!playerId;
   const /** playing: 현재 방이 게임 진행 중인지 여부. */ playing = room?.phase === 'started';
@@ -289,8 +289,7 @@ const /** canvas: 월드 화면을 그리는 캔버스 요소. */ canvas = $('wo
   }
   miniMap.draw(room.map,room.code,me,viewport.worldWidth);
   if(!$('expanded-map').hidden&&miniMap.terrain){
-    const /** halfSpan: 현재 위치 중심으로 지도 전체를 담을 절반 범위. */ halfSpan=Math.max(me.x-miniMap.left,(me.y-miniMap.top)*1.6,miniMap.left+miniMap.terrain.width/miniMap.atlasScale-me.x,(miniMap.top+miniMap.terrain.height/miniMap.atlasScale-me.y)*1.6);
-    miniMap.draw(room.map,room.code,me,halfSpan*2/2.5,$('expanded-map-canvas'),true);
+    miniMap.draw(room.map,room.code,me,viewport.worldWidth,$('expanded-map-canvas'),true);
   }
   drawSkillEffects(ctx, room.skillEffects ?? [], ox, oy);
   displayObjects.forEach(/** 각 항목에 현재 단계의 상태 갱신 또는 표시 처리를 적용한다. */ (/** p: 현재 처리하는 플레이어 또는 검증 개체. */ p,/** i: 현재 반복 항목의 순번. */ i) => {
