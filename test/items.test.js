@@ -24,8 +24,8 @@ test('pickup reserves closest living player within 20 then grants 10 once and re
  const /** items: 바닥의 조각 한 개. */ items=new Map([['one',{id:'one',code:'illusionFragment',x:0,y:0,state:'ground'}]]);
  ItemRules.tick(items,[enemy,player],0);assert.equal(items.get('one').state,'ground');
  player.x=20;ItemRules.tick(items,[enemy,player],100);assert.equal(items.get('one').targetId,'p');assert.equal(player.status.competitionPoints,0);
- ItemRules.tick(items,[player],299);assert.equal(items.size,1);
- assert.deepEqual(ItemRules.tick(items,[player],300).removed,['one']);assert.equal(player.status.competitionPoints,10);assert.equal(items.size,0);
+ ItemRules.tick(items,[player],199);assert.equal(items.size,1);
+ assert.deepEqual(ItemRules.tick(items,[player],200).removed,['one']);assert.equal(player.status.competitionPoints,10);assert.equal(items.size,0);
  ItemRules.tick(items,[player],500);assert.equal(player.status.competitionPoints,10);
 });
 

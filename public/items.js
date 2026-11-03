@@ -39,7 +39,7 @@ globalThis.ItemRules=Object.freeze({
     }
     return items;
   },
-  /** 공통 줍기: 가까운 적격 개체를 예약하고 200밀리초 비행 후 효과 또는 보관함 저장을 한 번 적용한다. */
+  /** 공통 줍기: 가까운 적격 개체를 예약하고 100밀리초 비행 후 효과 또는 보관함 저장을 한 번 적용한다. */
   tick(/** items: 방의 미획득 아이템. */ items,/** objects: 획득 후보 개체. */ objects,/** now: 서버 현재 시각(밀리초). */ now) {
     const /** updates: 이번 틱에 상태가 바뀐 아이템. */ updates=[];
     const /** removed: 획득 완료되어 제거된 ID. */ removed=[];
@@ -47,7 +47,7 @@ globalThis.ItemRules=Object.freeze({
       if(item.state==='flying') {
         const /** target: 비행 중인 대상. */ target=objects.find(/** 예약 대상을 찾는다. */ (/** object: 후보 개체. */ object)=>object.id===item.targetId);
         if(!target||!this.eligible(item,target)){item.state='ground';delete item.targetId;delete item.startedAt;updates.push({...item});continue;}
-        if(now-item.startedAt<200)continue;
+        if(now-item.startedAt<100)continue;
         const /** definition: 획득 효과와 보관 방식을 정의한 자료. */ definition=this.definitions[item.code];
         if(definition.mode==='instant')target.status.competitionPoints=(target.status.competitionPoints??0)+definition.competitionPoints;
         else {target.inventory??=[];target.inventory.push({code:item.code});}

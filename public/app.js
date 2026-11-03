@@ -241,7 +241,7 @@ const /** canvas: 월드 화면을 그리는 캔버스 요소. */ canvas = $('wo
   else {ctx.strokeStyle='#284035';ctx.lineWidth=1;ctx.strokeRect(ox-1500,oy-1500,3000,3000);}
   for(const /** item: 충돌 없는 필드 아이템. */ item of room.items??[]) {
     const /** target: 비행 중 조각의 표시 대상. */ target=displayObjects.find(/** 획득자를 찾는다. */ (/** object: 표시 개체. */ object)=>object.id===item.targetId);
-    const /** progress: 수신 후 비행 표시 진행률. */ progress=item.state==='flying'?Math.min(1,(Date.now()-item.startedAt)/200):0;
+    const /** progress: 수신 후 비행 표시 진행률. */ progress=item.state==='flying'?Math.min(1,(Date.now()-item.startedAt)/100):0;
     const /** x: 표시 가로 좌표; y: 표시 세로 좌표. */ x=item.x+(target?target.x-item.x:0)*progress+ox,y=item.y+(target?target.y-item.y:0)*progress+oy;
     if(x<-5||x>w+5||y<-5||y>h+5)continue;
     ctx.beginPath();ctx.arc(x,y,2.5,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();ctx.strokeStyle='#000';ctx.lineWidth=1;ctx.stroke();
@@ -249,6 +249,8 @@ const /** canvas: 월드 화면을 그리는 캔버스 요소. */ canvas = $('wo
   drawSkillEffects(ctx, room.skillEffects ?? [], ox, oy);
   displayObjects.forEach(/** 각 항목에 현재 단계의 상태 갱신 또는 표시 처리를 적용한다. */ (/** p: 현재 처리하는 플레이어 또는 검증 개체. */ p,/** i: 현재 반복 항목의 순번. */ i) => {
     const /** x: 가로 좌표·이동 입력 또는 반복 비교 항목. */ x = p.x+ox, /** y: 세로 좌표 또는 이동 입력. */ y = p.y+oy;
+    // 임시 표시: 플레이어 중심에서 환영조각 중심까지의 획득 거리 20을 나타낸다.
+    if(p.status?.objectType==='player'||p.id===playerId){ctx.beginPath();ctx.arc(x,y,20,0,Math.PI*2);ctx.strokeStyle='#ff3030';ctx.lineWidth=1;ctx.stroke();}
     if (p.action) { ctx.strokeStyle = p.action === 'A' ? '#f7d98b' : '#93ccea'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x,y,32,0,Math.PI*2); ctx.stroke(); }
     ctx.fillStyle = p.id === playerId ? '#c8e5a6' : ['#e6ac8a','#91c8dd','#c7a8de','#d7cc82'][i];
     if (p.status?.objectType === 'player' || p.id === playerId) drawPlayerTriangle(ctx, p, x, y);
