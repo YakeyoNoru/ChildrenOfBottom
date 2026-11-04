@@ -119,6 +119,7 @@ test('foreign browser origins and oversized payloads are rejected', /** 이 테�
   await a.command('room.create', {name:'방장'}); const /** room: 현재 처리하는 방의 상태. */ {room} = await a.next('room.state');
   await b.command('room.join', {name:'참가자',code:room.code});
   await b.command('room.ready', {ready:true}); await a.command('room.start');
+  if(!options?.keepProps)for(const /** id: 제거할 사물 ID; object: 테스트와 무관한 사물. */ [id,object] of game.rooms.get(room.code).objects)if(object.status.objectType==='prop')game.rooms.get(room.code).objects.delete(id);
   return {...game,a,b,code:room.code};
 }
 test('playing host leaves alone, successor can move, room disappears only after last departure', /** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ async /** t: 테스트 정리·검증 문맥 또는 프레임 시각. */ t => {
@@ -191,8 +192,8 @@ test('world snapshots share player/NPC/enemy stats; stun/death and speed use ser
   b.ws.send(JSON.stringify({v:1,type:'game.input',x:1,y:0}));await b.next('game.state');await b.next('game.state');assert.equal(p.x,x);
   p.status.bonusMoveSpeed=0;p.status.currentHealth=0;
   b.ws.send(JSON.stringify({v:1,type:'game.input',x:1,y:0,action:'A'}));
-  await b.next('game.state');await b.next('game.state');assert.equal(p.x,x);assert.equal(p.action,null);assert.equal(p.status.state,'dead');
-  await a.command('room.leave');assert.equal(rooms.has(code),true);
+  await b.next('game.result');assert.equal(p.x,x);assert.equal(p.status.state,'dead');assert.equal(room.players.has(b.id),false);
+  await a.command('room.leave');assert.equal(rooms.has(code),false);
 });
 
 test('movement facing is synchronized and survives stop, stun and zero-speed input',/** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ async /** t: 테스트 정리·검증 문맥 또는 프레임 시각. */ t=>{
@@ -213,6 +214,7 @@ test('per-player targeting options are validated and propagated on the 100 ms ti
   await a.command('room.create',{name:'A'});const /** initial: 방 입장 직후의 초기 스냅샷. */ initial=(await a.next('room.state')).room;
   await b.command('room.join',{name:'B',code:initial.code});await b.command('room.ready',{ready:true});await a.command('room.start');
   const /** room: 현재 처리하는 방의 상태. */ room=rooms.get(initial.code),/** p: 검증 기준이 되는 개체 또는 표시 위치. */ p=room.players.get(a.id);
+  for(const /** id: 사물 ID; object: 별도 검증 대상이 아닌 사물. */ [id,object] of room.objects)if(object.status.objectType==='prop')room.objects.delete(id);
   for(const /** id: 대상 개체 또는 요소의 식별자; x: 검증 좌표·비교 항목 또는 위치 조회 함수; hp: 검증용 현재체력. */ [id,x,hp] of [['near',10,8],['low',80,2]]) {const /** o: 현재 비교하거나 변환할 개체. */ o=createWorldObject({objectType:'enemy',classificationCode:id,instanceId:id,x:p.x+x,y:p.y,currentHealth:hp,healthRegen:0});room.objects.set(id,o);}
   const /** nextTarget: 지정한 대상 ID가 동기화될 때까지 기다리는 함수. */ nextTarget=/** nextTarget: 선택된 적 ID가 서버 스냅샷에 반영될 때까지 기다린다. */ async /** id: 대상 개체 또는 요소의 식별자. */ id=>{for(let /** i: 현재 반복 항목의 순번. */ i=0;i<10;i++){const /** m: 수신 메시지 또는 문자열 패턴 일치 결과. */ m=await a.next('game.state');if(m.room.players.find(/** p: 검증 기준이 되는 개체 또는 표시 위치. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ p=>p.id===a.id).status.nearestEnemyId===id)return;}assert.fail('target did not update');};
   await nextTarget('near');
@@ -268,7 +270,7 @@ test('roll moves without further inputs, rejects casts and ends after 72 units',
  assert.ok(Math.abs(Math.hypot(caster.x-startX,caster.y-startY)-72)<1e-8);assert.equal(caster.status.skillB,'BAS0002');
 });
 
-test('room countdown starts at creation, allows grace, then removes all five players without disconnecting',/** 10분·1분 경계와 모든 참가자 퇴장·소켓 재사용을 검증한다. */ async (/** t: 테스트 정리 문맥. */ t)=>{
+test('room countdown starts at creation and sends all five players to results at zero',/** 10분·1분 경계와 모든 참가자 퇴장·소켓 재사용을 검증한다. */ async (/** t: 테스트 정리 문맥. */ t)=>{
  let /** clock: 실제 11분을 기다리지 않고 진행할 서버 방 시각. */ clock=0;
  const /** client: 연결 생성 함수; rooms: 실제 방 목록. */ {client,rooms}=await setup(t,{/** 테스트 시각을 반환한다. */ roomClock:()=>clock});
  const /** clients: 방에 참가할 5개 연결. */ clients=await Promise.all(Array.from({length:5},client));
@@ -278,12 +280,11 @@ test('room countdown starts at creation, allows grace, then removes all five pla
  clock=599999;await clients[0].command('room.start');
  let /** state: 시간 경계를 검증할 서버 스냅샷. */ state=await clients[0].next('game.state');
  assert.equal(state.room.timer.remainingMs,1);assert.equal(state.room.timer.createdAt,0);
- clock=600000;do{state=await clients[0].next('game.state');}while(state.room.timer.remainingMs!==0);
- assert.equal(rooms.has(code),true);assert.equal(state.room.timer.closeRemainingMs,60000);
- clock=659999;do{state=await clients[0].next('game.state');}while(state.room.timer.closeRemainingMs!==1);
- assert.equal(rooms.has(code),true);
- clock=660000;
- for(const /** connection: 강제 퇴장을 받아야 하는 참가자. */ connection of clients)assert.equal((await connection.next('room.closed')).reason,'TIME_LIMIT');
+ clock=600000;
+ for(const /** connection: 점수화면을 받을 참가자. */ connection of clients){
+  const /** result: 서버 확정 결과. */ result=(await connection.next('game.result')).result;assert.equal(result.reason,'TIME_LIMIT');
+  await connection.command('game.result.seen',{resultId:result.id});await connection.command('game.result.leave',{resultId:result.id});
+ }
  assert.equal(rooms.has(code),false);
  await clients[0].command('room.create',{name:'다시 시작'});
  assert.equal((await clients[0].next('room.state')).room.timer.remainingMs,600000);
@@ -393,7 +394,7 @@ test('room start spawns monsters and synchronizes server AI, retaliation effects
   do{state=(await connection.next('room.state')).room;}while(state.phase!=='started');
   const /** room: 서버 내부 게임 방. */ room=rooms.get(initial.code);
   const /** monsters: 생성된 몬스터 스냅샷. */ monsters=state.objects.filter(/** 적만 조회한다. */ (/** object: 수신 개체. */ object)=>object.status.objectType==='enemy');
-  assert.ok(monsters.length>0);assert.equal(monsters.length,room.objects.size);
+  assert.ok(monsters.length>0);assert.equal(monsters.length,[...room.objects.values()].filter(/** 몬스터만 센다. */ (/** object: 서버 개체. */ object)=>object.status.objectType==='enemy').length);
   for(const /** snapshot: 검증할 몬스터 스냅샷. */ snapshot of monsters) {
     assert.deepEqual(snapshot.status.spawnPosition,{x:snapshot.x,y:snapshot.y});
     assert.equal(snapshot.status.awarenessState,'normal');assert.equal(snapshot.status.attackTargetId,null);
@@ -401,10 +402,10 @@ test('room start spawns monsters and synchronizes server AI, retaliation effects
     const /** tile: 해당 몬스터 생성 지형. */ tile=room.map.tiles.find(/** 생성 타일을 조회한다. */ (/** candidate: 타일 후보. */ candidate)=>candidate.id===snapshot.spawnTileId);
     assert.equal(tile.kind,'normal');assert.ok([1,2].includes(tile.height));
   }
-  const /** monster: 서버 반격을 검증할 생성 몬스터. */ monster=room.objects.values().next().value;
+  const /** monster: 서버 반격을 검증할 생성 몬스터. */ monster=[...room.objects.values()].find(/** 반격할 몬스터를 고른다. */ (/** object: 서버 개체. */ object)=>object.status.objectType==='enemy');
   const /** attacker: 인위적 피해의 실제 공격자. */ attacker=room.players.get(connection.id);
   // 생성점까지의 직선이 지형 안에 있도록 대상과 몬스터의 중심을 잠시 일치시킨다.
-  attacker.x=monster.x;attacker.y=monster.y;
+  attacker.x=monster.x;attacker.y=monster.y;attacker.status.maxHealth=1000;attacker.status.currentHealth=1000;
   const /** applySkillDamage: 공통 기술 피해 함수. */ {applySkillDamage}=await import('../game/combat.js');
   applySkillDamage({id:'integration-hit',casterId:attacker.id,code:'BAS0001',resultSequence:0},monster,1,Date.now());
   let /** retaliated: 서버 AI가 공격 표시를 생성했는지 여부. */ retaliated=false;
@@ -415,4 +416,38 @@ test('room start spawns monsters and synchronizes server AI, retaliation effects
   assert.equal(retaliated,true);
   const /** snapshot: AI가 갱신한 몬스터 수신 상태. */ snapshot=state.objects.find(/** ID로 몬스터를 찾는다. */ (/** object: 수신 개체. */ object)=>object.id===monster.id);
   assert.equal(snapshot.status.attackTargetId,attacker.id);assert.equal(snapshot.status.awarenessState,'combat');assert.equal(snapshot.monsterAI,undefined);
+});
+
+test('return lamps validate ownership, confirmation, distance and result-screen exit receipt',/** 실제 연결로 탈출·결과 확인·재입장 조건을 검증한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
+ const /** a: 소유자 연결; b: 다른 연결; rooms: 서버 방 목록; code: 방 코드. */ {a,b,rooms,code}=await startedPair(t,{keepProps:true});
+ const /** room: 진행 중인 방; player: 전등 소유자; lamp: 소유 전등. */ room=rooms.get(code),player=room.players.get(a.id),lamp=[...room.objects.values()].find(/** 소유 전등 조회. */ (/** object: 사물 후보. */ object)=>object.ownerId===a.id);
+ assert.equal([...room.objects.values()].filter(/** 전등만 조회. */ (/** object: 개체. */ object)=>object.status.classificationCode==='OBJ0001').length,2);
+ assert.equal(lamp.x,player.x);assert.equal(lamp.y,player.y);assert.equal(lamp.ownerCode,player.status.classificationCode);
+ assert.equal((await b.command('game.interact',{targetId:lamp.id},'error')).code,'INTERACTION_UNAVAILABLE');
+ await a.command('game.interact',{targetId:lamp.id});const /** cancel: 취소할 확인 ID. */ cancel=await a.next('interaction.prompt');
+ await a.command('game.interact.confirm',{confirmationId:cancel.id,accept:false});assert.equal(room.players.has(a.id),true);
+ assert.equal((await a.command('game.interact.confirm',{confirmationId:cancel.id,accept:true},'error')).code,'INVALID_INTERACTION');
+ await a.command('game.interact',{targetId:lamp.id});const /** distant: 거리 재검증용 ID. */ distant=await a.next('interaction.prompt');player.x=lamp.x+201;
+ assert.equal((await a.command('game.interact.confirm',{confirmationId:distant.id,accept:true},'error')).code,'INTERACTION_UNAVAILABLE');player.x=lamp.x;
+ player.status.competitionPoints=123;
+ await a.command('game.interact',{targetId:lamp.id});const /** prompt: 수락할 확인 ID. */ prompt=await a.next('interaction.prompt');
+ await a.command('game.interact.confirm',{confirmationId:prompt.id,accept:true});const /** result: 서버 확정 점수. */ result=(await a.next('game.result')).result;
+ assert.equal(result.reason,'ESCAPE');assert.equal(result.competitionPoints,123);assert.equal(room.players.has(a.id),false);assert.equal(room.hostId,b.id);
+ assert.equal((await a.command('room.create',{name:'A'},'error')).code,'RESULT_PENDING');
+ assert.equal((await a.command('game.result.leave',{resultId:result.id},'error')).code,'RESULT_NOT_SEEN');
+ assert.equal((await b.command('game.result.seen',{resultId:result.id},'error')).code,'INVALID_RESULT');
+ await a.command('game.result.seen',{resultId:result.id});await a.command('game.result.leave',{resultId:result.id});await a.next('game.result.left');
+ assert.equal(player.ws.completedResult.competitionPoints,123);assert.ok(player.ws.completedResult.seenAt);assert.ok(player.ws.completedResult.completedAt);
+ assert.equal((await a.command('game.result.leave',{resultId:result.id},'error')).code,'INVALID_RESULT');
+ await a.command('room.create',{name:'다시 시작'});assert.equal(rooms.size,2);
+});
+
+test('death freezes competition points and destroyed lamps cannot confirm escape',/** 사망 결과와 전등 파괴 직후 재검증을 확인한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
+ const /** a: 소유자; b: 생존자; rooms: 서버 방 목록; code: 방 코드. */ {a,b,rooms,code}=await startedPair(t,{keepProps:true});
+ const /** room: 진행 방; player: 사망시킬 플레이어; lamp: 소유 전등. */ room=rooms.get(code),player=room.players.get(a.id),lamp=[...room.objects.values()].find(/** 소유 사물 조회. */ (/** object: 개체. */ object)=>object.ownerId===a.id);
+ await a.command('game.interact',{targetId:lamp.id});const /** prompt: 파괴 전 발급한 확인. */ prompt=await a.next('interaction.prompt');lamp.status.currentHealth=0;lamp.status.state='dead';
+ assert.equal((await a.command('game.interact.confirm',{confirmationId:prompt.id,accept:true},'error')).code,'INTERACTION_UNAVAILABLE');
+ player.status.competitionPoints=77;player.status.currentHealth=0;
+ const /** result: 사망 확정 결과. */ result=(await a.next('game.result')).result;
+ assert.equal(result.reason,'DEATH');assert.equal(result.competitionPoints,77);player.status.competitionPoints=999;assert.equal(player.ws.matchResult.competitionPoints,77);assert.equal(player.ws.matchResult.seenAt,null);assert.equal(room.players.size,1);assert.equal(room.hostId,b.id);
 });

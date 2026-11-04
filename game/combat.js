@@ -1,4 +1,4 @@
-import { /** areEnemies: 적대 관계를 판단한다. */ areEnemies, /** LifeState: 생존·사망 상태 상수. */ LifeState, /** normalizeVitals: 체력과 사망 상태를 정규화한다. */ normalizeVitals } from './status.js';
+import { /** areEnemies: 적대 관계를 판단한다. */ areEnemies, /** gainExperience: 처치자 경험치·레벨업 반영. */ gainExperience, /** LifeState: 생존·사망 상태 상수. */ LifeState, /** normalizeVitals: 체력과 사망 상태를 정규화한다. */ normalizeVitals } from './status.js';
 
 /** 현재 기술 인스턴스의 판정 영역과 대상의 원형 히트박스가 겹치는지 검사한다. */
 export function intersectsSkill(
@@ -77,6 +77,10 @@ export function resolveSkillContacts(
     if(!intersectsSkill(instance,target)) continue;
     const /** result: 서버가 확정한 이번 접촉의 피해 결과. */ result=applySkillDamage(instance,target,damageRule(instance,target),now);
     if(!result) continue;
+    if(result.killed&&target.status.objectType==='prop'&&target.status.classificationCode==='OBJ0001'&&!target.rewardGranted){
+      const /** killer: 현재 방에 남아 있는 실제 플레이어 공격자. */ killer=objects.find(/** 공격자 ID를 검증한다. */ (/** object: 월드 개체. */ object)=>object.id===instance.casterId&&object.status.objectType==='player'&&object.status.state==='alive');
+      if(killer){target.rewardGranted=true;killer.status.competitionPoints+=500;gainExperience(killer.status,40);killer.status.skillPoints+=1;}
+    }
     instance.hitTimes.set(target.id,now);
     if(!instance.hits.includes(target.id)) instance.hits.push(target.id);
     instance.results.push(result);results.push(result);

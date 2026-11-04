@@ -6,6 +6,23 @@ const /** motionView: 서버 좌표와 분리한 표시용 이동 보간 상태.
 let timerReceivedAt=0;
 let /** publicRooms: 마지막으로 수신한 공개 대기방 목록. */ publicRooms=[];
 const /** itemView: 점수 판정과 분리된 조각 비행 예측. */ itemView=new ItemView();
+let /** matchResult: 서버에서 확정한 현재 점수화면 자료. */ matchResult=null;
+let /** interactionTargetId: 현재 가까운 사용 가능한 상호작용 대상. */ interactionTargetId=null;
+let /** interactionConfirmation: 서버 발급 일회성 Y/N 확인 ID. */ interactionConfirmation=null;
+/** 가장 가까운 사용 가능 NPC·사물을 선택하고 공통 버튼을 갱신한다. */
+function updateInteraction(/** me: 선택적 본인 표시 좌표. */ me=room?.players.find(/** 본인 서버 유닛을 찾는다. */ (/** player: 수신 플레이어. */ player)=>player.id===playerId)){
+  const /** candidates: 분류코드별 조건과 거리 조건을 통과한 상호작용 대상. */ candidates=(room?.objects??[]).filter(/** 사용 가능한 대상만 남긴다. */ (/** object: NPC·사물. */ object)=>InteractionRules.available(me,object)).sort(/** 가까운 대상을 우선한다. */ (/** a: 첫 대상; b: 둘째 대상. */ a,b)=>Math.hypot(a.x-me.x,a.y-me.y)-Math.hypot(b.x-me.x,b.y-me.y));
+  interactionTargetId=candidates[0]?.id??null;$('interaction-button').hidden=!interactionTargetId||room?.phase!=='started';
+}
+/** 버튼과 F 키가 공유하는 서버 상호작용 요청 함수. */
+function interact(){if(interactionTargetId&&!$('game-dialog').open&&!$('escape-dialog').open&&$('expanded-map').hidden)send('game.interact',{targetId:interactionTargetId});}
+$('interaction-button').onclick=interact;
+/** 서버 확인 ID로 탈출 수락·취소를 전송한다. */
+function confirmEscape(/** accept: 탈출을 수락했는지 여부. */ accept){if(!interactionConfirmation)return;const /** id: 응답할 일회성 확인 ID. */ id=interactionConfirmation;interactionConfirmation=null;$('escape-dialog').close();send('game.interact.confirm',{confirmationId:id,accept});}
+$('escape-yes').onclick=/** Y 버튼의 탈출 수락. */ ()=>confirmEscape(true);
+$('escape-no').onclick=/** N 버튼의 탈출 취소. */ ()=>confirmEscape(false);
+$('escape-dialog').addEventListener('cancel',/** Escape로 닫아도 서버 확인을 취소한다. */ (/** event: 기본 취소 이벤트. */ event)=>{event.preventDefault();confirmEscape(false);});
+$('score-exit').onclick=/** 서버 결과 화면 확인 후 처음 화면으로 돌아간다. */ ()=>{if(!matchResult)return;if(!matchResult.disconnected&&socket?.readyState===WebSocket.OPEN)send('game.result.leave',{resultId:matchResult.id});else{matchResult=null;render();}};
 const /** messages: 연결 종료 등에 사용할 안내 문구 모음. */ messages = { closed: '방이 해제되었습니다.', offline: '연결이 끊어졌습니다. 방에서 퇴장했습니다. 다시 연결 중…' };
 /** notice: 안내 문구를 표시하거나 비어 있으면 숨긴다. */ function notice(/** message: 사용자나 연결에 전달할 안내 내용. */ message) { $('notice').textContent = message; $('notice').hidden = !message; }
 /** settle: 요청 대기 상태와 제한 시간을 해제하고 UI를 다시 그린다. */ function settle() { pending = null; clearTimeout(timeout); render(); }
@@ -58,11 +75,13 @@ $('minimap').onkeydown=/** 키보드 접근성으로 전체맵를 연다. */ (/*
 /** render: 접속·로비·진행 상태에 맞춰 화면과 버튼 활성 상태를 갱신한다. */ function render() {
   const /** online: 서버 연결과 본인 식별자 준비 여부. */ online = socket?.readyState === WebSocket.OPEN && !!playerId;
   const /** playing: 현재 방이 게임 진행 중인지 여부. */ playing = room?.phase === 'started';
-  $('home').hidden = !!room; $('lobby').hidden = !room || playing;
+  $('score-screen').hidden=!matchResult;
+  $('home').hidden = !!room||!!matchResult; $('lobby').hidden = !room || playing;
   $('game').hidden = !playing; document.body.classList.toggle('playing', playing);
   updateViewport();
   updateSkillControls();
   updateRoomTimer();
+  updateInteraction();
   $('game-leave').disabled = !online || !!pending;
   if (!playing) { mapDrag=null;mapPan={x:0,y:0};$('expanded-map').hidden=true;$('minimap').setAttribute('aria-expanded','false'); motionView.clear(); closeMenu(); resetInput(); }
   if (playing) $('game-status').textContent = `${room.players.length}명 생존 · ${room.players.find(/** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ p => p.id === playerId)?.name ?? ''}`;
@@ -96,20 +115,28 @@ $('minimap').onkeydown=/** 키보드 접근성으로 전체맵를 연다. */ (/*
   ws.onmessage = /** onmessage: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ (/** data: 전달하거나 해석한 데이터. */ { data }) => {
     let /** m: 수신 메시지 또는 문자열 패턴 일치 결과. */ m; try { m = JSON.parse(data); } catch { return; }
     if (m.v !== 1) return;
+    if(m.type==='game.result'){
+      matchResult=m.result;room=null;miniMap.clear();itemView.clear();motionView.clear();interactionConfirmation=null;$('escape-dialog').close();
+      $('score-value').textContent=String(matchResult.competitionPoints);$('score-reason').textContent={DEATH:'사망했습니다.',TIME_LIMIT:'게임 시간이 종료되었습니다.',ESCAPE:'탈출했습니다.'}[matchResult.reason]??'게임 종료';
+      settle();socket.send(JSON.stringify({v:1,type:'game.result.seen',resultId:matchResult.id}));return;
+    }
+    if(m.type==='game.result.ready')return;
+    if(m.type==='game.result.left'){matchResult=null;notice('');}
+    if(m.type==='interaction.prompt'){interactionConfirmation=m.id;resetInput();$('escape-dialog').showModal();}
     if(m.type==='room.list')publicRooms=Array.isArray(m.rooms)?m.rooms:[];
     if (m.type === 'welcome') { playerId = m.playerId; $('connection').textContent = '● 실시간 서버 연결됨'; }
     if (m.type === 'game.state') { if (room?.code === m.room.code) { itemView.receive(m.room,Date.now()); const /** items: 이전 틱의 아이템을 변경분과 합칠 ID 목록. */ items=new Map((room.items??[]).map(/** ID별 자료를 만든다. */ (/** item: 필드 아이템. */ item)=>[item.id,item]));
       for(const /** item: 이번 틱 변경 아이템. */ item of m.room.itemChanges?.updates??[])items.set(item.id,item);
       for(const /** id: 획득 완료 ID. */ id of m.room.itemChanges?.removed??[])items.delete(id);
-      room = {...m.room,map:m.room.map??room.map,items:m.room.items??[...items.values()]}; timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); updateSkillControls(); $('game-status').textContent=`${room.players.length}명 · 경쟁포인트 ${room.players.find(/** 본인 점수를 조회한다. */ (/** player: 수신 플레이어. */ player)=>player.id===playerId)?.status?.competitionPoints??0}`; } return; }
+      room = {...m.room,map:m.room.map??room.map,items:m.room.items??[...items.values()]}; timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); updateSkillControls();updateInteraction(); $('game-status').textContent=`${room.players.length}명 · 경쟁포인트 ${room.players.find(/** 본인 점수를 조회한다. */ (/** player: 수신 플레이어. */ player)=>player.id===playerId)?.status?.competitionPoints??0}`; } return; }
     if (m.type === 'room.state') { const /** entering: 새로운 방 상태로 진입했는지 여부. */ entering = !room || room.code !== m.room.code; room = m.room; itemView.receive(room,Date.now()); timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); if (entering) {miniMap.clear();syncTargetPriority();} notice(''); }
-    if (m.type === 'room.closed' || m.type === 'room.left') { room = null; miniMap.clear(); itemView.clear(); notice(m.type === 'room.closed' ? (m.message??messages.closed) : '방에서 나왔습니다.'); if(m.type==='room.closed') settle(); }
+    if (m.type === 'room.closed' || m.type === 'room.left') { interactionConfirmation=null;$('escape-dialog').close();room = null; miniMap.clear(); itemView.clear(); notice(m.type === 'room.closed' ? (m.message??messages.closed) : '방에서 나왔습니다.'); if(m.type==='room.closed') settle(); }
     if (m.type === 'error') notice(m.message);
     if ((m.type === 'ack' || m.type === 'error') && m.requestId === pending) settle();
     render();
   };
   ws.onclose = /** event: 현재 처리하는 사용자 입력 또는 연결 이벤트. */ /** onclose: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ event => {
-    room = null; miniMap.clear(); itemView.clear(); publicRooms=[]; playerId = null; settle(); notice(messages.offline); $('connection').textContent = '○ 연결 끊김 · 재시도 중';
+    if(matchResult){/** disconnected: 연결이 끝난 결과는 재접속 후에도 첫 화면으로 나갈 수 있다. 보상 자격을 새로 만들지는 않는다. */ matchResult.disconnected=true;}interactionConfirmation=null;$('escape-dialog').close();room = null; miniMap.clear(); itemView.clear(); publicRooms=[]; playerId = null; settle(); notice(messages.offline); $('connection').textContent = '○ 연결 끊김 · 재시도 중';
     clearTimeout(reconnectTimer);
     if (CLIENT_MODE === 'app' && event?.reason === 'App login required') { accountProfile = null; initializeClient(); return; }
     reconnectTimer = setTimeout(connect, 2000);
@@ -184,12 +211,12 @@ function updateSkillControls() {
   }
 }
 /** useSkill: 게임 진행과 조작 가능 여부를 검사하고 슬롯 시전 요청을 보낸다. */ function useSkill(/** slot: 기술을 저장하거나 시전할 A·B·C·P 슬롯. */ slot) {
-  if (room?.phase !== 'started' || socket?.readyState !== WebSocket.OPEN || $('game-dialog').open || !$('expanded-map').hidden || document.hidden || viewport.blockedPortrait || rolling() || cooldownRemaining(slot)>0) return;
+  if (room?.phase !== 'started' || socket?.readyState !== WebSocket.OPEN || $('game-dialog').open || $('escape-dialog').open || !$('expanded-map').hidden || document.hidden || viewport.blockedPortrait || rolling() || cooldownRemaining(slot)>0) return;
   inputPacket();
   socket.send(JSON.stringify({v:1,type:'game.cast',slot,afterInputSeq:motionView.sequence}));
 }
 /** movementInput: 키보드와 조이스틱을 조합해 현재 프레임의 이동 입력을 구한다. */ function movementInput() {
-  const /** blocked: 메뉴·구르기 등으로 현재 조작이 차단되는지 여부. */ blocked = $('game-dialog').open || !$('expanded-map').hidden || document.hidden || viewport.blockedPortrait || rolling();
+  const /** blocked: 메뉴·구르기 등으로 현재 조작이 차단되는지 여부. */ blocked = $('game-dialog').open || $('escape-dialog').open || !$('expanded-map').hidden || document.hidden || viewport.blockedPortrait || rolling();
   const /** x: 가로 좌표·이동 입력 또는 반복 비교 항목. */ x = blocked ? 0 : ((keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) || axis.x);
   const /** y: 세로 좌표 또는 이동 입력. */ y = blocked ? 0 : ((keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) - (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) || axis.y);
   return {x,y,blocked};
@@ -230,6 +257,8 @@ $('game-dialog').addEventListener('close', resetInput);
 $('game-leave').onclick = /** onclick: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ () => { resetInput(); inputPacket(); send('room.leave'); };
 window.addEventListener('keydown', /** e: 현재 입력 이벤트 또는 그릴 기술 효과. */ /** keydown 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ e => {
   if (room?.phase !== 'started' || viewport.blockedPortrait) return;
+  if($('escape-dialog').open){if(['KeyY','KeyN'].includes(e.code)&&!e.repeat){e.preventDefault();confirmEscape(e.code==='KeyY');}return;}
+  if(e.code==='KeyF'&&!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey){e.preventDefault();interact();return;}
   if(e.code==='Tab'){e.preventDefault();if(!e.repeat&&!$('game-dialog').open)setExpandedMap($('expanded-map').hidden);return;}
   if(!$('expanded-map').hidden){if(e.code==='Escape'){e.preventDefault();setExpandedMap(false);}return;}
   desktopInput = true; updateControls();
@@ -241,7 +270,7 @@ window.addEventListener('keydown', /** e: 현재 입력 이벤트 또는 그릴 
 });
 window.addEventListener('keyup', /** e: 현재 입력 이벤트 또는 그릴 기술 효과. */ /** keyup 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ e => { keys.delete(e.code); action = desktopAction(); });
 $('game-viewport').addEventListener('mousedown', /** e: 현재 입력 이벤트 또는 그릴 기술 효과. */ /** mousedown 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ e => {
-  if (![0,2].includes(e.button) || room?.phase !== 'started' || $('game-dialog').open || viewport.blockedPortrait || e.target.closest?.('button, input, select, dialog, #joystick, #minimap, #expanded-map')) return;
+  if (![0,2].includes(e.button) || room?.phase !== 'started' || $('game-dialog').open || $('escape-dialog').open || viewport.blockedPortrait || e.target.closest?.('button, input, select, dialog, #joystick, #minimap, #expanded-map')) return;
   e.preventDefault(); desktopInput = true; updateControls();
   if (!mouseButtons.has(e.button)) useSkill(e.button === 0 ? 'A' : 'B');
   mouseButtons.add(e.button); action = desktopAction(); inputPacket();
@@ -308,6 +337,7 @@ const /** canvas: 월드 화면을 그리는 캔버스 요소. */ canvas = $('wo
     if(x<-5||x>w+5||y<-5||y>h+5)continue;
     ctx.beginPath();ctx.arc(x,y,2.5,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();ctx.strokeStyle='#000';ctx.lineWidth=1;ctx.stroke();
   }
+  updateInteraction(me);
   miniMap.draw(room.map,room.code,me,viewport.worldWidth);
   if(!$('expanded-map').hidden&&miniMap.terrain){
     miniMap.draw(room.map,room.code,me,viewport.worldWidth*10/2.5,$('expanded-map-canvas'),true,mapPan);
@@ -320,6 +350,7 @@ const /** canvas: 월드 화면을 그리는 캔버스 요소. */ canvas = $('wo
     if (p.action) { ctx.strokeStyle = p.action === 'A' ? '#f7d98b' : '#93ccea'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x,y,32,0,Math.PI*2); ctx.stroke(); }
     ctx.fillStyle = p.id === playerId ? '#c8e5a6' : p.status?.objectType === 'enemy' ? '#df785c' : ['#e6ac8a','#91c8dd','#c7a8de','#d7cc82'][i%4];
     if (p.status?.objectType === 'player' || p.id === playerId) drawPlayerTriangle(ctx, p, x, y);
+    else if(p.status?.objectType==='prop'){ctx.fillStyle='#ffe184';ctx.fillRect(x-10,y-15,20,30);ctx.strokeStyle='#4b3826';ctx.lineWidth=3;ctx.strokeRect(x-10,y-15,20,30);}
     else { ctx.beginPath(); ctx.arc(x,y,18,0,Math.PI*2); ctx.fill(); }
     if (userSettings.showNames) { ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = '14px system-ui'; ctx.fillText(p.name + (p.id === playerId ? ' (나)' : ''),x,y-54); }
     drawObjectHud(ctx, p, x, y, playerId);

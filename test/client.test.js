@@ -39,6 +39,7 @@ class Socket {
   vm.runInContext(readFileSync(new URL('../public/room-timer.js',import.meta.url),'utf8'),context);
   vm.runInContext(readFileSync(new URL('../public/item-view.js',import.meta.url),'utf8'),context);
   vm.runInContext(readFileSync(new URL('../public/minimap.js',import.meta.url),'utf8'),context);
+  vm.runInContext(readFileSync(new URL('../public/interactions.js',import.meta.url),'utf8'),context);
   vm.runInContext(readFileSync(new URL('../public/app.js',import.meta.url),'utf8'),context);
   const /** run: 격리 문맥 안에서 테스트 코드를 실행하는 함수. */ run=/** script: 격리 문맥에서 실행할 테스트 코드 문자열. */ /** run: 격리 문맥에서 실제 클라이언트 코드를 실행해 결과를 확인한다. */ script=>vm.runInContext(script,context);
   const /** receive: 서버 메시지 수신을 재현하는 테스트 함수. */ receive=/** message: 사용자나 연결에 전달할 안내 내용. */ /** receive: 서버 스냅샷을 표시용 이력으로 복사하고 방 변경·순간이동을 반영한다. */ message=>run(`socket.onmessage({data:${JSON.stringify(JSON.stringify({v:1,...message}))}})`);
@@ -228,4 +229,28 @@ test('full map drags without closing or casting and resets center when reopened'
  run('useSkill("A")');assert.equal(run('socket.sent.filter(m=>m.type==="game.cast").length'),0);
  const /** release: 포인터 취소 이벤트. */ release=new Event('pointercancel');Object.defineProperty(release,'pointerId',{value:7});e.get('expanded-map-canvas').dispatchEvent(release);assert.equal(run('mapDrag'),null);
  run('setExpandedMap(false);setExpandedMap(true)');assert.equal(run('mapPan.x'),0);assert.equal(run('mapPan.y'),0);
+});
+
+test('score screen shows server points and returns home only through exit button',/** 사망·시간 종료·탈출이 같은 결과 화면과 확인 경로를 사용하는지 검증한다. */ ()=>{
+ for(const /** reason: 서버 종료 사유. */ reason of ['DEATH','TIME_LIMIT','ESCAPE']){
+  const /** e: 화면 요소; receive: 서버 수신 대역; state: 방 상태; run: 격리 실행기. */ {elements:e,receive,state,run}=client();receive({type:'room.state',room:state});
+  receive({type:'game.result',result:{id:'result-1',competitionPoints:540,reason}});
+  assert.equal(e.get('score-screen').hidden,false);assert.equal(e.get('home').hidden,true);assert.equal(e.get('game').hidden,true);assert.equal(e.get('score-value').textContent,'540');
+  assert.equal(run('socket.sent.at(-1).type'),'game.result.seen');assert.equal(run('socket.sent.at(-1).resultId'),'result-1');
+  e.get('score-exit').click();assert.equal(run('socket.sent.at(-1).type'),'game.result.leave');assert.equal(e.get('home').hidden,true);
+  receive({type:'game.result.left'});receive({type:'ack',requestId:run('pending')});assert.equal(e.get('home').hidden,false);assert.equal(e.get('score-screen').hidden,true);
+ }
+});
+test('F and interaction button share owner-only target and Y/N escape confirmation',/** 상호작용 버튼·키보드와 확인 중 공격 방지를 검증한다. */ ()=>{
+ const /** e: 화면 요소; receive: 수신 대역; state: 방 상태; window: 키 입력 대상; run: 격리 실행기. */ {elements:e,receive,state,window,run}=client();
+ state.players[0].status={objectType:'player',state:'alive',classificationCode:'P'};
+ state.objects=[{id:'lamp',x:0,y:0,ownerId:'me',ownerCode:'P',interactionEnabled:true,status:{objectType:'prop',state:'alive',classificationCode:'OBJ0001'}}];
+ receive({type:'room.state',room:state});assert.equal(e.get('interaction-button').hidden,false);
+ key(window,'keydown','KeyF');assert.equal(run('socket.sent.at(-1).type'),'game.interact');assert.equal(run('socket.sent.at(-1).targetId'),'lamp');
+ receive({type:'ack',requestId:run('pending')});receive({type:'interaction.prompt',id:'confirm-1'});assert.equal(e.get('escape-dialog').open,true);
+ run('useSkill("A")');assert.equal(run('socket.sent.filter(m=>m.type==="game.cast").length'),0);
+ key(window,'keydown','KeyN');assert.equal(run('socket.sent.at(-1).type'),'game.interact.confirm');assert.equal(run('socket.sent.at(-1).accept'),false);assert.equal(e.get('escape-dialog').open,false);
+ receive({type:'ack',requestId:run('pending')});e.get('interaction-button').click();assert.equal(run('socket.sent.at(-1).type'),'game.interact');receive({type:'ack',requestId:run('pending')});
+ receive({type:'interaction.prompt',id:'confirm-2'});e.get('escape-yes').click();assert.equal(run('socket.sent.at(-1).accept'),true);
+ receive({type:'ack',requestId:run('pending')});state.objects[0].ownerId='other';receive({type:'game.state',room:state});assert.equal(e.get('interaction-button').hidden,true);
 });

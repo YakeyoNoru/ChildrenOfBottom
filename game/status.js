@@ -1,6 +1,6 @@
 import { /** randomUUID: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ randomUUID } from 'node:crypto';
 
-export const /** ObjectType: 플레이어·NPC·적의 개체 분류 상수. */ ObjectType = Object.freeze({ PLAYER: 'player', NPC: 'npc', ENEMY: 'enemy' });
+export const /** ObjectType: 플레이어·NPC·적 유닛과 사물의 개체 분류 상수. */ ObjectType = Object.freeze({ PLAYER: 'player', NPC: 'npc', ENEMY: 'enemy', /** PROP: 유닛과 구별되는 공격 가능·상호작용 사물 분류. */ PROP:'prop' });
 export const /** LifeState: 생존·사망 상태 상수. */ LifeState = Object.freeze({ ALIVE: 'alive', DEAD: 'dead' });
 
 const /** defaults: 공통 스테이터스의 기본 수치. */ defaults = Object.freeze({
@@ -25,7 +25,7 @@ function copyStatusList(/** value: 복사할 선택적 목록. */ value,/** fiel
   return structuredClone(value);
 }
 
-/** 플레이어·NPC·적이 공유하는 서버 소유 데이터. 불리언 false는 N을 뜻한다. */
+/** 플레이어·NPC·적·사물이 공유하는 서버 소유 데이터. 불리언 false는 N을 뜻한다. */
 export /** createStatus: 모든 개체가 공유하는 수치·기술 슬롯·상태를 검증해 생성한다. */ function createStatus(/** objectType: 생성하거나 검사할 개체 분류; classificationCode: 개체 종류 또는 계정의 분류 코드; instanceId: 월드 개체의 고유 인스턴스 식별자; values: 기본 스테이터스를 재정의할 전달값. */ { objectType, classificationCode, instanceId = randomUUID(), ...values }) {
   if (!Object.values(ObjectType).includes(objectType)) throw new TypeError('Invalid objectType');
   if (typeof classificationCode !== 'string' || !classificationCode.trim()) throw new TypeError('classificationCode is required');
@@ -156,9 +156,10 @@ export /** regenerate: 생존 유닛의 체력은 피격 후 5초부터 3초마�
   s.currentSkillResource = Math.min(effective.maxSkillResource, s.currentSkillResource + effective.skillResourceRegen * seconds);
 }
 
-/** 플레이어·몬스터(적)·NPC를 유닛 오브젝트라 부르며 자신과 NPC 대상은 공격에서 제외한다. */
+/** 자신·NPC는 제외하고 플레이어·몬스터 유닛은 적대한다. 사물은 모든 플레이어만 공격한다. */
 export /** areEnemies: 자신·NPC를 제외한 다른 플레이어와 몬스터 유닛을 적대로 판정한다. */ function areEnemies(/** a: 적대 관계를 검사할 기준 스테이터스. */ a, /** b: 적대 관계를 검사할 비교 스테이터스. */ b) {
   if(a===b||(a.instanceId&&a.instanceId===b.instanceId))return false;
+  if(b.objectType===ObjectType.PROP)return a.objectType===ObjectType.PLAYER;
   return b.objectType===ObjectType.PLAYER||b.objectType===ObjectType.ENEMY;
 }
 export const /** TargetPriority: 허용하는 공격 우선대상 선택 방식. */ TargetPriority = Object.freeze(['nearest', 'lowestHealth', 'lowestHealthRatio']);

@@ -123,7 +123,7 @@ A/B/C의 재사용 대기는 시전자별 `skillCooldowns[slot]`에 다음 사�
 ## 방 생성 기준 타이머와 강제 종료
 방 생성 시 서버가 createdAt, countdownEndsAt(생성+600000ms), closesAt(생성+660000ms)를 한 번 확정합니다. 게임 시작·입장·방장 변경으로 초기화하지 않습니다. `room.timer`에 이 시각과 remainingMs, closeRemainingMs를 보내며 클라이언트는 남은 시간에 수신 후 경과만 반영해 메뉴 왼쪽에 MM:SS를 표시합니다. 타이머는 터치 조작부 표시 옵션과 무관하게 유지됩니다.
 
-10분이 되면 00:00과 종료까지 남은 유예 시간을 표시하고, 다음 1분 동안 게임은 계속 진행됩니다. 생성 후 11분에는 서버가 모든 참가자의 방 소속을 해제하고 `room.closed`(reason=TIME_LIMIT, 제한 시간이 지나 방이 종료되었습니다.)를 보낸 뒤 방·개체·효과를 정리합니다. 클라이언트의 입력·메뉴·요청 대기를 해제하고 메인 화면으로 돌아갑니다. 소켓 자체는 유지해 다른 방 생성/입장이 가능합니다. 대기실 상태여도 같은 기한이 적용되며, 만료 방에 대한 입장·시작 요청으로 수명을 늘릴 수 없습니다. 종료는 클라이언트 화면 타이머와 별개로 서버가 검사합니다.
+진행 중인 게임은 생성 후 10분에 타이머가 0이 되면 모든 참가자에게 서버 확정 `game.result`를 보내고 점수화면으로 이동시킵니다. 참가자가 모두 종료하면 방을 삭제합니다. 시작하지 않은 대기실은 생성 후 11분에 기존 `room.closed`로 정리합니다. 소켓은 유지하며, 점수화면의 로비로 나가기를 거친 뒤 새 방 생성·입장이 가능합니다. 입장·게임 시작·방장 변경으로 수명은 초기화하지 않습니다. 종료 시점은 서버가 검사합니다.
 
 ## 구덩이 지도와 시작 위치
 
@@ -153,3 +153,15 @@ A/B/C의 재사용 대기는 시전자별 `skillCooldowns[slot]`에 다음 사�
 ## 상태 생성 시각
 
 `room.state.room` 및 `game.state.room`에 `serverTime`(서버 상태 생성 시각 ms), `snapshotSequence`(방별 증가하는 상태 순번)를 포함한다. 클라이언트는 상대 표시만 서버 생성 시각 기준으로 보간하고, 내 입력 확인·시전 순서는 기존 규칙을 유지한다. 같은 생성 시각의 새 순번은 이력 한 칸을 갱신하며 이전 순번은 이동 표시 모델에서 무시한다.
+
+## 게임 결과·공통 상호작용
+
+- `game.interact {targetId}`: 중심 거리 200 이내 사용 가능한 NPC/사물을 서버 분류코드 처리기로 호출한다.
+- `interaction.prompt {id,message}`: OBJ0001 탈출 Y/N 확인. 서버 발급 ID의 유효시간은 15초다.
+- `game.interact.confirm {confirmationId,accept:boolean}`: Y/N 응답. Y는 대상 상태·거리·소유권을 다시 검사한다. 다른 분류코드 처리 결과는 `interaction.result {code,response}`로 전달할 수 있다.
+- `game.result {result:{id,competitionPoints,reason}}`: 사망(DEATH), 타이머 0(TIME_LIMIT), 탈출(ESCAPE) 시 서버 확정 점수. 참가자는 즉시 게임에서 제외된다.
+- `game.result.seen {resultId}` → `game.result.ready {resultId}`: 점수화면 표시 확인 기록. 결과는 본인 연결의 서버 ID만 허용한다.
+- `game.result.leave {resultId}` → `game.result.left`: 확인 기록 후 첫 화면으로 퇴장한다. 요청 명령은 기존 `requestId`/`ack` 규칙을 따른다. 결과 확인 전 새 방 생성·입장은 RESULT_PENDING이다.
+- 오브젝트 스냅샷의 `interactionEnabled`는 상호작용 사용 여부, `ownerCode`/`ownerId`는 사물의 소유 코드/개체 ID다. OBJ0001은 `status.objectType='prop'`이다.
+
+계정 보상은 미구현이다. 결과 확인 기록과 후속 영속 보상 연결 시 주의점은 RESULTS-AND-INTERACTIONS.md를 참고한다.

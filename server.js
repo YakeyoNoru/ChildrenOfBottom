@@ -1,3 +1,5 @@
+import './public/interactions.js';
+import { /** createReturnLamp: 시작 위치에 소유자가 있는 귀환전등을 만든다. */ createReturnLamp } from './game/props.js';
 import './public/poison.js';
 import './public/input-timeline.js';
 import './public/items.js';
@@ -20,7 +22,7 @@ export const MAX_PLAYERS=5;
 export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증을 제공하는 서버를 생성한다. */ function createGameServer(/** heartbeatMs: 연결 생존 확인 주기(밀리초); authOptions: 인증 서비스 생성 옵션; roomClock: 방 수명 검증에 사용할 서버 시계 함수. */ { heartbeatMs = 15000, auth: authOptions = {}, roomClock = Date.now } = {}) {
   const /** rooms: 접속코드별 방 상태를 보관하는 맵. */ rooms = new Map();
   const /** auth: 앱 로그인과 계정 API를 처리하는 인증 서비스. */ auth = createAuthService(authOptions);
-  const /** files: 외부에 제공할 정적 파일 경로와 MIME 형식. */ files = { '/pit-map-rules.js': ['pit-map-rules.js','text/javascript'], '/minimap.js': ['minimap.js','text/javascript'], '/item-view.js': ['item-view.js','text/javascript'], '/items.js': ['items.js','text/javascript'], '/map-renderer.js': ['map-renderer.js','text/javascript'], '/room-timer.js': ['room-timer.js', 'text/javascript'], '/movement.js': ['movement.js', 'text/javascript'], '/pit-map.html': ['pit-map.html', 'text/html'], '/motion.js': ['motion.js', 'text/javascript'], '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/viewport.js': ['viewport.js', 'text/javascript'], '/client-mode.js': ['client-mode.js', 'text/javascript'], '/app': ['index.html', 'text/html'], '/style.css': ['style.css', 'text/css'] };
+  const /** files: 외부에 제공할 정적 파일 경로와 MIME 형식. */ files = { '/pit-map-rules.js': ['pit-map-rules.js','text/javascript'], '/interactions.js': ['interactions.js','text/javascript'], '/minimap.js': ['minimap.js','text/javascript'], '/item-view.js': ['item-view.js','text/javascript'], '/items.js': ['items.js','text/javascript'], '/map-renderer.js': ['map-renderer.js','text/javascript'], '/room-timer.js': ['room-timer.js', 'text/javascript'], '/movement.js': ['movement.js', 'text/javascript'], '/pit-map.html': ['pit-map.html', 'text/html'], '/motion.js': ['motion.js', 'text/javascript'], '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/viewport.js': ['viewport.js', 'text/javascript'], '/client-mode.js': ['client-mode.js', 'text/javascript'], '/app': ['index.html', 'text/html'], '/style.css': ['style.css', 'text/css'] };
   const /** server: 정적 파일과 WebSocket 연결을 제공하는 HTTP 서버. */ server = http.createServer(/** 현재 비동기 작업의 완료 또는 후속 처리를 수행한다. */ async (/** req: 수신한 HTTP 요청. */ req, /** res: HTTP 응답 작성 객체. */ res) => {
     if (await auth.handle(req,res)) return;
     if (req.url === '/health') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end('{"ok":true,"protocolVersion":1}'); }
@@ -42,7 +44,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
   const /** objectSnapshot: 개체를 전송용 상태로 복사하는 함수. */ objectSnapshot = /** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** objectSnapshot: 개체의 최종 수치를 계산하고 전송 가능한 상태만 복사한다. */ p => {
     updateSkillCooldowns(p);
     const /** effective: 추가 수치를 합산한 최종 스테이터스. */ effective = normalizeVitals(p.status);
-    return { id: p.id, name: p.name, x: p.x, y: p.y, action: p.action, facing: p.facing ?? -Math.PI / 2, inputQueueLength:p.inputQueue?.length??0,inputQueueDelayMs:p.inputQueue?.length?Math.max(0,Date.now()-(p.inputQueue[0].receivedAt??Date.now())):0,playerNumber:p.playerNumber??null,spawnTileId:p.spawnTileId??null,presetId:p.presetId??null,skillNames:getSkillSlotNames(p.status), lastProcessedInput: p.lastProcessedInput ?? 0, roll:p.roll?{...p.roll}:null, lastMovementInput:p.lastMovementInput??{x:0,y:0}, status: { ...p.status, effective } };
+    return { /** interactionEnabled: 상호작용 대상 표시. */ interactionEnabled:p.interactionEnabled??false,/** ownerId: 소유 플레이어 개체. */ ownerId:p.ownerId??null,/** ownerCode: 소유 플레이어 분류코드. */ ownerCode:p.ownerCode??null,id: p.id, name: p.name, x: p.x, y: p.y, action: p.action, facing: p.facing ?? -Math.PI / 2, inputQueueLength:p.inputQueue?.length??0,inputQueueDelayMs:p.inputQueue?.length?Math.max(0,Date.now()-(p.inputQueue[0].receivedAt??Date.now())):0,playerNumber:p.playerNumber??null,spawnTileId:p.spawnTileId??null,presetId:p.presetId??null,skillNames:getSkillSlotNames(p.status), lastProcessedInput: p.lastProcessedInput ?? 0, roll:p.roll?{...p.roll}:null, lastMovementInput:p.lastMovementInput??{x:0,y:0}, status: { ...p.status, effective } };
   };
   const /** allObjects: 방의 플레이어와 일반 개체를 함께 조회하는 함수. */ allObjects = /** room: 현재 처리하는 방의 상태. */ /** allObjects: 방 안의 플레이어와 NPC·적을 하나의 목록으로 모은다. */ room => [...room.players.values(), ...room.objects.values()];
   const /** snapshot: 방 상태를 전송용 데이터로 변환하는 함수. */ snapshot = /** room: 현재 처리하는 방의 상태. */ /** snapshot: 현재 방의 참가자·개체·기술 효과를 전송용 스냅샷으로 만든다. */ (room, /** includeMap: 지도는 초기 상태에만 포함하고 틱 전송에서는 생략한다. */ includeMap=true) => {
@@ -64,6 +66,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
   /** 시간 만료 시 전원을 방에서 분리하고 방 데이터·효과를 정리한다. 소켓 연결 자체는 유지한다. */
   function closeExpiredRoom(/** room: 종료할 방. */ room) {
     rooms.delete(room.code);
+    if(room.phase==='started'){for(const /** player: 종료된 게임 참가자. */ player of [...room.players.values()])finishPlayer(room,player,'TIME_LIMIT');}
     for(const /** player: 퇴장시킬 방 참가자. */ player of room.players.values()) {
       player.ws.roomCode=null;
       send(player.ws,'room.closed',{reason:'TIME_LIMIT',message:'제한 시간이 지나 방이 종료되었습니다.'});
@@ -85,6 +88,23 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
         broadcast(room);
       }
     }
+  }
+  /** 점수를 서버에서 확정하고 참가자를 게임에서 분리한다. 계정 보상은 아직 지급하지 않는다. */
+  function finishPlayer(/** room: 진행 중인 방. */ room,/** player: 종료할 참가자. */ player,/** reason: DEATH·TIME_LIMIT·ESCAPE 종료 사유. */ reason){
+    if(!room.players.has(player.id)||player.ws.matchResult)return;
+    /** matchResult: 이후 계정 보상 검증에 사용할 서버 발급 결과와 화면 확인 상태. */ player.ws.matchResult={
+      /** id: 서버 발급 결과 ID. */ id:randomUUID(),
+      /** playerId: 결과의 소유 참가자. */ playerId:player.id,
+      /** accountId: 후속 보상을 연결할 계정. 게스트는 null. */ accountId:player.ws.account?.id??null,
+      /** competitionPoints: 종료 시점 확정 경쟁점수. */ competitionPoints:player.status.competitionPoints,
+      /** reason: 사망·제한시간·탈출 분류. */ reason,
+      /** seenAt: 점수화면 확인 메시지 수신 시각(ms). */ seenAt:null,
+      /** completedAt: 첫 화면으로 퇴장한 시각(ms). */ completedAt:null,
+    };
+    player.ws.pendingInteraction=null;player.ws.roomCode=null;room.players.delete(player.id);
+    if(room.hostId===player.id)room.hostId=room.players.keys().next().value??null;
+    send(player.ws,'game.result',{result:{id:player.ws.matchResult.id,competitionPoints:player.ws.matchResult.competitionPoints,reason}});
+    if(!room.players.size)rooms.delete(room.code);
   }
   /** 이동 순서가 도달한 기술을 실행 시점의 상태·쿨타임으로 검증한다. */
   function executeCast(/** room: 현재 방. */ room,/** caster: 시전자. */ caster,/** command: 예약한 슬롯·요청 ID. */ command,/** now: 서버 실행 시각. */ now){
@@ -117,7 +137,32 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
       const /** fail: 현재 요청 식별자를 포함해 오류를 반환하는 함수. */ fail = /** fail: 현재 요청 ID와 함께 게임 명령 실패를 전달한다. */ (/** code: 개체·기술·방 또는 오류를 식별하는 코드. */ code, /** message: 사용자나 연결에 전달할 안내 내용. */ message) => error(code, message, m.requestId);
       let /** room: 현재 처리하는 방의 상태. */ room = rooms.get(ws.roomCode);
       if(room && globalThis.RoomTimerRules.expired(room,roomClock())) {closeExpiredRoom(room);room=null;}
-      if(m.type==='room.list'){
+      if(m.type==='game.result.seen'||m.type==='game.result.leave'){
+        const /** result: 본인 연결에 서버가 발급한 결과. */ result=ws.matchResult;
+        if(!result||m.resultId!==result.id)return fail('INVALID_RESULT','유효한 게임 결과가 없습니다.');
+        if(m.type==='game.result.seen'){result.seenAt??=Date.now();send(ws,'game.result.ready',{resultId:result.id});}
+        else {if(result.seenAt===null)return fail('RESULT_NOT_SEEN','점수화면을 먼저 확인해 주세요.');result.completedAt=Date.now();/** completedResult: 이후 계정 보상 로직에 연결할 확인·퇴장 완료 결과. */ ws.completedResult=result;ws.matchResult=null;send(ws,'game.result.left');}
+      }else if(m.type==='game.interact'||m.type==='game.interact.confirm'){
+        if(!room||room.phase!=='started')return fail('GAME_NOT_STARTED','게임 중에만 상호작용할 수 있습니다.');
+        const /** player: 요청한 플레이어. */ player=room.players.get(ws.id);
+        if(m.type==='game.interact'){
+          const /** target: 서버가 보관한 상호작용 대상. */ target=room.objects.get(m.targetId);
+          const /** response: 분류코드별 공통 상호작용 실행 결과. */ response=globalThis.InteractionRules.invoke(player,target);
+          if(!response)return fail('INTERACTION_UNAVAILABLE','상호작용할 수 없습니다.');
+          if(response.type==='escapePrompt'){
+            /** pendingInteraction: 대상·연결에 묶인 일회성 탈출 확인. */ ws.pendingInteraction={/** id: 일회성 확인 ID. */ id:randomUUID(),/** targetId: 소유·거리 재검증 대상. */ targetId:target.id,/** expiresAt: 확인 만료 시각(ms). */ expiresAt:Date.now()+15000};
+            send(ws,'interaction.prompt',{id:ws.pendingInteraction.id,message:response.message});
+          }else send(ws,'interaction.result',{code:target.status.classificationCode,response});
+        }else {
+          const /** confirmation: 이 연결에 발급한 확인 요청. */ confirmation=ws.pendingInteraction;
+          if(!confirmation||confirmation.id!==m.confirmationId||typeof m.accept!=='boolean')return fail('INVALID_INTERACTION','확인 요청이 유효하지 않습니다.');
+          ws.pendingInteraction=null;
+          if(m.accept){
+            if(Date.now()>confirmation.expiresAt||!globalThis.InteractionRules.available(player,room.objects.get(confirmation.targetId)))return fail('INTERACTION_UNAVAILABLE','상호작용 대상에서 멀어졌거나 사용할 수 없습니다.');
+            finishPlayer(room,player,'ESCAPE');if(room.players.size)broadcast(room);
+          }
+        }
+      }else if(m.type==='room.list'){
         const /** available: 공개된 시작 대기방의 최소 목록 자료. */ available=[...rooms.values()].filter(/** 공개·대기·미만료 방만 노출한다. */ (/** candidate: 조회할 방. */ candidate)=>!candidate.private&&candidate.phase==='lobby'&&!globalThis.RoomTimerRules.expired(candidate,roomClock())).map(/** 선택 화면에 필요한 값만 보낸다. */ (/** candidate: 공개 방. */ candidate)=>({code:candidate.code,hostName:candidate.players.get(candidate.hostId)?.name??'',playerCount:candidate.players.size,maxPlayers:MAX_PLAYERS}));
         send(ws,'room.list',{rooms:available,requestId:m.requestId});
       }else if(m.type==='room.privacy'){
@@ -127,6 +172,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
         if(typeof m.private!=='boolean')return fail('INVALID_PRIVACY','Private 값은 체크 여부여야 합니다.');
         room.private=m.private;broadcast(room);
       }else if (m.type === 'room.create' || m.type === 'room.join') {
+        if(ws.matchResult)return fail('RESULT_PENDING','점수화면에서 로비로 나가기를 눌러 주세요.');
         if (room) return fail('ALREADY_IN_ROOM', '이미 방에 참여 중입니다.');
         if (typeof m.name !== 'string' || !m.name.trim() || m.name.trim().length > 20 || /[\x00-\x1f]/.test(m.name)) return fail('INVALID_NAME', '이름은 1~20자로 입력하세요.');
         if (m.type === 'room.create') {
@@ -206,6 +252,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
             Object.assign(player,globalThis.PitMapRules.center(tile,room.map));
             player.pendingCasts=[];player.movementClock={last:Date.now(),credit:50};
             player.playerNumber=index+1;player.spawnTileId=tile.id;player.roll=null;player.input={x:0,y:0};player.inputQueue=[];
+            const /** lamp: 해당 플레이어 시작점의 귀환전등. */ lamp=createReturnLamp(player);room.objects.set(lamp.id,lamp);
           });
           broadcast(room);
         }
@@ -219,6 +266,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
     for (const /** room: 현재 처리하는 방의 상태. */ room of rooms.values()) {
       if(globalThis.RoomTimerRules.expired(room,roomClock())) {closeExpiredRoom(room);continue;}
       if (room.phase !== 'started') continue;
+      if(roomClock()>=room.countdownEndsAt){for(const /** player: 제한 시간에 도달한 참가자. */ player of [...room.players.values()])finishPlayer(room,player,'TIME_LIMIT');continue;}
       room.skillEffects = (room.skillEffects ?? []).filter(/** e: 현재 처리하는 이벤트 또는 검증 개체. */ /** 조건에 맞는 항목만 다음 처리 대상으로 남긴다. */ e=>e.expiresAt>now);
       const /** objects: 처리할 월드 개체 목록. */ objects = allObjects(room);
       for (const /** object: 현재 처리하는 월드 개체. */ object of objects) { regenerate(object.status, dt,now); updateSkillCooldowns(object,now); }
@@ -247,6 +295,9 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
       globalThis.PoisonRules.tick(room,roomClock());
       if (now - (room.targetsAt ?? 0) >= 100) { updateNearestObjects(objects); room.targetsAt = now; }
       room.skillEffects.push(...tickMonsters(objects,room.map,now,dt));
+      let /** finished: 이번 틱에 사망으로 분리한 참가자가 있는지 여부. */ finished=false;
+      for(const /** player: 서버에서 사망이 확정된 참가자. */ player of [...room.players.values()])if(player.status.state===LifeState.DEAD){finishPlayer(room,player,'DEATH');finished=true;}
+      if(finished&&room.players.size)broadcast(room);
       room.itemChanges=globalThis.ItemRules.tick(room.items??new Map(),objects,now);
       const /** state: 현재 상태 스냅샷. */ state = snapshot(room,false);
       for (const /** p: 현재 처리하는 플레이어 또는 검증 개체. */ p of room.players.values()) send(p.ws, 'game.state', { room: state });

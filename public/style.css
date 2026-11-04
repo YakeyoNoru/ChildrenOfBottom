@@ -54,3 +54,10 @@ body.playing{overflow:hidden}body.playing main>header,body.playing main>footer{d
 #expanded-map-canvas:active{cursor:grabbing}
 #expanded-map-close{position:absolute;right:10px;top:10px;z-index:1;width:36px;height:36px;min-height:0;padding:0;border:2px solid #fff;border-radius:50%;display:grid;place-items:center;background:#25312c;color:#fff;font:28px/1 system-ui;cursor:pointer;touch-action:manipulation}
 #expanded-map-close:focus-visible{outline:3px solid #63d4d2;outline-offset:3px}
+
+/* 점수화면은 확정 경쟁점수와 하단 중앙 복귀 버튼을 제공한다. */
+#score-screen{position:fixed;inset:0;z-index:50;background:#14251e;color:#eff7e8;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+#score-screen[hidden]{display:none}#score-value{font:700 64px system-ui}#score-exit{position:absolute;bottom:max(32px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);min-width:180px}
+/* 상호작용 버튼은 터치 조작 숨김 여부와 독립적으로 A 버튼 위에 둔다. */
+#interaction-button{position:absolute;right:max(28px,env(safe-area-inset-right));bottom:calc(86px + 68px * var(--control-scale));width:60px;height:48px;border-radius:14px;background:#263e32;color:#fff;border:2px solid #b9d9a9;font-size:20px;pointer-events:auto;touch-action:manipulation}
+#escape-dialog{color:#eff7e8;background:#1d3427;border:1px solid #88aa78;border-radius:14px;padding:24px}#escape-dialog::backdrop{background:#0007}#escape-dialog button{min-width:80px;margin:8px}
