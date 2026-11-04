@@ -35,6 +35,10 @@ export function applySkillDamage(
   if (!Number.isFinite(amount) || amount<0 || target.status.state===LifeState.DEAD) return null;
   const /** healthBefore: 피해를 적용하기 직전 체력. */ healthBefore = target.status.currentHealth;
   target.status.currentHealth=Math.max(0,healthBefore-amount);
+  if(target.status.currentHealth<healthBefore){
+    /** lastDamageAt: 즉시 공격·투사체·장판에서 공통으로 기록하는 실제 피격 시각. */ target.status.lastDamageAt=now;
+    /** healthRegenNextAt: 재피격 시 5초 회복 대기를 처음부터 다시 시작한다. */ target.status.healthRegenNextAt=now+5000;
+  }
   normalizeVitals(target.status);
   // 피해 적용 경로를 공유하므로 즉시 공격·투사체·장판 모두 마지막 실제 공격자를 기록한다.
   if(amount>0&&target.status.objectType==='enemy'&&target.status.state!==LifeState.DEAD&&target.status.awarenessState!=='returning') {

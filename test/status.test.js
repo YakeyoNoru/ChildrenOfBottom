@@ -9,7 +9,7 @@ test('all object kinds share defaults; skills belong only to players and arrays 
     assert.equal(s.objectType,kind);assert.equal(s.classificationCode,'TEST');assert.ok(s.instanceId);
     assert.equal(s.level,1);assert.equal(s.maxHealth,10);assert.equal(s.currentHealth,10);
     assert.equal(s.maxSkillResource,0);assert.equal(s.currentSkillResource,0);
-    assert.equal(s.attack,1);assert.equal(s.defense,0);assert.equal(s.healthRegen,1);assert.equal(s.skillResourceRegen,1);assert.equal(s.moveSpeed,2);
+    assert.equal(s.attack,1);assert.equal(s.defense,0);assert.equal(s.healthRegen,0);assert.equal(s.skillResourceRegen,1);assert.equal(s.moveSpeed,2);
     assert.equal(s.concealed,false);assert.equal(s.stunned,false);assert.equal(s.state,'alive');assert.equal(s.bountyPoints,1);
     assert.equal(s.nearestEnemyId,null);assert.equal(s.nearestObjectId,null);
     for(const /** key: 현재 항목의 식별 키. */ key of ['bonusHealth','bonusAttack','bonusDefense','bonusHealthRegen','bonusMoveSpeed','bonusSkillResource','bonusSkillResourceRegen'])assert.equal(s[key],0);
@@ -20,10 +20,10 @@ test('all object kinds share defaults; skills belong only to players and arrays 
   assert.notEqual(a.instanceId,b.instanceId);
 });
 test('bonuses add to effective values; regen respects caps, zero resources and death',/** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ ()=>{
-  const /** s: 검증할 공통 스테이터스. */ s=status('npc',{currentHealth:5,maxSkillResource:4,currentSkillResource:1,bonusHealth:5,bonusAttack:2,bonusDefense:3,bonusHealthRegen:1,bonusMoveSpeed:1,bonusSkillResource:2,bonusSkillResourceRegen:2});
+  const /** s: 검증할 공통 스테이터스. */ s=status('npc',{currentHealth:5,healthRegen:1,maxSkillResource:4,currentSkillResource:1,bonusHealth:5,bonusAttack:2,bonusDefense:3,bonusHealthRegen:1,bonusMoveSpeed:1,bonusSkillResource:2,bonusSkillResourceRegen:2});
   assert.deepEqual(effectiveStats(s),{maxHealth:15,maxSkillResource:6,attack:3,defense:3,healthRegen:2,moveSpeed:3,skillResourceRegen:3});
-  regenerate(s,.5);assert.equal(s.currentHealth,6);assert.equal(s.currentSkillResource,2.5);
-  regenerate(s,100);assert.equal(s.currentHealth,15);assert.equal(s.currentSkillResource,6);assert.equal(s.maxHealth,10);
+  regenerate(s,.5,0);assert.equal(s.currentHealth,5);assert.equal(s.currentSkillResource,2.5);
+  regenerate(s,100,100000);assert.equal(s.currentHealth,15);assert.equal(s.currentSkillResource,6);assert.equal(s.maxHealth,10);
   s.bonusHealth=-8;s.bonusSkillResource=-10;normalizeVitals(s);assert.equal(s.currentHealth,2);assert.equal(s.currentSkillResource,0);
   s.currentHealth=0;regenerate(s,10);assert.equal(s.state,'dead');assert.equal(s.currentHealth,0);
   const /** zero: 스킬자원 최대치가 0인 검증 개체. */ zero=status();regenerate(zero,20);assert.equal(zero.currentSkillResource,0);

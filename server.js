@@ -221,7 +221,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
       if (room.phase !== 'started') continue;
       room.skillEffects = (room.skillEffects ?? []).filter(/** e: 현재 처리하는 이벤트 또는 검증 개체. */ /** 조건에 맞는 항목만 다음 처리 대상으로 남긴다. */ e=>e.expiresAt>now);
       const /** objects: 처리할 월드 개체 목록. */ objects = allObjects(room);
-      for (const /** object: 현재 처리하는 월드 개체. */ object of objects) { regenerate(object.status, dt); updateSkillCooldowns(object,now); }
+      for (const /** object: 현재 처리하는 월드 개체. */ object of objects) { regenerate(object.status, dt,now); updateSkillCooldowns(object,now); }
       for (const /** p: 현재 처리하는 플레이어 또는 검증 개체. */ p of room.players.values()) {
         if (p.sequencedInput) {
           globalThis.InputTimeline.advance(p,room.map,now,/** 해당 이동 직후 시전을 실행한다. */ (/** command: 예약 시전. */ command)=>executeCast(room,p,command,now));

@@ -21,6 +21,8 @@ globalThis.PoisonRules=Object.freeze({
       const /** height: 현재 중심이 위치한 층. */ height=globalThis.PitMapRules.heightAt(room.map,player.x,player.y);
       const /** damage: 방어력과 무관한 이번 직접 차감량. */ damage=this.damage(height,elapsed);
       if(damage<=0)continue;
+      // 독기도 실제 체력 피해이므로 자연 회복 대기를 초기화한다.
+      player.status.lastDamageAt=now;player.status.healthRegenNextAt=now+5000;
       player.status.currentHealth=Math.max(0,player.status.currentHealth-damage);
       if(player.status.currentHealth===0){player.status.state='dead';player.action=null;player.roll=null;}
     }

@@ -11,9 +11,9 @@ const /** defaults: 공통 스테이터스의 기본 수치. */ defaults = Objec
   /** maxHealth: 기본 최대체력. */ maxHealth: 10, /** currentHealth: 현재체력. 최종 최대체력 안으로 제한하며 0이면 사망. */ currentHealth: 10,
   /** maxSkillResource: 기본 최대 스킬자원. 최종 최대치 0이면 UI를 숨김. */ maxSkillResource: 0, /** currentSkillResource: 현재 스킬자원. */ currentSkillResource: 0,
   /** attack: 기본공격력. */ attack: 1, /** defense: 기본방어력. BAS0001 피해 계산에서는 차감하지 않음. */ defense: 0,
-  /** healthRegen: 초당 기본 체력 회복량. */ healthRegen: 1, /** skillResourceRegen: 초당 기본 스킬자원 회복량. */ skillResourceRegen: 1, /** moveSpeed: 기본 이동속도. 월드 이동량에는 110 배율 적용. */ moveSpeed: 2,
+  /** healthRegen: 비전투 회복 1회당 기본 체력 회복량. */ healthRegen: 0, /** skillResourceRegen: 초당 기본 스킬자원 회복량. */ skillResourceRegen: 1, /** moveSpeed: 기본 이동속도. 월드 이동량에는 110 배율 적용. */ moveSpeed: 2,
   /** bonusHealth: 기본 최대체력에 합산할 추가체력. */ bonusHealth: 0, /** bonusAttack: 기본공격력에 합산할 추가공격력. */ bonusAttack: 0, /** bonusDefense: 기본방어력에 합산할 추가방어력. */ bonusDefense: 0,
-  /** bonusHealthRegen: 초당 체력 회복량에 합산할 추가 수치. */ bonusHealthRegen: 0, /** bonusMoveSpeed: 기본 이동속도에 합산할 추가 수치. */ bonusMoveSpeed: 0,
+  /** bonusHealthRegen: 비전투 회복 1회당 체력 회복량에 합산할 추가 수치. */ bonusHealthRegen: 0, /** bonusMoveSpeed: 기본 이동속도에 합산할 추가 수치. */ bonusMoveSpeed: 0,
   /** bonusSkillResource: 기본 최대 스킬자원에 합산할 추가 수치. */ bonusSkillResource: 0, /** bonusSkillResourceRegen: 초당 스킬자원 회복량에 합산할 추가 수치. */ bonusSkillResourceRegen: 0,
   /** bountyPoints: 해당 개체의 보상 포인트. 실제 보상 지급 규칙은 미구현. */ bountyPoints: 1,
 });
@@ -83,6 +83,8 @@ export /** createStatus: 모든 개체가 공유하는 수치·기술 슬롯·�
     if(typeof status.experience!=='number'||!Number.isFinite(status.experience)||status.experience<0)throw new TypeError('Invalid experience');
     /** status.rewards: 아이템 등 보상 자료 목록. 지급 로직은 별도 구현한다. */ status.rewards=copyStatusList(values.rewards,'rewards');
   }
+  /** lastDamageAt: 마지막 실제 체력 피해의 서버 시각(ms). 피격 전에는 null. */ status.lastDamageAt=null;
+  /** healthRegenNextAt: 다음 자연 체력 회복 예정 서버 시각(ms). 첫 갱신 시 초기화한다. */ status.healthRegenNextAt=null;
   normalizeVitals(status);
   return status;
 }
@@ -137,14 +139,20 @@ export /** normalizeVitals: 체력·자원을 최종 최대치 안으로 제한�
   if (s.state === LifeState.DEAD) s.currentHealth = 0;
   return effective;
 }
-export /** regenerate: 생존 개체의 체력과 스킬자원을 경과 시간만큼 회복한다. */ function regenerate(/** s: 현재 처리하는 공통 스테이터스. */ s, /** seconds: 회복량 계산에 사용할 경과 시간(초). */ seconds) {
+export /** regenerate: 생존 유닛의 체력은 피격 후 5초부터 3초마다, 스킬자원은 경과 시간에 따라 회복한다. */ function regenerate(/** s: 현재 처리하는 공통 스테이터스. */ s, /** seconds: 회복량 계산에 사용할 경과 시간(초). */ seconds, /** now: 회복 시점을 판정할 서버 시각(ms). */ now=Date.now()) {
+  if (!Number.isFinite(now)) throw new TypeError('Invalid regeneration time');
   if (!Number.isFinite(seconds) || seconds < 0) throw new TypeError('Invalid elapsed time');
   const /** effective: 추가 수치를 합산한 최종 스테이터스. */ effective = normalizeVitals(s);
   for(const /** slot: 경과 시간을 차감할 기술 슬롯. */ slot of ['A','B','C']) {
     s['skill'+slot+'CooldownRemaining']=Math.max(0,(s['skill'+slot+'CooldownRemaining']??0)-seconds);
   }
   if (s.state === LifeState.DEAD) return;
-  s.currentHealth = Math.min(effective.maxHealth, s.currentHealth + effective.healthRegen * seconds);
+  if(!Number.isFinite(s.healthRegenNextAt))s.healthRegenNextAt=now+5000;
+  if(now>=s.healthRegenNextAt){
+    const /** pulses: 3초 박자에서 이번 갱신까지 도달한 회복 횟수. */ pulses=1+Math.floor((now-s.healthRegenNextAt)/3000);
+    s.currentHealth=Math.min(effective.maxHealth,s.currentHealth+effective.healthRegen*pulses);
+    s.healthRegenNextAt+=pulses*3000;
+  }
   s.currentSkillResource = Math.min(effective.maxSkillResource, s.currentSkillResource + effective.skillResourceRegen * seconds);
 }
 
