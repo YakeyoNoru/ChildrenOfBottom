@@ -115,10 +115,10 @@ test('player triangle apex follows facing including diagonals, with default up a
 });
 
 test('menu separates test settings and options; radio option syncs to server',/** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ ()=>{
-  const /** e: 검증할 이벤트·요소 모음·적 개체; receive: 서버 메시지 수신을 재현하는 테스트 함수; state: 현재 상태 스냅샷; run: 격리 문맥 안에서 테스트 코드를 실행하는 함수. */ {elements:e,receive,state,run}=client();receive({type:'room.state',room:state});
+  const /** e: 검증할 이벤트·요소 모음·적 개체; receive: 서버 메시지 수신을 재현하는 테스트 함수; state: 현재 상태 스냅샷; run: 격리 문맥 안에서 테스트 코드를 실행하는 함수. */ {elements:e,receive,state,run}=client();state.players[0].name='열쇠';receive({type:'room.state',room:state});
   e.get('game-menu').click();assert.equal(e.get('menu-main').hidden,false);assert.equal(e.get('menu-options').hidden,true);
-  e.get('open-test-settings').click();assert.equal(e.get('menu-test').hidden,false);assert.equal(e.get('menu-main').hidden,true);
-  e.get('test-back').click();e.get('open-options').click();assert.equal(e.get('menu-options').hidden,false);assert.equal(e.get('menu-test').hidden,true);
+  e.get('open-options').click();e.get('open-test-settings').click();assert.equal(e.get('menu-test').hidden,false);assert.equal(e.get('menu-main').hidden,true);
+  e.get('test-back').click();assert.equal(e.get('menu-options').hidden,false);assert.equal(e.get('menu-test').hidden,true);
   for(const /** mode: 웹 게스트와 APK 계정을 구분하는 접속 모드. */ mode of ['nearest','lowestHealth','lowestHealthRatio'])e.get('target-'+mode).checked=mode==='lowestHealthRatio';
   e.get('target-lowestHealthRatio').onchange();assert.equal(run('userSettings.targetPriority'),'lowestHealthRatio');assert.equal(run('socket.sent.at(-1).type'),'game.options');assert.equal(run('socket.sent.at(-1).targetPriority'),'lowestHealthRatio');
   e.get('options-back').click();assert.equal(e.get('menu-main').hidden,false);e.get('resume').click();e.get('game-menu').click();assert.equal(e.get('menu-main').hidden,false);
@@ -253,4 +253,17 @@ test('F and interaction button share owner-only target and Y/N escape confirmati
  receive({type:'ack',requestId:run('pending')});e.get('interaction-button').click();assert.equal(run('socket.sent.at(-1).type'),'game.interact');receive({type:'ack',requestId:run('pending')});
  receive({type:'interaction.prompt',id:'confirm-2'});e.get('escape-yes').click();assert.equal(run('socket.sent.at(-1).accept'),true);
  receive({type:'ack',requestId:run('pending')});state.objects[0].ownerId='other';receive({type:'game.state',room:state});assert.equal(e.get('interaction-button').hidden,true);
+});
+
+
+test('test options are hidden for normal names and server-driven for the key player',/** 이름 조건·기본 해제·체크 요청·서버 동기화를 검사한다. */ ()=>{
+ const /** e: 요소 대역; receive: 서버 수신 대역; state: 방 상태; run: 코드 실행기. */ {elements:e,receive,state,run}=client();receive({type:'room.state',room:state});
+ assert.equal(e.get('open-test-settings').hidden,true);e.get('open-test-settings').click();assert.equal(e.get('menu-test').hidden,true);
+ for(const /** name: 정확히 일치하지 않는 명칭. */ name of ['열쇠1','열 쇠','열쇠님']){state.players[0].name=name;receive({type:'game.state',room:state});assert.equal(e.get('open-test-settings').hidden,true);}
+ state.players[0].name='열쇠';receive({type:'game.state',room:state});assert.equal(e.get('open-test-settings').hidden,false);assert.equal(e.get('test-map-hack').checked,false);assert.equal(e.get('test-high-speed').checked,false);
+ e.get('game-menu').click();e.get('open-options').click();e.get('open-test-settings').click();assert.equal(e.get('menu-test').hidden,false);
+ e.get('test-map-hack').checked=true;e.get('test-high-speed').checked=true;e.get('test-high-speed').onchange();
+ assert.equal(run('socket.sent.at(-1).type'),'game.testOptions');assert.equal(run('socket.sent.at(-1).mapHack'),true);assert.equal(run('socket.sent.at(-1).highSpeed'),true);
+ state.players[0].testOptions={mapHack:true,highSpeed:true};receive({type:'room.state',room:state});receive({type:'ack',requestId:run('pending')});assert.equal(e.get('test-map-hack').checked,true);assert.equal(e.get('test-high-speed').checked,true);
+ receive({type:'room.left'});assert.equal(e.get('open-test-settings').hidden,true);assert.equal(e.get('test-map-hack').checked,false);assert.equal(e.get('test-high-speed').checked,false);
 });

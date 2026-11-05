@@ -80,6 +80,7 @@ $('minimap').onkeydown=/** 키보드 접근성으로 전체맵를 연다. */ (/*
   $('game').hidden = !playing; document.body.classList.toggle('playing', playing);
   updateViewport();
   updateSkillControls();
+  updateTestOptions();
   updateRoomTimer();
   updateInteraction();
   $('game-leave').disabled = !online || !!pending;
@@ -128,7 +129,7 @@ $('minimap').onkeydown=/** 키보드 접근성으로 전체맵를 연다. */ (/*
     if (m.type === 'game.state') { if (room?.code === m.room.code) { itemView.receive(m.room,Date.now()); const /** items: 이전 틱의 아이템을 변경분과 합칠 ID 목록. */ items=new Map((room.items??[]).map(/** ID별 자료를 만든다. */ (/** item: 필드 아이템. */ item)=>[item.id,item]));
       for(const /** item: 이번 틱 변경 아이템. */ item of m.room.itemChanges?.updates??[])items.set(item.id,item);
       for(const /** id: 획득 완료 ID. */ id of m.room.itemChanges?.removed??[])items.delete(id);
-      room = {...m.room,map:m.room.map??room.map,items:m.room.items??[...items.values()]}; timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); updateSkillControls();updateInteraction(); $('game-status').textContent=`${room.players.length}명 · 경쟁포인트 ${room.players.find(/** 본인 점수를 조회한다. */ (/** player: 수신 플레이어. */ player)=>player.id===playerId)?.status?.competitionPoints??0}`; } return; }
+      room = {...m.room,map:m.room.map??room.map,items:m.room.items??[...items.values()]}; timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); updateSkillControls();updateTestOptions();updateInteraction(); $('game-status').textContent=`${room.players.length}명 · 경쟁포인트 ${room.players.find(/** 본인 점수를 조회한다. */ (/** player: 수신 플레이어. */ player)=>player.id===playerId)?.status?.competitionPoints??0}`; } return; }
     if (m.type === 'room.state') { const /** entering: 새로운 방 상태로 진입했는지 여부. */ entering = !room || room.code !== m.room.code; room = m.room; itemView.receive(room,Date.now()); timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); if (entering) {miniMap.clear();syncTargetPriority();} notice(''); }
     if (m.type === 'room.closed' || m.type === 'room.left') { interactionConfirmation=null;$('escape-dialog').close();room = null; miniMap.clear(); itemView.clear(); notice(m.type === 'room.closed' ? (m.message??messages.closed) : '방에서 나왔습니다.'); if(m.type==='room.closed') settle(); }
     if (m.type === 'error') notice(m.message);
@@ -239,13 +240,27 @@ setInterval(updateRoomTimer,100);
   if (!command) return;
   socket.send(JSON.stringify({ v: 1, type: 'game.input', seq:command.seq, x, y, action: blocked ? null : action }));
 }
+/** 서버 개체 이름과 설정에 맞춰 테스트옵션 접근과 체크 상태를 갱신한다. */
+function updateTestOptions(){
+  const /** me: 이 접속자의 서버 스냅샷. */ me=room?.players.find(/** 본인 개체를 조회한다. */ (/** player: 참가자. */ player)=>player.id===playerId);
+  const /** allowed: 지정된 이름의 진행 중 플레이어만 테스트 항목을 표시한다. */ allowed=room?.phase==='started'&&me?.name==='열쇠';
+  $('open-test-settings').hidden=!allowed;
+  for(const /** id: 테스트 체크박스 식별자. */ id of ['test-map-hack','test-high-speed'])$(id).disabled=!allowed||!!pending;
+  $('test-map-hack').checked=allowed&&me?.testOptions?.mapHack===true;
+  $('test-high-speed').checked=allowed&&me?.testOptions?.highSpeed===true;
+  if(!allowed&&!$('menu-test').hidden)showMenuPage('options');
+}
+/** 테스트 체크 변경을 서버로 요청하며 적용값은 서버 스냅샷으로 확정한다. */
+function sendTestOptions(){send('game.testOptions',{mapHack:$('test-map-hack').checked,highSpeed:$('test-high-speed').checked});}
+$('test-map-hack').onchange=sendTestOptions;
+$('test-high-speed').onchange=sendTestOptions;
 /** showMenuPage: 게임 메뉴·테스트설정·옵션 중 선택한 화면만 표시한다. */ function showMenuPage(/** page: 메뉴에서 표시할 하위 화면 이름. */ page) {
   for (const /** name: 현재 항목이나 사용자에게 표시할 이름. */ name of ['main','test','options']) $('menu-' + name).hidden = name !== page;
   $('menu-title').textContent = {main:'게임 메뉴',test:'테스트설정',options:'옵션'}[page];
 }
-$('open-test-settings').onclick = /** onclick: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ () => { showMenuPage('test'); $('test-back').focus(); };
+$('open-test-settings').onclick = /** onclick: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ () => { if($('open-test-settings').hidden)return;showMenuPage('test'); $('test-back').focus(); };
 $('open-options').onclick = /** onclick: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ () => { showMenuPage('options'); $('control-scale').focus(); };
-$('test-back').onclick = /** onclick: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ () => { showMenuPage('main'); $('open-test-settings').focus(); };
+$('test-back').onclick = /** onclick: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ () => { showMenuPage('options'); $('open-test-settings').focus(); };
 $('options-back').onclick = /** onclick: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ () => { showMenuPage('main'); $('open-options').focus(); };
 /** syncTargetPriority: 사용자 설정의 공격 우선대상을 본인 서버 개체에 동기화한다. */ function syncTargetPriority() {
   if (room && socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({v:1,type:'game.options',targetPriority:userSettings.targetPriority ?? 'nearest'}));
@@ -340,7 +355,7 @@ const /** canvas: 월드 화면을 그리는 캔버스 요소. */ canvas = $('wo
   updateInteraction(me);
   miniMap.draw(room.map,room.code,me,viewport.worldWidth);
   if(!$('expanded-map').hidden&&miniMap.terrain){
-    miniMap.draw(room.map,room.code,me,viewport.worldWidth*10/2.5,$('expanded-map-canvas'),true,mapPan);
+    miniMap.draw(room.map,room.code,me,viewport.worldWidth*10/2.5,$('expanded-map-canvas'),true,mapPan,me.name==='열쇠'&&me.testOptions?.mapHack===true);
   }
   drawSkillEffects(ctx, room.skillEffects ?? [], ox, oy);
   displayObjects.forEach(/** 각 항목에 현재 단계의 상태 갱신 또는 표시 처리를 적용한다. */ (/** p: 현재 처리하는 플레이어 또는 검증 개체. */ p,/** i: 현재 반복 항목의 순번. */ i) => {

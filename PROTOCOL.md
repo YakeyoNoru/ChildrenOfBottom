@@ -165,3 +165,10 @@ A/B/C의 재사용 대기는 시전자별 `skillCooldowns[slot]`에 다음 사�
 - 오브젝트 스냅샷의 `interactionEnabled`는 상호작용 사용 여부, `ownerCode`/`ownerId`는 사물의 소유 코드/개체 ID다. OBJ0001은 `status.objectType='prop'`이다.
 
 계정 보상은 미구현이다. 결과 확인 기록과 후속 영속 보상 연결 시 주의점은 RESULTS-AND-INTERACTIONS.md를 참고한다.
+
+
+## 실서버 테스트옵션
+
+`game.testOptions {mapHack:boolean,highSpeed:boolean}` 요청은 기존 requestId/ack 규칙을 따른다. 진행 중 생존 플레이어의 서버 이름이 정확히 `열쇠`인 경우에만 허용한다. 일반 이름은 FORBIDDEN, 불리언 이외 입력은 INVALID_OPTIONS로 거부한다. 적용 직후 room.state를 전송하고 이후 game.state에도 `testOptions`와 변경된 `status.moveSpeed`를 동기화한다. 기본 체크는 모두 false이며 새 참가 개체를 생성할 때 초기화한다. 고속화 적용 시 moveSpeed는 6, 해제 시 적용 전 기본값으로 돌아간다. 맵핵은 전체맵 표시만 변경한다.
+
+귀환전등의 탈출 확인이 성공하면 서버는 해당 사물의 `interactionEnabled=false`를 남은 참가자에게 전송한다. 사물 자체의 체력·처치 보상은 유지한다.

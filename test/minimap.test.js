@@ -52,3 +52,15 @@ test('panning shifts terrain and player marker but never exploration center',/**
  assert.equal(model.previous.x,0);assert.equal(model.previous.y,0);
  assert.ok(calls.some(/** 실제 플레이어 표식의 이동을 확인한다. */ (/** call: 호출 기록. */ call)=>call[0]==='translate'&&Math.abs(call[1]-(512-102.4))<1e-7&&call[2]===320));
 });
+
+
+test('map hack bypasses fog only on expanded map and never overwrites exploration',/** 맵핵 해제 복원과 우측 미니맵 마스크 유지 여부를 검증한다. */ ()=>{
+ const /** model: 지도 모델; calls: 캔버스 호출 기록. */ {model,calls}=setup();model.draw(map,'ROOM',{x:0,y:0});
+ const /** fog: 실제 탐색 마스크; canvas: 전체맵 캔버스. */ fog=model.fog,canvas={width:1024,height:640,getContext:/** 기록 문맥을 반환한다. */ ()=>model.canvas.getContext('2d')};
+ calls.length=0;model.draw(map,'ROOM',{x:0,y:0},684,canvas,true,{x:0,y:0},true);
+ assert.equal(model.fog,fog);assert.equal(calls.some(/** 마스크가 합성됐는지 확인한다. */ (/** call: 기록. */ call)=>call[0]==='drawImage'&&call[1]===fog),false);
+ calls.length=0;model.draw(map,'ROOM',{x:0,y:0},684,canvas,true,{x:0,y:0},false);
+ assert.equal(model.fog,fog);assert.equal(calls.some(/** 해제 후 마스크 복원 확인. */ (/** call: 기록. */ call)=>call[0]==='drawImage'&&call[1]===fog),true);
+ calls.length=0;model.draw(map,'ROOM',{x:0,y:0},684,model.canvas,false,{x:0,y:0},true);
+ assert.equal(calls.some(/** 미니맵은 항상 탐색 마스크를 사용하는지 확인한다. */ (/** call: 기록. */ call)=>call[0]==='drawImage'&&call[1]===fog),true);
+});

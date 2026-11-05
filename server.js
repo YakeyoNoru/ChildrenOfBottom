@@ -44,7 +44,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
   const /** objectSnapshot: 개체를 전송용 상태로 복사하는 함수. */ objectSnapshot = /** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** objectSnapshot: 개체의 최종 수치를 계산하고 전송 가능한 상태만 복사한다. */ p => {
     updateSkillCooldowns(p);
     const /** effective: 추가 수치를 합산한 최종 스테이터스. */ effective = normalizeVitals(p.status);
-    return { /** interactionEnabled: 상호작용 대상 표시. */ interactionEnabled:p.interactionEnabled??false,/** ownerId: 소유 플레이어 개체. */ ownerId:p.ownerId??null,/** ownerCode: 소유 플레이어 분류코드. */ ownerCode:p.ownerCode??null,id: p.id, name: p.name, x: p.x, y: p.y, action: p.action, facing: p.facing ?? -Math.PI / 2, inputQueueLength:p.inputQueue?.length??0,inputQueueDelayMs:p.inputQueue?.length?Math.max(0,Date.now()-(p.inputQueue[0].receivedAt??Date.now())):0,playerNumber:p.playerNumber??null,spawnTileId:p.spawnTileId??null,presetId:p.presetId??null,skillNames:getSkillSlotNames(p.status), lastProcessedInput: p.lastProcessedInput ?? 0, roll:p.roll?{...p.roll}:null, lastMovementInput:p.lastMovementInput??{x:0,y:0}, status: { ...p.status, effective } };
+    return { /** testOptions: 서버 검증을 통과한 개체별 테스트 설정. */ testOptions:p.testOptions??{mapHack:false,highSpeed:false}, /** interactionEnabled: 상호작용 대상 표시. */ interactionEnabled:p.interactionEnabled??false,/** ownerId: 소유 플레이어 개체. */ ownerId:p.ownerId??null,/** ownerCode: 소유 플레이어 분류코드. */ ownerCode:p.ownerCode??null,id: p.id, name: p.name, x: p.x, y: p.y, action: p.action, facing: p.facing ?? -Math.PI / 2, inputQueueLength:p.inputQueue?.length??0,inputQueueDelayMs:p.inputQueue?.length?Math.max(0,Date.now()-(p.inputQueue[0].receivedAt??Date.now())):0,playerNumber:p.playerNumber??null,spawnTileId:p.spawnTileId??null,presetId:p.presetId??null,skillNames:getSkillSlotNames(p.status), lastProcessedInput: p.lastProcessedInput ?? 0, roll:p.roll?{...p.roll}:null, lastMovementInput:p.lastMovementInput??{x:0,y:0}, status: { ...p.status, effective } };
   };
   const /** allObjects: 방의 플레이어와 일반 개체를 함께 조회하는 함수. */ allObjects = /** room: 현재 처리하는 방의 상태. */ /** allObjects: 방 안의 플레이어와 NPC·적을 하나의 목록으로 모은다. */ room => [...room.players.values(), ...room.objects.values()];
   const /** snapshot: 방 상태를 전송용 데이터로 변환하는 함수. */ snapshot = /** room: 현재 처리하는 방의 상태. */ /** snapshot: 현재 방의 참가자·개체·기술 효과를 전송용 스냅샷으로 만든다. */ (room, /** includeMap: 지도는 초기 상태에만 포함하고 틱 전송에서는 생략한다. */ includeMap=true) => {
@@ -158,7 +158,10 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
           if(!confirmation||confirmation.id!==m.confirmationId||typeof m.accept!=='boolean')return fail('INVALID_INTERACTION','확인 요청이 유효하지 않습니다.');
           ws.pendingInteraction=null;
           if(m.accept){
-            if(Date.now()>confirmation.expiresAt||!globalThis.InteractionRules.available(player,room.objects.get(confirmation.targetId)))return fail('INTERACTION_UNAVAILABLE','상호작용 대상에서 멀어졌거나 사용할 수 없습니다.');
+            const /** target: 탈출 확정 직전 다시 검증할 전등. */ target=room.objects.get(confirmation.targetId);
+            if(Date.now()>confirmation.expiresAt||!globalThis.InteractionRules.available(player,target))return fail('INTERACTION_UNAVAILABLE','상호작용 대상에서 멀어졌거나 사용할 수 없습니다.');
+            // 탈출 후 사물은 남기되 상호작용 항목을 소멸시킨다. 처치 보상 규칙은 유지한다.
+            target.interactionEnabled=false;
             finishPlayer(room,player,'ESCAPE');if(room.players.size)broadcast(room);
           }
         }
@@ -188,7 +191,19 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
           if (room.phase !== 'lobby') return fail('GAME_STARTED', '이미 시작한 방입니다.');
           if (room.players.size >= MAX_PLAYERS) return fail('ROOM_FULL', '방이 꽉찼습니다');
         }
-        ws.roomCode = room.code; room.players.set(ws.id, { id: ws.id, name: m.name.trim(), ready: false, x: 0, y: 0, input: { x: 0, y: 0 }, inputAt: 0, action: null, facing: -Math.PI / 2, targetPriority: 'nearest', status: createStatus({ objectType: ObjectType.PLAYER, classificationCode: ws.account?.id ?? ws.id, instanceId: ws.id }), ws }); broadcast(room);
+        ws.roomCode = room.code; room.players.set(ws.id, { id: ws.id, name: m.name.trim(), /** testOptions: 새 참가자의 테스트 체크는 기본 해제한다. */ testOptions:{/** mapHack: 전체맵 미탐색 표시. */ mapHack:false,/** highSpeed: 이동속도 6 적용. */ highSpeed:false}, ready: false, x: 0, y: 0, input: { x: 0, y: 0 }, inputAt: 0, action: null, facing: -Math.PI / 2, targetPriority: 'nearest', status: createStatus({ objectType: ObjectType.PLAYER, classificationCode: ws.account?.id ?? ws.id, instanceId: ws.id }), ws }); broadcast(room);
+      } else if(m.type==='game.testOptions'){
+        if(!room)return fail('NOT_IN_ROOM','참여 중인 방이 없습니다.');
+        const /** player: 이 연결의 실제 서버 플레이어. */ player=room.players.get(ws.id);
+        if(player.name!=='열쇠')return fail('FORBIDDEN','테스트옵션을 사용할 수 없습니다.');
+        if(room.phase!=='started'||player.status.state!==LifeState.ALIVE)return fail('GAME_NOT_STARTED','생존한 게임 참가자만 사용할 수 있습니다.');
+        if(typeof m.mapHack!=='boolean'||typeof m.highSpeed!=='boolean')return fail('INVALID_OPTIONS','테스트옵션은 체크 여부여야 합니다.');
+        if(m.highSpeed&&!player.testOptions?.highSpeed){
+          /** testBaseMoveSpeed: 고속화 해제 시 복구할 기존 기본 이동속도. */ player.testBaseMoveSpeed=player.status.moveSpeed;
+          player.status.moveSpeed=6;
+        }else if(!m.highSpeed&&player.testOptions?.highSpeed){player.status.moveSpeed=player.testBaseMoveSpeed??2;delete player.testBaseMoveSpeed;}
+        /** testOptions: 새 게임에서는 기본 해제되는 개체별 테스트 설정. */ player.testOptions={/** mapHack: 전체맵의 미탐색 지형 표시 여부. */ mapHack:m.mapHack,/** highSpeed: 기본 이동속도 6 사용 여부. */ highSpeed:m.highSpeed};
+        broadcast(room);
       } else if (m.type === 'game.options') {
         if (!room) return fail('NOT_IN_ROOM', '참여 중인 방이 없습니다.');
         if (!TargetPriority.includes(m.targetPriority)) return fail('INVALID_OPTIONS', '올바른 공격 우선대상이 필요합니다.');

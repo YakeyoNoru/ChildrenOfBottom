@@ -116,7 +116,7 @@ test('foreign browser origins and oversized payloads are rejected', /** 이 테�
 
 /** startedPair: 두 접속자를 같은 방에 참여·준비·시작시켜 진행 중 상태를 만든다. */ async function startedPair(/** t: 테스트 정리·검증 문맥 또는 프레임 시각. */ t, /** options: 기본값을 재정의하는 생성·요청 옵션. */ options) {
   const /** game: 서버 인스턴스와 방 관리 인터페이스. */ game = await setup(t, options), /** a: 첫 번째 검증용 값·개체·접속 결과. */ a = await game.client(), /** b: 두 번째 검증용 값·개체·접속 결과. */ b = await game.client();
-  await a.command('room.create', {name:'방장'}); const /** room: 현재 처리하는 방의 상태. */ {room} = await a.next('room.state');
+  await a.command('room.create', {name:options?.hostName??'방장'}); const /** room: 현재 처리하는 방의 상태. */ {room} = await a.next('room.state');
   await b.command('room.join', {name:'참가자',code:room.code});
   await b.command('room.ready', {ready:true}); await a.command('room.start');
   if(!options?.keepProps)for(const /** id: 제거할 사물 ID; object: 테스트와 무관한 사물. */ [id,object] of game.rooms.get(room.code).objects)if(object.status.objectType==='prop')game.rooms.get(room.code).objects.delete(id);
@@ -432,7 +432,7 @@ test('return lamps validate ownership, confirmation, distance and result-screen 
  player.status.competitionPoints=123;
  await a.command('game.interact',{targetId:lamp.id});const /** prompt: 수락할 확인 ID. */ prompt=await a.next('interaction.prompt');
  await a.command('game.interact.confirm',{confirmationId:prompt.id,accept:true});const /** result: 서버 확정 점수. */ result=(await a.next('game.result')).result;
- assert.equal(result.reason,'ESCAPE');assert.equal(result.competitionPoints,123);assert.equal(room.players.has(a.id),false);assert.equal(room.hostId,b.id);
+ assert.equal(result.reason,'ESCAPE');assert.equal(result.competitionPoints,123);assert.equal(lamp.interactionEnabled,false);assert.equal(lamp.status.currentHealth,50);assert.equal(room.players.has(a.id),false);assert.equal(room.hostId,b.id);
  assert.equal((await a.command('room.create',{name:'A'},'error')).code,'RESULT_PENDING');
  assert.equal((await a.command('game.result.leave',{resultId:result.id},'error')).code,'RESULT_NOT_SEEN');
  assert.equal((await b.command('game.result.seen',{resultId:result.id},'error')).code,'INVALID_RESULT');
@@ -450,4 +450,25 @@ test('death freezes competition points and destroyed lamps cannot confirm escape
  player.status.competitionPoints=77;player.status.currentHealth=0;
  const /** result: 사망 확정 결과. */ result=(await a.next('game.result')).result;
  assert.equal(result.reason,'DEATH');assert.equal(result.competitionPoints,77);player.status.competitionPoints=999;assert.equal(player.ws.matchResult.competitionPoints,77);assert.equal(player.ws.matchResult.seenAt,null);assert.equal(room.players.size,1);assert.equal(room.hostId,b.id);
+});
+
+
+test('live-server test options require the exact server player name and never affect other players',/** 위조 요청 거부·이동속도 적용·복구·새 게임 초기화를 검증한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
+ const /** a: 열쇠 접속자; b: 일반 접속자; rooms: 서버 방 목록; code: 방 코드. */ {a,b,rooms,code}=await startedPair(t,{hostName:'열쇠'});
+ const /** room: 진행 중 방; player: 테스트 권한 개체; other: 일반 개체. */ room=rooms.get(code),player=room.players.get(a.id),other=room.players.get(b.id);
+ assert.deepEqual(player.testOptions,{mapHack:false,highSpeed:false});assert.equal(player.status.moveSpeed,2);
+ assert.equal((await b.command('game.testOptions',{name:'열쇠',playerId:a.id,mapHack:true,highSpeed:true},'error')).code,'FORBIDDEN');
+ assert.equal((await a.command('game.testOptions',{mapHack:'true',highSpeed:true},'error')).code,'INVALID_OPTIONS');assert.equal(player.status.moveSpeed,2);
+ await a.command('game.testOptions',{mapHack:true,highSpeed:true});assert.equal(player.status.moveSpeed,6);assert.equal(other.status.moveSpeed,2);assert.deepEqual(other.testOptions,{mapHack:false,highSpeed:false});
+ const /** step: 실제 서버·클라이언트가 공유하는 50ms 이동 결과. */ step=globalThis.MovementRules.step({x:0,y:0},{x:1,y:0},player.status);
+ assert.equal(step.x,33);
+ let /** state: 변경된 설정이 포함된 서버 스냅샷. */ state;
+ do{state=(await a.next('room.state')).room;}while(!state.players.find(/** 본인 스냅샷 조회. */ (/** item: 참가자. */ item)=>item.id===a.id)?.testOptions?.highSpeed);
+ assert.equal(state.players.find(/** 본인 조회. */ (/** item: 참가자. */ item)=>item.id===a.id).status.effective.moveSpeed,6);
+ await a.command('game.testOptions',{mapHack:false,highSpeed:true});assert.equal(player.testBaseMoveSpeed,2);assert.equal(player.status.moveSpeed,6);
+ await a.command('game.testOptions',{mapHack:false,highSpeed:false});assert.equal(player.status.moveSpeed,2);assert.equal(player.testBaseMoveSpeed,undefined);
+ player.status.moveSpeed=4;await a.command('game.testOptions',{mapHack:true,highSpeed:true});await a.command('game.testOptions',{mapHack:false,highSpeed:false});assert.equal(player.status.moveSpeed,4);
+ await a.command('room.leave');await a.command('room.create',{name:'열쇠'});
+ const /** nextPlayer: 같은 연결의 새 방 플레이어. */ nextPlayer=[...rooms.values()].find(/** 새 방 조회. */ (/** candidate: 방. */ candidate)=>candidate.players.has(a.id)).players.get(a.id);
+ assert.deepEqual(nextPlayer.testOptions,{mapHack:false,highSpeed:false});assert.equal(nextPlayer.status.moveSpeed,2);
 });
