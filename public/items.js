@@ -3,7 +3,7 @@ globalThis.ItemRules=Object.freeze({
   /** definitions: 즉발형·저장형이 공통으로 참조할 아이템별 획득 조건과 효과. */
   definitions:Object.freeze({
     /** illusionFragment: 환영조각은 플레이어 전용 즉발형이며 경쟁포인트를 지급한다. */
-    illusionFragment:Object.freeze({code:'illusionFragment',name:'환영조각',mode:'instant',eligibleTypes:['player'],competitionPoints:10,diameter:5}),
+    illusionFragment:Object.freeze({code:'illusionFragment',name:'환영조각',mode:'instant',eligibleTypes:['player'],competitionPoints:10,experience:2,diameter:5}),
   }),
   /** 종류별 획득 가능 조건을 공통으로 검사한다. */
   eligible(/** item: 검사할 아이템. */ item,/** object: 접근한 플레이어 또는 적. */ object) {
@@ -40,7 +40,7 @@ globalThis.ItemRules=Object.freeze({
     return items;
   },
   /** 공통 줍기: 가까운 적격 개체를 예약하고 50밀리초 비행 후 효과 또는 보관함 저장을 한 번 적용한다. */
-  tick(/** items: 방의 미획득 아이템. */ items,/** objects: 획득 후보 개체. */ objects,/** now: 서버 현재 시각(밀리초). */ now) {
+  tick(/** items: 방의 미획득 아이템. */ items,/** objects: 획득 후보 개체. */ objects,/** now: 서버 현재 시각(밀리초). */ now,/** awardExperience: 서버 공통 경험치 지급·레벨업 처리 함수. */ awardExperience=()=>{}) {
     const /** updates: 이번 틱에 상태가 바뀐 아이템. */ updates=[];
     const /** removed: 획득 완료되어 제거된 ID. */ removed=[];
     for(const /** item: 현재 검사할 아이템. */ item of items.values()) {
@@ -49,7 +49,7 @@ globalThis.ItemRules=Object.freeze({
         if(!target||!this.eligible(item,target)){item.state='ground';delete item.targetId;delete item.startedAt;updates.push({...item});continue;}
         if(now-item.startedAt<50)continue;
         const /** definition: 획득 효과와 보관 방식을 정의한 자료. */ definition=this.definitions[item.code];
-        if(definition.mode==='instant')target.status.competitionPoints=(target.status.competitionPoints??0)+definition.competitionPoints;
+        if(definition.mode==='instant') {target.status.competitionPoints=(target.status.competitionPoints??0)+definition.competitionPoints;if(definition.experience)awardExperience(target.status,definition.experience);}
         else {target.inventory??=[];target.inventory.push({code:item.code});}
         items.delete(item.id);removed.push(item.id);continue;
       }
