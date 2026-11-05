@@ -61,3 +61,6 @@ body.playing{overflow:hidden}body.playing main>header,body.playing main>footer{d
 /* 상호작용 버튼은 터치 조작 숨김 여부와 독립적으로 A 버튼 위에 둔다. */
 #interaction-button{position:absolute;right:max(28px,env(safe-area-inset-right));bottom:calc(86px + 68px * var(--control-scale));width:60px;height:48px;border-radius:14px;background:#263e32;color:#fff;border:2px solid #b9d9a9;font-size:20px;pointer-events:auto;touch-action:manipulation}
 #escape-dialog{color:#eff7e8;background:#1d3427;border:1px solid #88aa78;border-radius:14px;padding:24px}#escape-dialog::backdrop{background:#0007}#escape-dialog button{min-width:80px;margin:8px}
+
+/* 현재 플레이어 서버 변수 목록은 긴 ID·배열을 줄바꿈해 모바일에서도 읽을 수 있게 한다. */
+.status-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:12px}.status-table th,.status-table td{padding:8px 5px;border-bottom:1px solid #47604b;text-align:left;overflow-wrap:anywhere;vertical-align:top}.status-table th{width:52%;color:#bcd6b2}#menu-status>p{font-size:12px;color:#bcd6b2}

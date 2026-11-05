@@ -77,9 +77,13 @@ export function resolveSkillContacts(
     if(!intersectsSkill(instance,target)) continue;
     const /** result: 서버가 확정한 이번 접촉의 피해 결과. */ result=applySkillDamage(instance,target,damageRule(instance,target),now);
     if(!result) continue;
-    if(result.killed&&target.status.objectType==='prop'&&target.status.classificationCode==='OBJ0001'&&!target.rewardGranted){
+    if(result.killed&&!target.rewardGranted&&(target.status.objectType==='enemy'||(target.status.objectType==='prop'&&target.status.classificationCode==='OBJ0001'))){
       const /** killer: 현재 방에 남아 있는 실제 플레이어 공격자. */ killer=objects.find(/** 공격자 ID를 검증한다. */ (/** object: 월드 개체. */ object)=>object.id===instance.casterId&&object.status.objectType==='player'&&object.status.state==='alive');
-      if(killer){target.rewardGranted=true;killer.status.competitionPoints+=500;gainExperience(killer.status,40);killer.status.skillPoints+=1;}
+      if(killer){
+        /** rewardGranted: 동일 사망에 대한 처치 보상을 한 번만 확정한다. */ target.rewardGranted=true;
+        if(target.status.objectType==='enemy')gainExperience(killer.status,target.status.experience);
+        else {killer.status.competitionPoints+=500;gainExperience(killer.status,40);killer.status.skillPoints+=1;}
+      }
     }
     instance.hitTimes.set(target.id,now);
     if(!instance.hits.includes(target.id)) instance.hits.push(target.id);

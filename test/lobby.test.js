@@ -490,3 +490,20 @@ test('live-server test options require the exact server player name and never af
  const /** nextPlayer: 같은 연결의 새 방 플레이어. */ nextPlayer=[...rooms.values()].find(/** 새 방 조회. */ (/** candidate: 방. */ candidate)=>candidate.players.has(a.id)).players.get(a.id);
  assert.deepEqual(nextPlayer.testOptions,{mapHack:false,highSpeed:false});assert.equal(nextPlayer.status.moveSpeed,2);
 });
+
+test('three actual monster kills synchronize level and experience to multiplayer snapshots',/** 서버 시전부터 경험치 지급·레벨업·동기화까지 실제 연결로 검증한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
+ const /** a: 공격자 연결; b: 관찰자 연결; rooms: 서버 방 목록; code: 방 코드. */ {a,b,rooms,code}=await startedPair(t);
+ const /** room: 진행 중 방; player: 경험치 획득 플레이어; createMonster: 실제 몬스터 생성기. */ room=rooms.get(code),player=room.players.get(a.id),{createMonster}=await import('../game/monsters.js');
+ room.objects.clear();player.status.attack=100;
+ for(let /** index: 처치 순번. */ index=0;index<3;index++){
+  const /** monster: 프리셋 경험치20 처치 대상. */ monster=createMonster('몬스터A01',{x:player.x+30,y:player.y});monster.status.stunned=true;room.objects.set(monster.id,monster);
+  a.ws.send(JSON.stringify({v:1,type:'game.cast',slot:'A'}));
+  while(monster.status.state!=='dead')await a.next('game.state');
+  if(index<2)await new Promise(/** 기술 쿨타임 종료를 기다린다. */ (/** resolve: 대기 완료 함수. */ resolve)=>setTimeout(resolve,510));
+ }
+ assert.equal(player.status.level,2);assert.equal(player.status.currentExperience,10);assert.equal(player.status.requiredExperience,90);
+ let /** state: 관찰자가 받은 최신 방 스냅샷. */ state;
+ do{state=(await b.next('game.state')).room;}while(state.players.find(/** 공격자 조회. */ (/** item: 참가자. */ item)=>item.id===a.id)?.status.level!==2);
+ const /** status: 관찰자에게 전달한 실제 플레이어 수치. */ status=state.players.find(/** 본인 조회. */ (/** item: 참가자. */ item)=>item.id===a.id).status;
+ assert.equal(status.currentExperience,10);assert.equal(status.requiredExperience,90);assert.equal(status.bonusAttack,2);assert.equal(status.skillPoints,2);assert.equal(status.effective.maxHealth,20);
+});

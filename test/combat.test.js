@@ -63,3 +63,15 @@ test('shared remaining cooldowns start at zero, count down and unlock A at .5s a
  assert.equal(skillCooldownRemaining(caster,'B',2600),1000);
  assert.equal(castSkill(caster,[caster,target],'B',3599),null);assert.ok(castSkill(caster,[caster,target],'B',3600));
 });
+
+test('three A01 defeats grant 60 experience, level 2 and remainder 10 exactly once',/** 실제 몬스터 정의와 공통 공격으로 처치·레벨업 전체 흐름을 검증한다. */ async ()=>{
+ const /** createMonster: 확정 몬스터 프리셋 생성기. */ {createMonster}=await import('../game/monsters.js');
+ const /** caster: 처치 경험치를 받을 플레이어. */ caster=createWorldObject({objectType:'player',classificationCode:'P',attack:100});caster.facing=0;
+ for(let /** index: 처치 순번. */ index=0;index<3;index++){
+  const /** monster: 경험치20 몬스터A01; effect: 실제 시전 결과. */ monster=createMonster('몬스터A01',{x:30,y:0}),effect=castSkill(caster,[caster,monster],'A',1000+index*2000);
+  assert.equal(monster.status.state,'dead');assert.equal(monster.rewardGranted,true);
+  resolveSkillContacts(effect,[caster,monster],1001+index*2000);castSkill(caster,[caster,monster],'A',1600+index*2000);assert.equal(caster.status.currentExperience,index<2?(index+1)*20:10);
+ }
+ assert.equal(caster.status.level,2);assert.equal(caster.status.requiredExperience,90);assert.equal(caster.status.bonusHealth,10);assert.equal(caster.status.bonusAttack,2);assert.equal(caster.status.bonusDefense,1);assert.equal(caster.status.skillPoints,2);assert.equal(caster.status.maxSkillResource,1);
+ const /** stronger: A02의 경험치50 검증 대상. */ stronger=createMonster('몬스터A02',{x:30,y:0});castSkill(caster,[caster,stronger],'A',10000);assert.equal(caster.status.currentExperience,60);
+});

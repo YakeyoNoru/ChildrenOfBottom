@@ -79,7 +79,7 @@ export /** createStatus: 모든 개체가 공유하는 수치·기술 슬롯·�
     if(!['normal','combat','returning'].includes(status.awarenessState))throw new TypeError('Invalid awarenessState');
     /** status.attackTargetId: 마지막 공격자의 개체ID 또는 대상 없음(null). */ status.attackTargetId=values.attackTargetId??null;
     if(status.attackTargetId!==null&&(typeof status.attackTargetId!=='string'||!status.attackTargetId))throw new TypeError('Invalid attackTargetId');
-    /** status.experience: 처치 보상용 경험치. 지급 로직은 별도 구현한다. */ status.experience=values.experience??20;
+    /** status.experience: 공통 기술로 처치한 플레이어에게 지급할 경험치. */ status.experience=values.experience??20;
     if(typeof status.experience!=='number'||!Number.isFinite(status.experience)||status.experience<0)throw new TypeError('Invalid experience');
     /** status.rewards: 아이템 등 보상 자료 목록. 지급 로직은 별도 구현한다. */ status.rewards=copyStatusList(values.rewards,'rewards');
   }

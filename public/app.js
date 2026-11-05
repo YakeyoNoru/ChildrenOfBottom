@@ -81,6 +81,7 @@ $('minimap').onkeydown=/** 키보드 접근성으로 전체맵를 연다. */ (/*
   updateViewport();
   updateSkillControls();
   updateTestOptions();
+  updatePlayerStatus();
   updateRoomTimer();
   updateInteraction();
   $('game-leave').disabled = !online || !!pending;
@@ -129,7 +130,7 @@ $('minimap').onkeydown=/** 키보드 접근성으로 전체맵를 연다. */ (/*
     if (m.type === 'game.state') { if (room?.code === m.room.code) { itemView.receive(m.room,Date.now()); const /** items: 이전 틱의 아이템을 변경분과 합칠 ID 목록. */ items=new Map((room.items??[]).map(/** ID별 자료를 만든다. */ (/** item: 필드 아이템. */ item)=>[item.id,item]));
       for(const /** item: 이번 틱 변경 아이템. */ item of m.room.itemChanges?.updates??[])items.set(item.id,item);
       for(const /** id: 획득 완료 ID. */ id of m.room.itemChanges?.removed??[])items.delete(id);
-      room = {...m.room,map:m.room.map??room.map,items:m.room.items??[...items.values()]}; timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); updateSkillControls();updateTestOptions();updateInteraction(); $('game-status').textContent=`${room.players.length}명 · 경쟁포인트 ${room.players.find(/** 본인 점수를 조회한다. */ (/** player: 수신 플레이어. */ player)=>player.id===playerId)?.status?.competitionPoints??0}`; } return; }
+      room = {...m.room,map:m.room.map??room.map,items:m.room.items??[...items.values()]}; timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); updateSkillControls();updateTestOptions();updatePlayerStatus();updateInteraction(); $('game-status').textContent=`${room.players.length}명 · 경쟁포인트 ${room.players.find(/** 본인 점수를 조회한다. */ (/** player: 수신 플레이어. */ player)=>player.id===playerId)?.status?.competitionPoints??0}`; } return; }
     if (m.type === 'room.state') { const /** entering: 새로운 방 상태로 진입했는지 여부. */ entering = !room || room.code !== m.room.code; room = m.room; itemView.receive(room,Date.now()); timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); if (entering) {miniMap.clear();syncTargetPriority();} notice(''); }
     if (m.type === 'room.closed' || m.type === 'room.left') { interactionConfirmation=null;$('escape-dialog').close();room = null; miniMap.clear(); itemView.clear(); notice(m.type === 'room.closed' ? (m.message??messages.closed) : '방에서 나왔습니다.'); if(m.type==='room.closed') settle(); }
     if (m.type === 'error') notice(m.message);
@@ -240,6 +241,36 @@ setInterval(updateRoomTimer,100);
   if (!command) return;
   socket.send(JSON.stringify({ v: 1, type: 'game.input', seq:command.seq, x, y, action: blocked ? null : action }));
 }
+/** 상태 목록에서 서버 필드를 이해하기 위한 한글 표시명. 새 필드는 원래 키로도 자동 표시한다. */
+const statusLabels={
+  /** objectType~level: 개체 식별과 성장 정보. */ objectType:'오브젝트 구분',classificationCode:'분류코드',instanceId:'개체 ID',level:'레벨',
+  /** 체력·자원·공격·방어: 추가 수치 적용 전 기본값. */ maxHealth:'기본 최대체력',currentHealth:'현재체력',maxSkillResource:'기본 최대스킬자원',currentSkillResource:'현재스킬자원',attack:'기본공격력',defense:'기본방어력',
+  /** 회복·이동 및 추가 능력치 표시명. */ healthRegen:'체력회복속도',skillResourceRegen:'스킬자원회복속도',moveSpeed:'이동속도',bonusHealth:'추가체력',bonusAttack:'추가공격력',bonusDefense:'추가방어력',bonusHealthRegen:'추가체력회복속도',bonusMoveSpeed:'추가이동속도',bonusSkillResource:'추가스킬자원',bonusSkillResourceRegen:'추가스킬자원회복속도',
+  /** 경험치와 포인트 표시명. */ requiredExperience:'필요경험치',currentExperience:'현재경험치',skillPoints:'스킬포인트',competitionPoints:'경쟁포인트',tracePoints:'흔적포인트',bonusTracePoints:'추가흔적포인트',trackingPoints:'추적포인트',bonusTrackingPoints:'추가추적포인트',
+  /** 상태와 기술 슬롯 표시명. */ state:'생존상태',concealed:'은폐상태',stunned:'기절상태',statusEffects:'상태이상리스트',skillA:'기술 A',skillB:'기술 B',skillC:'기술 C',skillP:'기술 P',skillDeckCode:'스킬덱 코드',availableSkills:'보유 스킬목록',skillACooldownRemaining:'A 잔여쿨타임(초)',skillBCooldownRemaining:'B 잔여쿨타임(초)',skillCCooldownRemaining:'C 잔여쿨타임(초)',
+  /** 참조·서버 시간과 화면 개체 정보 표시명. */ hitboxDiameter:'히트박스 지름',nearestObjectId:'최근접 개체 ID',nearestEnemyId:'최근접 적 ID',lowestHealthEnemyId:'최저체력 적 ID',lowestHealthRatioEnemyId:'최저체력비율 적 ID',lastDamageAt:'최근 피격 서버시각(ms)',healthRegenNextAt:'다음 회복 서버시각(ms)',effective:'추가 수치 합산값',id:'개체 ID',name:'이름',x:'가로좌표',y:'세로좌표',facing:'방향(라디안)',action:'현재행동',testOptions:'테스트옵션',bountyPoints:'보상포인트',
+};
+/** 본인의 최신 서버 변수 전체를 읽기 전용 목록으로 표시한다. 목록이 열렸을 때만 갱신한다. */
+function updatePlayerStatus(){
+  if($('menu-status').hidden)return;
+  const /** me: 현재 접속자의 서버 플레이어 스냅샷. */ me=room?.players.find(/** 본인 ID를 찾는다. */ (/** player: 참가자 후보. */ player)=>player.id===playerId);
+  $('player-status-list').replaceChildren();
+  if(!me)return;
+  /** 서버 필드를 안전한 텍스트 행으로 추가한다. */
+  function addRows(/** values: 조회할 서버 자료. */ values,/** prefix: 개체·스테이터스·합산값 구분. */ prefix){
+    for(const /** field: 서버 변수 키; value: 해당 변수의 현재값. */ [field,value] of Object.entries(values)){
+      if(field==='status')continue;
+      if(field==='effective'){addRows(value,'합산값');continue;}
+      const /** row: 한 변수 행; label: 변수명 셀; cell: 현재값 셀. */ row=document.createElement('tr'),label=document.createElement('th'),cell=document.createElement('td');
+      label.textContent=`${prefix} · ${statusLabels[field]??field} (${field})`;
+      cell.textContent=value===null?'null':typeof value==='object'?JSON.stringify(value):String(value);
+      row.append(label,cell);$('player-status-list').append(row);
+    }
+  }
+  addRows(me,'개체');addRows(me.status??{},'스테이터스');
+}
+$('open-status').onclick=/** 옵션에서 현재 서버 상태 전체를 연다. */ ()=>{showMenuPage('status');updatePlayerStatus();$('status-back').focus();};
+$('status-back').onclick=/** 상태 목록에서 옵션으로 돌아간다. */ ()=>{showMenuPage('options');$('open-status').focus();};
 /** 서버 개체 이름과 설정에 맞춰 테스트옵션 접근과 체크 상태를 갱신한다. */
 function updateTestOptions(){
   const /** me: 이 접속자의 서버 스냅샷. */ me=room?.players.find(/** 본인 개체를 조회한다. */ (/** player: 참가자. */ player)=>player.id===playerId);
@@ -255,8 +286,8 @@ function sendTestOptions(){send('game.testOptions',{mapHack:$('test-map-hack').c
 $('test-map-hack').onchange=sendTestOptions;
 $('test-high-speed').onchange=sendTestOptions;
 /** showMenuPage: 게임 메뉴·테스트설정·옵션 중 선택한 화면만 표시한다. */ function showMenuPage(/** page: 메뉴에서 표시할 하위 화면 이름. */ page) {
-  for (const /** name: 현재 항목이나 사용자에게 표시할 이름. */ name of ['main','test','options']) $('menu-' + name).hidden = name !== page;
-  $('menu-title').textContent = {main:'게임 메뉴',test:'테스트설정',options:'옵션'}[page];
+  for (const /** name: 현재 항목이나 사용자에게 표시할 이름. */ name of ['main','test','options','status']) $('menu-' + name).hidden = name !== page;
+  $('menu-title').textContent = {main:'게임 메뉴',test:'테스트설정',options:'옵션',status:'상태'}[page];
 }
 $('open-test-settings').onclick = /** onclick: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ () => { if($('open-test-settings').hidden)return;showMenuPage('test'); $('test-back').focus(); };
 $('open-options').onclick = /** onclick: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ () => { showMenuPage('options'); $('control-scale').focus(); };
@@ -407,6 +438,13 @@ const /** canvas: 월드 화면을 그리는 캔버스 요소. */ canvas = $('wo
   context.lineWidth = 1; context.strokeStyle = '#d9e5d766'; context.strokeRect(x-width/2, top, width, 9);
   context.font = 'bold 12px system-ui'; context.fillStyle = '#f1f6ed'; context.textAlign = 'right';
   context.fillText(`Lv.${s.level}`, x-width/2-5, top+9);
+  if(s.objectType==='player'){
+    const /** required: 다음 레벨에 필요한 서버 경험치; current: 현재 레벨 누적 경험치; progress: 경험치 바의 0~1 비율; expTop: 자원 표시 아래 경험치 바 위치. */ required=s.requiredExperience??50,current=s.currentExperience??0,progress=required>0?Math.max(0,Math.min(1,current/required)):0,expTop=y+45;
+    context.fillStyle='#5f6268';context.fillRect(x-width/2,expTop,width,10);
+    context.fillStyle='#b9bfc8';context.fillRect(x-width/2,expTop,width*progress,10);
+    context.strokeStyle='#d9e5d766';context.lineWidth=1;context.strokeRect(x-width/2,expTop,width,10);
+    context.textAlign='center';context.font='10px system-ui';context.fillStyle='#f1f6ed';context.fillText(`${current} / ${required}`,x,expTop+22);
+  }
   if (maxResource > 0) {
     context.textAlign = 'center'; context.font = '13px system-ui'; context.fillStyle = '#a4d7fa';
     const /** number: 표시용 수치를 소수 첫째 자리로 정리하는 함수. */ number = /** value: 검사하거나 변환할 현재 값. */ /** number: 표시할 수치를 소수 첫째 자리까지 정리한다. */ value => String(Math.round(value * 10) / 10);

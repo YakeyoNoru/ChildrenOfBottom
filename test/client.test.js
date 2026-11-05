@@ -8,10 +8,11 @@ import /** vm: 브라우저·표시 코드를 격리 문맥에서 실행한다. 
 /** client: 실제 클라이언트 코드를 API 대역에서 실행하거나 검증용 접속자를 생성한다. */ function client(/** mode: 웹 게스트와 APK 계정을 구분하는 접속 모드. */ mode='web') {
   /** Element: 브라우저 API 또는 연결 객체를 대신해 실제 클라이언트의 상태·입력을 검증한다. */
 class Element extends EventTarget {
+    /** children: 상태 목록 등 DOM에 추가된 테스트 하위 요소. */ children=[];
     /** hidden: 테스트 대역에서 유지할 요소 또는 연결 상태. */ hidden=false; /** open: 테스트 대역에서 유지할 요소 또는 연결 상태. */ open=false; /** value: 검사하거나 변환할 현재 값. */ value=''; /** style: 테스트 대역에서 유지할 요소 또는 연결 상태. */ style={/** setProperty: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ setProperty(){}}; /** disabled: 테스트 대역에서 유지할 요소 또는 연결 상태. */ disabled=false; /** checked: 테스트 대역에서 유지할 요소 또는 연결 상태. */ checked=true;
     /** setAttribute: 요소 속성 설정을 테스트 대역에 기록한다. */ setAttribute(/** name: 현재 항목이나 사용자에게 표시할 이름. */ name,/** value: 검사하거나 변환할 현재 값. */ value){/** this.name: 현재 항목이나 사용자에게 표시할 이름. */ this[name]=value;}
     /** classList: 테스트 대역에서 유지할 요소 또는 연결 상태. */ classList={/** toggle: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ toggle(){},/** add: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ add(){},/** remove: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ remove(){}};
-    /** append: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ append(){} /** replaceChildren: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ replaceChildren(){} /** focus: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ focus(){} /** setPointerCapture: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ setPointerCapture(){}
+    /** append: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ append(/** nodes: 행에 추가할 테스트 요소. */ ...nodes){this.children.push(...nodes);} /** replaceChildren: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ replaceChildren(/** nodes: 새로 표시할 테스트 요소. */ ...nodes){this.children=[...nodes];} /** focus: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ focus(){} /** setPointerCapture: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ setPointerCapture(){}
     /** getBoundingClientRect: 조이스틱 입력 계산에 사용할 고정 요소 경계를 제공한다. */ getBoundingClientRect(){return {left:0,top:0,width:132,height:132};}
     /** showModal: 테스트 대화상자를 열린 상태로 만든다. */ showModal(){/** this.open: 테스트 대화상자의 열림 여부. */ this.open=true;} /** close: 반복 작업이나 연결을 정리하여 사용 중인 자원을 해제한다. */ close(){/** this.open: 테스트 대화상자의 열림 여부. */ this.open=false;this.dispatchEvent(new Event('close'));}
     /** click: 테스트 요소의 클릭 처리기를 실행한다. */ click(){this.onclick?.();}
@@ -82,7 +83,7 @@ test('object HUD colors, left level, effective health ratio and conditional skil
     run(`draws=[];drawObjectHud(hud,${JSON.stringify({id,status:{objectType,level:3,currentHealth:5,maxHealth:10,bonusHealth:10,maxSkillResource:0,bonusSkillResource:0,currentSkillResource:0}})},100,100,'me')`);
     assert.equal(run('draws[1].color'),color);assert.equal(run('draws[1].w'),16);
     assert.equal(run('draws[2].text'),'Lv.3');assert.equal(run('draws[2].align'),'right');assert.ok(run('draws[2].x')<68);
-    assert.equal(run('draws.length'),3);
+    assert.equal(run('draws.length'),objectType==='player'?6:3);
   }
   run(`draws=[];drawObjectHud(hud,{id:'me',status:{objectType:'player',level:1,currentHealth:10,effective:{maxHealth:10,maxSkillResource:5},currentSkillResource:2.5}},100,100,'me')`);
   assert.equal(run('draws.at(-1).text'),'2.5 / 5');assert.ok(run('draws.at(-1).y')>100);
@@ -266,4 +267,26 @@ test('test options are hidden for normal names and server-driven for the key pla
  assert.equal(run('socket.sent.at(-1).type'),'game.testOptions');assert.equal(run('socket.sent.at(-1).mapHack'),true);assert.equal(run('socket.sent.at(-1).highSpeed'),true);
  state.players[0].testOptions={mapHack:true,highSpeed:true};receive({type:'room.state',room:state});receive({type:'ack',requestId:run('pending')});assert.equal(e.get('test-map-hack').checked,true);assert.equal(e.get('test-high-speed').checked,true);
  receive({type:'room.left'});assert.equal(e.get('open-test-settings').hidden,true);assert.equal(e.get('test-map-hack').checked,false);assert.equal(e.get('test-high-speed').checked,false);
+});
+
+
+test('player experience bar uses server progress and updated level without hiding zero experience',/** 경험치 바 비율과 서버 레벨·잔여 경험치 갱신을 검증한다. */ ()=>{
+ const /** run: 브라우저 대역 실행기; receive: 서버 수신 대역; state: 방 상태. */ {run,receive,state}=client();
+ run(`globalThis.draws=[];globalThis.hud={fillRect(x,y,w,h){draws.push({kind:'bar',color:this.fillStyle,x,y,w,h});},strokeRect(){},fillText(text,x,y){draws.push({kind:'text',text,x,y});}}`);
+ state.players[0].status={objectType:'player',level:1,currentExperience:0,requiredExperience:50,moveSpeed:2,bonusMoveSpeed:0,maxHealth:10,currentHealth:10,bonusHealth:0,maxSkillResource:0,bonusSkillResource:0,state:'alive'};
+ receive({type:'room.state',room:state});run('drawObjectHud(hud,motionView.sample(playerId,{x:0,y:0},Date.now()).find(p=>p.id===playerId),100,100,playerId)');
+ assert.equal(run('draws.find(d=>d.color==="#b9bfc8").w'),0);assert.equal(run('draws.at(-1).text'),'0 / 50');
+ state.players[0].status={...state.players[0].status,level:2,currentExperience:10,requiredExperience:90};receive({type:'game.state',room:state});
+ run('draws=[];drawObjectHud(hud,motionView.sample(playerId,{x:0,y:0},Date.now()).find(p=>p.id===playerId),100,100,playerId)');
+ assert.equal(run('draws.find(d=>d.kind==="text").text'),'Lv.2');assert.equal(run('draws.at(-1).text'),'10 / 90');assert.ok(Math.abs(run('draws.find(d=>d.color==="#b9bfc8").w')-64/9)<1e-8);assert.ok(run('draws.find(d=>d.color==="#5f6268").y')>100);
+});
+test('status page lists every server status field safely and refreshes while open',/** 일반 사용자 접근·배열·추가 필드·합산값·서버 갱신과 뒤로 이동을 검증한다. */ ()=>{
+ const /** e: DOM 요소; receive: 수신 대역; state: 방 상태. */ {elements:e,receive,state}=client();
+ state.players[0].status={level:1,currentExperience:40,requiredExperience:50,bonusAttack:0,statusEffects:[],availableSkills:['<script>'],concealed:false,futureField:'새 변수',effective:{attack:1,maxHealth:10}};
+ receive({type:'room.state',room:state});e.get('game-menu').click();e.get('open-options').click();e.get('open-status').click();assert.equal(e.get('menu-status').hidden,false);assert.equal(e.get('menu-options').hidden,true);
+ const /** rows: 실제 DOM에 작성된 변수·값 목록 조회 함수. */ rows=/** 현재 테이블 행을 읽는다. */ ()=>e.get('player-status-list').children.map(/** 행 내용을 텍스트로 읽는다. */ (/** row: 테이블 행. */ row)=>row.children.map(/** 셀 내용 조회. */ (/** cell: 변수명·값 셀. */ cell)=>cell.textContent));
+ for(const /** field: 서버 스테이터스 키. */ field of Object.keys(state.players[0].status).filter(/** 합산 객체는 개별 행으로 표시한다. */ (/** field: 필드명. */ field)=>field!=='effective'))assert.ok(rows().some(/** 필드 누락 검사. */ (/** row: 표시 행. */ row)=>row[0].endsWith(`(${field})`)));
+ assert.ok(rows().some(/** 안전한 배열 텍스트 검사. */ (/** row: 표시 행. */ row)=>row[1]==='["<script>"]'));assert.ok(rows().some(/** 합산값 행 검사. */ (/** row: 표시 행. */ row)=>row[0]==='합산값 · 기본공격력 (attack)'&&row[1]==='1'));
+ state.players[0].status.level=2;state.players[0].status.currentExperience=10;receive({type:'game.state',room:state});assert.ok(rows().some(/** 서버 갱신 검사. */ (/** row: 표시 행. */ row)=>row[0].endsWith('(level)')&&row[1]==='2'));
+ e.get('status-back').click();assert.equal(e.get('menu-options').hidden,false);assert.equal(e.get('menu-status').hidden,true);
 });

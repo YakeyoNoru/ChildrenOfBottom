@@ -9,7 +9,7 @@ export const MonsterPresets = Object.freeze({
     /** hitboxDiameter: 원형 피격 판정 지름(월드 좌표 단위). */ hitboxDiameter: 26,
     /** maxHealth: 생성 시 기본 최대체력. */ maxHealth: 20,
     /** attack: 생성 시 기본공격력. */ attack: 3,
-    /** experience: 처치 보상 경험치. 실제 지급 이벤트는 별도 구현한다. */ experience: 20,
+    /** experience: 처치한 플레이어에게 공통 피해 흐름에서 지급할 경험치. */ experience: 20,
   }),
   /** 몬스터A02: TEST001 종류의 레벨 5 프리셋. */
   몬스터A02: Object.freeze({
@@ -18,7 +18,7 @@ export const MonsterPresets = Object.freeze({
     /** hitboxDiameter: 원형 피격 판정 지름(월드 좌표 단위). */ hitboxDiameter: 26,
     /** maxHealth: 생성 시 기본 최대체력. */ maxHealth: 50,
     /** attack: 생성 시 기본공격력. */ attack: 10,
-    /** experience: 처치 보상 경험치. 실제 지급 이벤트는 별도 구현한다. */ experience: 50,
+    /** experience: 처치한 플레이어에게 공통 피해 흐름에서 지급할 경험치. */ experience: 50,
   }),
 });
 
@@ -39,5 +39,6 @@ export function createMonster(
     y: options.y ?? 0,
   });
   /** monster.presetId: 같은 종류 안에서 생성 원본 프리셋을 구분하는 식별자. */ monster.presetId = presetId;
+  /** rewardGranted: 처치 경험치가 중복 지급되지 않도록 기록한다. */ monster.rewardGranted=false;
   return monster;
 }
