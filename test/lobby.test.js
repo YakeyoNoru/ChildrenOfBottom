@@ -122,18 +122,36 @@ test('foreign browser origins and oversized payloads are rejected', /** 이 테�
   if(!options?.keepProps)for(const /** id: 제거할 사물 ID; object: 테스트와 무관한 사물. */ [id,object] of game.rooms.get(room.code).objects)if(object.status.objectType==='prop')game.rooms.get(room.code).objects.delete(id);
   return {...game,a,b,code:room.code};
 }
-test('playing host leaves alone, successor can move, room disappears only after last departure', /** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ async /** t: 테스트 정리·검증 문맥 또는 프레임 시각. */ t => {
-  const /** a: 첫 번째 검증용 값·개체·접속 결과; b: 두 번째 검증용 값·개체·접속 결과; rooms: 접속코드별 방 상태를 보관하는 맵; code: 개체·기술·방 또는 오류를 식별하는 코드. */ {a,b,rooms,code} = await startedPair(t);
+test('playing host leaves alone, successor can move, room disappears only after last departure', /** 방장 퇴장 5초 후 새 게임 상태와 후임자의 이동·방 삭제를 검증한다. */ async /** t: 테스트 정리·검증 문맥. */ t => {
+  const /** a: 퇴장할 방장; b: 남을 참가자; rooms: 서버 방 상태; code: 시험 중인 방 코드. */ {a,b,rooms,code} = await startedPair(t);
+  /** nextLiveState: 과거 수신함 대신 등록 이후 도착한 게임 상태만 기다린다. accept는 원하는 상태 판정 함수다. */
+  function nextLiveState(accept) {
+    return new Promise(/** resolve: 조건을 만족한 상태 전달; reject: 제한 시간 초과 전달. */ (resolve,reject) => {
+      const /** timer: 새 상태의 최대 대기 시간 2000밀리초. */ timer=setTimeout(/** 제한 시간 초과 시 수신기를 정리하고 실패시킨다. */ () => {b.ws.off('message',onMessage);reject(Error('Timeout: fresh game.state'));},2000);
+      /** onMessage: 새 게임 상태만 검사한다. raw는 WebSocket 메시지 원문이다. */
+      function onMessage(raw) {
+        const /** message: 새로 도착한 서버 메시지. */ message=JSON.parse(raw.toString());
+        if(message.type!=='game.state'||!accept(message))return;
+        clearTimeout(timer);b.ws.off('message',onMessage);resolve(message);
+      }
+      b.ws.on('message',onMessage);
+    });
+  }
   await a.command('room.leave'); await a.next('room.left');
-  assert.equal(rooms.get(code).phase,'started'); assert.equal(rooms.get(code).hostId,b.id);
-  assert.equal(rooms.get(code).players.size,1);
-  const /** p: 검증 기준이 되는 개체 또는 표시 위치. */ p = rooms.get(code).players.get(b.id), /** x: 검증 좌표·비교 항목 또는 위치 조회 함수. */ x = p.x;
+  // 퇴장 확인 후 5초를 기다린다. 과거 메시지 큐는 이후 검증에 사용하지 않는다.
+  await new Promise(/** resolve: 5000밀리초 대기 완료 함수. */ resolve=>setTimeout(resolve,5000));
+  const /** afterLeave: 5초 경과 뒤 실제로 새로 수신한 게임 상태. */ afterLeave=await nextLiveState(/** message: 새 게임 상태이며 첫 수신 자체를 검사 대상으로 삼는다. */ message=>true);
+  assert.equal(afterLeave.room.phase,'started');assert.equal(afterLeave.room.hostId,b.id);
+  assert.equal(afterLeave.room.players.length,1);assert.equal(afterLeave.room.players[0].id,b.id);
+  assert.equal(rooms.get(code).phase,'started');assert.equal(rooms.get(code).hostId,b.id);assert.equal(rooms.get(code).players.size,1);
+  const /** p: 서버의 B 개체; x: 이동 입력 직전 서버 X 좌표. */ p=rooms.get(code).players.get(b.id), x=p.x;
+  const /** moved: 입력 전 수신기를 등록해 이후 B의 이동 상태를 기다리는 작업. */ moved=nextLiveState(/** message: 입력 이후 새로 수신한 게임 상태. */ message=>message.room.players.some(/** player: 이동 여부를 검사할 참가자. */ player=>player.id===b.id&&player.x>x));
   b.ws.send(JSON.stringify({v:1,type:'game.input',x:1,y:0,action:'A',playerId:a.id}));
-  let /** state: 현재 상태 스냅샷. */ state; do {state = await b.next('game.state');} while(state.room.players[0].x <= x);
-  assert.equal(state.room.players[0].id,b.id); assert.equal(state.room.players[0].action,'A');
+  const /** state: B가 실제 이동한 새 게임 상태. */ state=await moved;
+  assert.equal(state.room.players[0].id,b.id);assert.equal(state.room.players[0].action,'A');
   await a.command('room.create',{name:'다른 방'});
   assert.equal(rooms.has(code),true);
-  await b.command('room.leave'); await b.next('room.left'); assert.equal(rooms.has(code),false);
+  await b.command('room.leave');await b.next('room.left');assert.equal(rooms.has(code),false);
 });
 test('playing host disconnect and heartbeat timeout preserve the remaining game', /** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ async /** t: 테스트 정리·검증 문맥 또는 프레임 시각. */ t => {
   const /** a: 첫 번째 검증용 값·개체·접속 결과; b: 두 번째 검증용 값·개체·접속 결과; rooms: 접속코드별 방 상태를 보관하는 맵; code: 개체·기술·방 또는 오류를 식별하는 코드. */ {a,b,rooms,code} = await startedPair(t,{heartbeatMs:50});
