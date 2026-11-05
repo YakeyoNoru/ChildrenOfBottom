@@ -1,5 +1,5 @@
 import './public/interactions.js';
-import { /** createReturnLamp: 시작 위치에 소유자가 있는 귀환전등을 만든다. */ createReturnLamp } from './game/props.js';
+import { /** createReturnLamp: 시작 위치에 소유자가 있는 귀환등을 만든다. */ createReturnLamp } from './game/props.js';
 import './public/poison.js';
 import './public/input-timeline.js';
 import './public/items.js';
@@ -267,7 +267,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
             Object.assign(player,globalThis.PitMapRules.center(tile,room.map));
             player.pendingCasts=[];player.movementClock={last:Date.now(),credit:50};
             player.playerNumber=index+1;player.spawnTileId=tile.id;player.roll=null;player.input={x:0,y:0};player.inputQueue=[];
-            const /** lamp: 해당 플레이어 시작점의 귀환전등. */ lamp=createReturnLamp(player);room.objects.set(lamp.id,lamp);
+            const /** lamp: 해당 플레이어 시작점의 귀환등. */ lamp=createReturnLamp(player);room.objects.set(lamp.id,lamp);
           });
           broadcast(room);
         }

@@ -5,7 +5,7 @@ globalThis.InteractionRules={
   register(/** code: 오브젝트 분류코드. */ code,/** handler: canInteract·run 처리기. */ handler){this.handlers.set(code,handler);},
   /** 거리·생존·개별 조건을 함께 확인한다. */
   available(/** player: 상호작용할 플레이어. */ player,/** target: NPC 또는 사물. */ target){
-    if(player?.status?.objectType!=='player'||player.status.state!=='alive'||!target?.interactionEnabled||target.status?.state!=='alive'||!['npc','prop'].includes(target.status.objectType)||Math.hypot(player.x-target.x,player.y-target.y)>200)return false;
+    if(player?.status?.objectType!=='player'||player.status.state!=='alive'||!target?.interactionEnabled||target.status?.state!=='alive'||!['npc','prop'].includes(target.status.objectType)||Math.hypot(player.x-target.x,player.y-target.y)>60)return false;
     const /** handler: 분류코드에 등록한 공통 처리기. */ handler=this.handlers.get(target.status.classificationCode);
     return !!handler&&(!handler.canInteract||handler.canInteract(player,target));
   },
@@ -16,8 +16,8 @@ globalThis.InteractionRules={
   },
 };
 InteractionRules.register('OBJ0001',{
-  /** 귀환전등은 같은 생성 플레이어와 소유 코드일 때만 사용할 수 있다. */
-  canInteract(/** player: 요청자. */ player,/** target: 귀환전등. */ target){return target.ownerId===player.id&&target.ownerCode===player.status.classificationCode;},
+  /** 귀환등은 같은 생성 플레이어와 소유 코드일 때만 사용할 수 있다. */
+  canInteract(/** player: 요청자. */ player,/** target: 귀환등. */ target){return target.ownerId===player.id&&target.ownerCode===player.status.classificationCode;},
   /** 실제 탈출 전 Y/N 확인을 요청한다. */
   run(){return {type:'escapePrompt',message:'탈출하시겠습니까? Y/N'};},
 });

@@ -353,9 +353,9 @@ const /** canvas: 월드 화면을 그리는 캔버스 요소. */ canvas = $('wo
     ctx.beginPath();ctx.arc(x,y,2.5,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();ctx.strokeStyle='#000';ctx.lineWidth=1;ctx.stroke();
   }
   updateInteraction(me);
-  miniMap.draw(room.map,room.code,me,viewport.worldWidth);
+  miniMap.draw(room.map,room.code,me,viewport.worldWidth,miniMap.canvas,false,{x:0,y:0},false,room.objects??[]);
   if(!$('expanded-map').hidden&&miniMap.terrain){
-    miniMap.draw(room.map,room.code,me,viewport.worldWidth*10/2.5,$('expanded-map-canvas'),true,mapPan,me.name==='열쇠'&&me.testOptions?.mapHack===true);
+    miniMap.draw(room.map,room.code,me,viewport.worldWidth*10/2.5,$('expanded-map-canvas'),true,mapPan,me.name==='열쇠'&&me.testOptions?.mapHack===true,room.objects??[]);
   }
   drawSkillEffects(ctx, room.skillEffects ?? [], ox, oy);
   displayObjects.forEach(/** 각 항목에 현재 단계의 상태 갱신 또는 표시 처리를 적용한다. */ (/** p: 현재 처리하는 플레이어 또는 검증 개체. */ p,/** i: 현재 반복 항목의 순번. */ i) => {

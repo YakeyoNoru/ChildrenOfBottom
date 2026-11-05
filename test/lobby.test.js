@@ -445,7 +445,7 @@ test('return lamps validate ownership, confirmation, distance and result-screen 
  await a.command('game.interact',{targetId:lamp.id});const /** cancel: 취소할 확인 ID. */ cancel=await a.next('interaction.prompt');
  await a.command('game.interact.confirm',{confirmationId:cancel.id,accept:false});assert.equal(room.players.has(a.id),true);
  assert.equal((await a.command('game.interact.confirm',{confirmationId:cancel.id,accept:true},'error')).code,'INVALID_INTERACTION');
- await a.command('game.interact',{targetId:lamp.id});const /** distant: 거리 재검증용 ID. */ distant=await a.next('interaction.prompt');player.x=lamp.x+201;
+ await a.command('game.interact',{targetId:lamp.id});const /** distant: 거리 재검증용 ID. */ distant=await a.next('interaction.prompt');player.x=lamp.x+60.01;
  assert.equal((await a.command('game.interact.confirm',{confirmationId:distant.id,accept:true},'error')).code,'INTERACTION_UNAVAILABLE');player.x=lamp.x;
  player.status.competitionPoints=123;
  await a.command('game.interact',{targetId:lamp.id});const /** prompt: 수락할 확인 ID. */ prompt=await a.next('interaction.prompt');

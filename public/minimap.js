@@ -23,6 +23,7 @@ class MiniMap {
     const /** width: 전체 지도 가로 범위; height: 전체 지도 세로 범위. */ width=Math.max(...geometry.centers.map(/** 가로 좌표를 조회한다. */ (/** point: 지형 중심. */ point)=>point.x))+radius+250-this.left,height=Math.max(...geometry.centers.map(/** 세로 좌표를 조회한다. */ (/** point: 지형 중심. */ point)=>point.y))+radius+250-this.top;
     /** atlasScale: 메모리를 제한한 탐색 마스크의 월드 대비 배율. */ this.atlasScale=Math.min(.15,2048/Math.max(width,height));
     this.terrain=document.createElement('canvas');this.fog=document.createElement('canvas');
+    /** fogContext: 작은 탐색 픽셀을 자주 읽는 CPU 우선 마스크 문맥. */ this.fogContext=this.fog.getContext('2d',{willReadFrequently:true});
     for(const /** layer: 지형·마스크 캐시. */ layer of [this.terrain,this.fog]){layer.width=Math.ceil(width*this.atlasScale);layer.height=Math.ceil(height*this.atlasScale);}
     const /** ctx: 지형 캐시 문맥. */ ctx=this.terrain.getContext('2d');
     ctx.setTransform(this.atlasScale,0,0,this.atlasScale,-this.left*this.atlasScale,-this.top*this.atlasScale);
@@ -39,15 +40,31 @@ class MiniMap {
   }
   /** 이동 선분을 지름 500의 둥근 붓으로 공개한다. 순간이동은 중간 경로를 공개하지 않는다. */
   reveal(/** position: 화면에 표시되는 본인 월드 중심. */ position){
-    const /** ctx: 누적 공개 마스크 문맥. */ ctx=this.fog.getContext('2d');
+    const /** ctx: 누적 공개 마스크 문맥. */ ctx=this.fogContext;
     ctx.setTransform(this.atlasScale,0,0,this.atlasScale,-this.left*this.atlasScale,-this.top*this.atlasScale);
     ctx.fillStyle='#fff';ctx.strokeStyle='#fff';ctx.lineWidth=500;ctx.lineCap='round';
     if(this.previous&&Math.hypot(position.x-this.previous.x,position.y-this.previous.y)<=400){ctx.beginPath();ctx.moveTo(this.previous.x,this.previous.y);ctx.lineTo(position.x,position.y);ctx.stroke();}
     ctx.beginPath();ctx.arc(position.x,position.y,250,0,Math.PI*2);ctx.fill();
     this.previous={x:position.x,y:position.y};
   }
+  /** 실제 탐색 마스크에서 좌표의 공개 여부를 읽는다. 맵핵으로는 공개되지 않는다. */
+  isExplored(/** point: 귀환등의 월드 중심 좌표. */ point){
+    if(!this.fog||!this.fogContext)return false;
+    const /** x: 마스크 가로 픽셀; y: 마스크 세로 픽셀. */ x=Math.floor((point.x-this.left)*this.atlasScale),y=Math.floor((point.y-this.top)*this.atlasScale);
+    if(x<0||y<0||x>=this.fog.width||y>=this.fog.height)return false;
+    return this.fogContext.getImageData(x,y,1,1).data[3]>0;
+  }
+  /** 살아 있고 탐색한 귀환등을 지도 프레임 안에 하늘색 고정 크기 마커로 그린다. */
+  drawLamps(/** ctx: 클리핑이 적용된 지도 문맥. */ ctx,/** objects: 최신 서버 개체 목록. */ objects,/** player: 지도 중심 플레이어. */ player,/** pan: 지도 드래그 거리. */ pan,/** scale: 월드 대비 지도 배율. */ scale,/** width: 지도 가로 픽셀. */ width,/** height: 지도 세로 픽셀. */ height){
+    for(const /** lamp: 지도에 표시할 귀환등 후보. */ lamp of objects){
+      if(lamp.status?.objectType!=='prop'||lamp.status.classificationCode!=='OBJ0001'||lamp.status.state!=='alive'||lamp.status.currentHealth<=0||!this.isExplored(lamp))continue;
+      const /** x: 마커 가로 픽셀; y: 마커 세로 픽셀. */ x=width/2+(lamp.x-player.x-pan.x)*scale,y=height/2+(lamp.y-player.y-pan.y)*scale;
+      // 본인 위치의 삼각형과 구별되는 원형 마커이며 지도 밖에서는 클리핑된다.
+      ctx.beginPath();ctx.arc(x,y,4.5,0,Math.PI*2);ctx.fillStyle='#87CEEB';ctx.fill();ctx.strokeStyle='#173744';ctx.lineWidth=1.5;ctx.stroke();
+    }
+  }
   /** 본인을 중심으로 고정하고 탐색 마스크 안의 지형·다리만 표시한다. */
-  draw(/** map: 현재 지도. */ map,/** code: 방 코드. */ code,/** player: 본인 표시 좌표·방향. */ player,/** worldWidth: 본 화면의 가로 월드 범위. */ worldWidth=684,/** canvas: 기본 또는 확대 지도 표시 대상. */ canvas=this.canvas,/** rectangular: 확대 지도의 사각형 표시 여부. */ rectangular=false,/** pan: 플레이어 기준 표시 중심의 이동 거리. */ pan={x:0,y:0},/** showAll: 전체맵만 탐색 마스크를 생략하는 테스트 설정. */ showAll=false){
+  draw(/** map: 현재 지도. */ map,/** code: 방 코드. */ code,/** player: 본인 표시 좌표·방향. */ player,/** worldWidth: 본 화면의 가로 월드 범위. */ worldWidth=684,/** canvas: 기본 또는 확대 지도 표시 대상. */ canvas=this.canvas,/** rectangular: 확대 지도의 사각형 표시 여부. */ rectangular=false,/** pan: 플레이어 기준 표시 중심의 이동 거리. */ pan={x:0,y:0},/** showAll: 전체맵만 탐색 마스크를 생략하는 테스트 설정. */ showAll=false,/** objects: 마커 생존·소멸 판정에 쓸 최신 서버 개체 목록. */ objects=[]){
     if(!map||!player)return;
     const /** key: 방별 지도 구분자. */ key=code+':'+map.id;
     if(this.key!==key)this.prepare(map,key);
@@ -59,7 +76,8 @@ class MiniMap {
     ctx.drawImage(this.terrain,x,y,this.terrain.width/this.atlasScale*scale,this.terrain.height/this.atlasScale*scale);
     // 실제 탐색 마스크를 변경하지 않아 해제 즉시 원래 밝혀진 영역만 표시한다.
     if(!(rectangular&&showAll)){ctx.globalCompositeOperation='destination-in';ctx.drawImage(this.fog,x,y,this.fog.width/this.atlasScale*scale,this.fog.height/this.atlasScale*scale);}
-    ctx.globalCompositeOperation='destination-over';ctx.fillStyle='#A7A3B0';ctx.fillRect(0,0,size,height);ctx.restore();
+    ctx.globalCompositeOperation='destination-over';ctx.fillStyle='#A7A3B0';ctx.fillRect(0,0,size,height);
+    ctx.globalCompositeOperation='source-over';this.drawLamps(ctx,objects,player,pan,scale,size,height);ctx.restore();
     ctx.strokeStyle='#b9cfa9';ctx.lineWidth=4;ctx.beginPath();if(rectangular)ctx.rect(3,3,size-6,height-6);else ctx.arc(size/2,height/2,Math.min(size,height)/2-3,0,Math.PI*2);ctx.stroke();
     ctx.save();ctx.translate(size/2-pan.x*scale,height/2-pan.y*scale);ctx.rotate(player.facing??0);ctx.beginPath();ctx.moveTo(9,0);ctx.lineTo(-6,-5);ctx.lineTo(-6,5);ctx.closePath();ctx.fillStyle='#57e8f1';ctx.fill();ctx.strokeStyle='#102932';ctx.lineWidth=2;ctx.stroke();ctx.restore();
   }

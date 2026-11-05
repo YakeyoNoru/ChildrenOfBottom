@@ -147,4 +147,4 @@ room.objects.set(npc.id, npc);
 
 ## 상호작용 사물
 
-`prop`은 유닛과 구별되는 사물 분류다. 현재 OBJ0001 귀환전등은 모든 플레이어에게 적대 대상으로 분류되어 자동 타겟과 피해를 허용하며, 몬스터는 공격하지 않는다. 소유자도 공격할 수 있다. NPC 보호 규칙은 유지한다. `ownerCode`·`ownerId`·`interactionEnabled`·처치 보상은 RESULTS-AND-INTERACTIONS.md를 참고한다.
+`prop`은 유닛과 구별되는 사물 분류다. 현재 OBJ0001 귀환등은 모든 플레이어에게 적대 대상으로 분류되어 자동 타겟과 피해를 허용하며, 몬스터는 공격하지 않는다. 소유자도 공격할 수 있다. NPC 보호 규칙은 유지한다. `ownerCode`·`ownerId`·`interactionEnabled`·처치 보상은 RESULTS-AND-INTERACTIONS.md를 참고한다.
