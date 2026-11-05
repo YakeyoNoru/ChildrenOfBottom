@@ -11,7 +11,7 @@ import { /** spawnMonsters: 일반 필드타일에 프리셋별 수량을 생성
 import { /** castSkill: 슬롯의 쿨타임과 상태를 검사하고 기술을 시전한다. */ castSkill, /** skillCooldownRemaining: 슬롯의 서버 쿨타임 잔여 시간을 구한다. */ skillCooldownRemaining, /** skillSnapshot: 판정 내부 기록을 제외한 전송 데이터를 만든다. */ skillSnapshot, /** updateSkillCooldowns: 서버 기준 잔여 대기를 갱신한다. */ updateSkillCooldowns, /** getSkillSlotNames: 할당된 기술의 표시 이름을 조회한다. */ getSkillSlotNames } from './game/skills.js';
 import /** http: 게임 HTTP 서버 생성 기능을 제공한다. */ http from 'node:http';
 import { /** createAuthService: 제공자 로그인·앱 세션·계정 설정 API와 만료 정리를 구성한다. */ createAuthService } from './auth/service.js';
-import { /** createStatus: 모든 개체가 공유하는 수치·기술 슬롯·상태를 검증해 생성한다. */ createStatus, /** ObjectType: 플레이어·NPC·적의 개체 분류 상수. */ ObjectType, /** LifeState: 생존·사망 상태 상수. */ LifeState, /** effectiveStats: 기본 수치에 추가 수치를 합산하고 음수를 방지한 최종 능력치를 계산한다. */ effectiveStats, /** normalizeVitals: 체력·자원을 최종 최대치 안으로 제한하고 사망 상태를 정규화한다. */ normalizeVitals, /** regenerate: 생존 개체의 체력과 스킬자원을 경과 시간만큼 회복한다. */ regenerate, /** updateNearestObjects: 생존 개체의 최근접 개체와 설정 우선순위에 맞는 적 ID를 갱신한다. */ updateNearestObjects, /** TargetPriority: 허용하는 공격 우선대상 선택 방식. */ TargetPriority } from './game/status.js';
+import { /** gainExperience: 모든 경험치 획득 시 레벨업까지 공통 처리한다. */ gainExperience, /** createStatus: 모든 개체가 공유하는 수치·기술 슬롯·상태를 검증해 생성한다. */ createStatus, /** ObjectType: 플레이어·NPC·적의 개체 분류 상수. */ ObjectType, /** LifeState: 생존·사망 상태 상수. */ LifeState, /** effectiveStats: 기본 수치에 추가 수치를 합산하고 음수를 방지한 최종 능력치를 계산한다. */ effectiveStats, /** normalizeVitals: 체력·자원을 최종 최대치 안으로 제한하고 사망 상태를 정규화한다. */ normalizeVitals, /** regenerate: 생존 개체의 체력과 스킬자원을 경과 시간만큼 회복한다. */ regenerate, /** updateNearestObjects: 생존 개체의 최근접 개체와 설정 우선순위에 맞는 적 ID를 갱신한다. */ updateNearestObjects, /** TargetPriority: 허용하는 공격 우선대상 선택 방식. */ TargetPriority } from './game/status.js';
 import { /** readFile: 정적 파일을 비동기로 읽는다. */ readFile } from 'node:fs/promises';
 import { /** randomBytes: 방 코드와 인증 증명에 사용할 암호학적 난수를 생성한다. */ randomBytes, /** randomUUID: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ randomUUID } from 'node:crypto';
 import { /** pathToFileURL: 현재 실행 파일과 모듈 주소를 비교할 수 있도록 URL로 변환한다. */ pathToFileURL } from 'node:url';
@@ -313,7 +313,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
       let /** finished: 이번 틱에 사망으로 분리한 참가자가 있는지 여부. */ finished=false;
       for(const /** player: 서버에서 사망이 확정된 참가자. */ player of [...room.players.values()])if(player.status.state===LifeState.DEAD){finishPlayer(room,player,'DEATH');finished=true;}
       if(finished&&room.players.size)broadcast(room);
-      room.itemChanges=globalThis.ItemRules.tick(room.items??new Map(),objects,now);
+      room.itemChanges=globalThis.ItemRules.tick(room.items??new Map(),objects,now,gainExperience);
       const /** state: 현재 상태 스냅샷. */ state = snapshot(room,false);
       for (const /** p: 현재 처리하는 플레이어 또는 검증 개체. */ p of room.players.values()) send(p.ws, 'game.state', { room: state });
     }
