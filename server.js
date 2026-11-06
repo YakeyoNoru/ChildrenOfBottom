@@ -19,8 +19,11 @@ import { /** WebSocketServer: 서버의 WebSocket 연결과 프레임 처리를 
 
 /** MAX_PLAYERS: 방장을 포함한 방 정원. */
 export const MAX_PLAYERS=5;
+/** RECONNECT_GRACE_MS: 진행 중 연결이 끊긴 참가자의 복귀 유예시간(ms). 서버 재시작 시에는 유지하지 않는다. */
+export const RECONNECT_GRACE_MS=120000;
 export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증을 제공하는 서버를 생성한다. */ function createGameServer(/** heartbeatMs: 연결 생존 확인 주기(밀리초); authOptions: 인증 서비스 생성 옵션; roomClock: 방 수명 검증에 사용할 서버 시계 함수. */ { heartbeatMs = 15000, auth: authOptions = {}, roomClock = Date.now } = {}) {
   const /** rooms: 접속코드별 방 상태를 보관하는 맵. */ rooms = new Map();
+  const /** reconnectSessions: 비공개 복귀 토큰별 현재 연결과 만료 시각. 게임·결과는 메모리에만 유지한다. */ reconnectSessions=new Map();
   const /** auth: 앱 로그인과 계정 API를 처리하는 인증 서비스. */ auth = createAuthService(authOptions);
   const /** files: 외부에 제공할 정적 파일 경로와 MIME 형식. */ files = { '/pit-map-rules.js': ['pit-map-rules.js','text/javascript'], '/interactions.js': ['interactions.js','text/javascript'], '/minimap.js': ['minimap.js','text/javascript'], '/item-view.js': ['item-view.js','text/javascript'], '/items.js': ['items.js','text/javascript'], '/map-renderer.js': ['map-renderer.js','text/javascript'], '/room-timer.js': ['room-timer.js', 'text/javascript'], '/movement.js': ['movement.js', 'text/javascript'], '/pit-map.html': ['pit-map.html', 'text/html'], '/motion.js': ['motion.js', 'text/javascript'], '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/viewport.js': ['viewport.js', 'text/javascript'], '/client-mode.js': ['client-mode.js', 'text/javascript'], '/app': ['index.html', 'text/html'], '/style.css': ['style.css', 'text/css'] };
   const /** server: 정적 파일과 WebSocket 연결을 제공하는 HTTP 서버. */ server = http.createServer(/** 현재 비동기 작업의 완료 또는 후속 처리를 수행한다. */ async (/** req: 수신한 HTTP 요청. */ req, /** res: HTTP 응답 작성 객체. */ res) => {
@@ -74,7 +77,50 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
     }
     room.players.clear();room.objects.clear();room.skillEffects=[];
   }
+  /** 기존 입력·구르기·미처리 기술을 폐기해 끊긴 캐릭터가 제자리에 남도록 한다. 재접속 입력 순번은 1부터 다시 시작한다. */
+  function stopDisconnectedPlayer(/** player: 연결 전환 대상 서버 캐릭터. */ player){
+    player.input={x:0,y:0};player.inputAt=0;player.action=null;player.roll=null;
+    player.inputQueue=[];player.pendingCasts=[];player.lastReceivedInput=0;player.lastProcessedInput=0;
+    player.lastMovementInput={x:0,y:0};player.sequencedInput=false;player.movementClock={last:Date.now(),credit:0};
+  }
+  /** 명시적 퇴장으로 복귀 권한을 폐기한다. 다른 연결로 인계된 세션은 건드리지 않는다. */
+  function forgetSession(/** ws: 권한을 폐기할 연결. */ ws){
+    if(reconnectSessions.get(ws.reconnectToken)?.ws===ws)reconnectSessions.delete(ws.reconnectToken);
+  }
+  /** 종료된 연결의 진행 중 캐릭터와 결과를 2분 보관한다. 대기실은 기존 퇴장 정책을 적용한다. */
+  function disconnect(/** ws: 연결이 종료된 소켓. */ ws){
+    if(ws.superseded)return;
+    const /** session: 이 연결의 게임 복귀 권한. */ session=reconnectSessions.get(ws.reconnectToken);
+    const /** room: 아직 진행 중인 방. */ room=rooms.get(ws.roomCode);
+    if(session?.ws===ws&&(room?.phase==='started'||ws.matchResult)){
+      session.expiresAt=roomClock()+RECONNECT_GRACE_MS;ws.pendingInteraction=null;
+      const /** player: 정지시킬 기존 캐릭터. */ player=room?.players.get(ws.id);
+      if(player){stopDisconnectedPlayer(player);player.disconnectedUntil=session.expiresAt;broadcast(room);}
+    }else leave(ws);
+  }
+  /** 토큰·계정·유예시간을 검증한 뒤 기존 캐릭터 또는 확정 점수화면을 새 연결에 인계한다. */
+  function resumeSession(/** ws: 새로 연결된 소켓. */ ws,/** token: 브라우저가 보관한 비공개 복귀 토큰. */ token){
+    const /** session: 서버 메모리의 복귀 기록. */ session=typeof token==='string'&&token.length===64?reconnectSessions.get(token):null;
+    if(ws.roomCode||ws.matchResult||!session||session.ws===ws||session.ws.clientMode!==ws.clientMode||(session.ws.account?.id??null)!==(ws.account?.id??null)){
+      send(ws,'session.rejected',{message:'복귀 가능한 게임이 없습니다.'});return;
+    }
+    if(session.expiresAt!==null&&roomClock()>=session.expiresAt){leave(session.ws);send(ws,'session.rejected',{message:'재접속 유예시간 2분이 지났습니다.'});return;}
+    const /** previous: 복귀 전 연결. */ previous=session.ws;
+    let /** room: 복귀할 진행 중 방. */ room=rooms.get(previous.roomCode);
+    if(room&&roomClock()>=room.countdownEndsAt){closeExpiredRoom(room);room=null;}
+    const /** player: 유지 중인 기존 캐릭터. */ player=room?.players.get(previous.id);
+    if(!player&&!previous.matchResult){forgetSession(previous);send(ws,'session.rejected',{message:'게임이 이미 종료되었습니다.'});return;}
+    ws.id=previous.id;ws.reconnectToken=token;ws.roomCode=player?room.code:null;ws.matchResult=previous.matchResult;
+    previous.superseded=true;previous.roomCode=null;previous.matchResult=null;previous.pendingInteraction=null;
+    session.ws=ws;session.expiresAt=null;
+    if(player){player.ws=ws;player.disconnectedUntil=null;stopDisconnectedPlayer(player);}
+    if(previous.readyState===WebSocket.OPEN)previous.close(4001,'Session resumed elsewhere');
+    send(ws,'session.resumed',{playerId:ws.id});
+    if(player)broadcast(room);
+    else send(ws,'game.result',{result:{id:ws.matchResult.id,competitionPoints:ws.matchResult.competitionPoints,reason:ws.matchResult.reason}});
+  }
   /** leave: 대기실·진행 중 상태에 맞춰 퇴장과 방장 승계·방 삭제를 처리한다. */ function leave(/** ws: 현재 처리 중인 WebSocket 연결. */ ws) {
+    forgetSession(ws);
     const /** room: 현재 처리하는 방의 상태. */ room = rooms.get(ws.roomCode);
     ws.roomCode = null;
     if (!room) return;
@@ -124,11 +170,13 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
     ws.account = auth.identity(req,mode);
     if (mode === 'app' && !ws.account) { ws.close(1008,'App login required'); return; }
     ws.id = randomUUID(); ws.alive = true; ws.windowStart = Date.now(); ws.count = 0;
+    /** clientMode: 복귀 권한이 발급된 웹/APK 접속 구분. */ ws.clientMode=mode;
     send(ws, 'welcome', { playerId: ws.id });
     ws.on('pong', /** pong 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ () => { ws.alive = true; });
     ws.on('error', /** error 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ () => {});
-    ws.on('close', /** close 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ () => leave(ws));
+    ws.on('close', /** 일시적인 끊김이면 캐릭터를 유지하고 복귀를 기다린다. */ () => disconnect(ws));
     ws.on('message', /** message 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ (/** raw: 수신한 원본 메시지. */ raw, /** binary: 바이너리 프레임 수신 여부. */ binary) => {
+      if(ws.superseded)return;
       const /** error: 오류 정보 또는 오류 응답 처리기. */ error = /** error: 요청 실패 내용을 오류 응답으로 전달한다. */ (/** code: 개체·기술·방 또는 오류를 식별하는 코드. */ code, /** message: 사용자나 연결에 전달할 안내 내용. */ message, /** requestId: 요청과 응답을 대응시키는 식별자. */ requestId) => send(ws, 'error', { code, message, requestId });
       if (Date.now() - ws.windowStart > 10000) { ws.windowStart = Date.now(); ws.count = 0; }
       if (++ws.count > 500) return error('RATE_LIMIT', '요청이 너무 많습니다. 잠시 후 다시 시도하세요.');
@@ -138,11 +186,12 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
       const /** fail: 현재 요청 식별자를 포함해 오류를 반환하는 함수. */ fail = /** fail: 현재 요청 ID와 함께 게임 명령 실패를 전달한다. */ (/** code: 개체·기술·방 또는 오류를 식별하는 코드. */ code, /** message: 사용자나 연결에 전달할 안내 내용. */ message) => error(code, message, m.requestId);
       let /** room: 현재 처리하는 방의 상태. */ room = rooms.get(ws.roomCode);
       if(room && globalThis.RoomTimerRules.expired(room,roomClock())) {closeExpiredRoom(room);room=null;}
+      if(m.type==='session.resume'){resumeSession(ws,m.token);return;}
       if(m.type==='game.result.seen'||m.type==='game.result.leave'){
         const /** result: 본인 연결에 서버가 발급한 결과. */ result=ws.matchResult;
         if(!result||m.resultId!==result.id)return fail('INVALID_RESULT','유효한 게임 결과가 없습니다.');
         if(m.type==='game.result.seen'){result.seenAt??=Date.now();send(ws,'game.result.ready',{resultId:result.id});}
-        else {if(result.seenAt===null)return fail('RESULT_NOT_SEEN','점수화면을 먼저 확인해 주세요.');result.completedAt=Date.now();/** completedResult: 이후 계정 보상 로직에 연결할 확인·퇴장 완료 결과. */ ws.completedResult=result;ws.matchResult=null;send(ws,'game.result.left');}
+        else {if(result.seenAt===null)return fail('RESULT_NOT_SEEN','점수화면을 먼저 확인해 주세요.');result.completedAt=Date.now();/** completedResult: 이후 계정 보상 로직에 연결할 확인·퇴장 완료 결과. */ ws.completedResult=result;ws.matchResult=null;forgetSession(ws);send(ws,'game.result.left');}
       }else if(m.type==='game.interact'||m.type==='game.interact.confirm'){
         if(!room||room.phase!=='started')return fail('GAME_NOT_STARTED','게임 중에만 상호작용할 수 있습니다.');
         const /** player: 요청한 플레이어. */ player=room.players.get(ws.id);
@@ -268,6 +317,9 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
             Object.assign(player,globalThis.PitMapRules.center(tile,room.map));
             player.pendingCasts=[];player.movementClock={last:Date.now(),credit:50};
             player.playerNumber=index+1;player.spawnTileId=tile.id;player.roll=null;player.input={x:0,y:0};player.inputQueue=[];
+            /** reconnectToken: 이 게임의 캐릭터 복귀 전용 256비트 비공개 토큰. 공개 스냅샷에는 포함하지 않는다. */ player.ws.reconnectToken=randomBytes(32).toString('hex');
+            reconnectSessions.set(player.ws.reconnectToken,{/** ws: 캐릭터를 소유한 최신 연결. */ ws:player.ws,/** expiresAt: 끊긴 뒤의 복귀 마감 시각(ms). 연결 중에는 null. */ expiresAt:null});
+            send(player.ws,'session.ready',{token:player.ws.reconnectToken,graceMs:RECONNECT_GRACE_MS});
             const /** lamp: 해당 플레이어 시작점의 귀환등. */ lamp=createReturnLamp(player);room.objects.set(lamp.id,lamp);
           });
           broadcast(room);
@@ -279,6 +331,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
   let /** lastTick: 직전 서버 시뮬레이션 실행 시각. */ lastTick = Date.now();
   const /** simulation: 게임 시뮬레이션 반복 타이머. */ simulation = setInterval(/** 등록한 주기에 맞춰 상태 갱신이나 정리 작업을 반복한다. */ () => {
     const /** now: 현재 처리 시각(밀리초). */ now = Date.now(), /** dt: 현재 프레임 또는 틱의 경과 시간(초). */ dt = Math.min((now - lastTick) / 1000, 0.1); lastTick = now;
+    for(const /** session: 유예시간 만료 여부를 검사할 메모리 복귀 기록. */ session of reconnectSessions.values())if(session.expiresAt!==null&&roomClock()>=session.expiresAt)leave(session.ws);
     for (const /** room: 현재 처리하는 방의 상태. */ room of rooms.values()) {
       if(globalThis.RoomTimerRules.expired(room,roomClock())) {closeExpiredRoom(room);continue;}
       if (room.phase !== 'started') continue;
@@ -287,6 +340,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
       const /** objects: 처리할 월드 개체 목록. */ objects = allObjects(room);
       for (const /** object: 현재 처리하는 월드 개체. */ object of objects) { regenerate(object.status, dt,now); updateSkillCooldowns(object,now); }
       for (const /** p: 현재 처리하는 플레이어 또는 검증 개체. */ p of room.players.values()) {
+        if(p.disconnectedUntil!=null)continue; // 이동만 정지하며 타겟·피해·회복·사망 판정에는 계속 참여한다.
         if (p.sequencedInput) {
           globalThis.InputTimeline.advance(p,room.map,now,/** 해당 이동 직후 시전을 실행한다. */ (/** command: 예약 시전. */ command)=>executeCast(room,p,command,now));
           continue;

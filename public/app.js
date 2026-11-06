@@ -7,6 +7,17 @@ let timerReceivedAt=0;
 let /** publicRooms: 마지막으로 수신한 공개 대기방 목록. */ publicRooms=[];
 const /** itemView: 점수 판정과 분리된 조각 비행 예측. */ itemView=new ItemView();
 let /** matchResult: 서버에서 확정한 현재 점수화면 자료. */ matchResult=null;
+let /** resumeToken: 같은 브라우저에서 기존 게임을 복구할 비공개 토큰. */ resumeToken=null;
+let /** resuming: 복귀 응답을 받기 전 신규 방 조작을 막는 상태. */ resuming=false;
+/** 접속 모드·로그인 계정별로 복귀 권한 저장 공간을 구분한다. */
+function resumeStorageKey(){return 'children-of-bottom:resume:'+CLIENT_MODE+':'+(accountProfile?.id??'guest');}
+/** 새로고침·브라우저 재실행 후에도 같은 게임으로 돌아갈 토큰을 읽는다. 저장 차단 시 메모리 값을 사용한다. */
+function readResumeToken(){try{return localStorage.getItem(resumeStorageKey());}catch{return resumeToken;}}
+/** 복귀 토큰을 저장하거나 명시적 종료 시 폐기한다. 게임 수치는 저장하지 않는다. */
+function saveResumeToken(/** token: 서버가 발급한 토큰 또는 폐기용 null. */ token){
+  resumeToken=token;
+  try{if(token)localStorage.setItem(resumeStorageKey(),token);else localStorage.removeItem(resumeStorageKey());}catch{}
+}
 let /** interactionTargetId: 현재 가까운 사용 가능한 상호작용 대상. */ interactionTargetId=null;
 let /** interactionConfirmation: 서버 발급 일회성 Y/N 확인 ID. */ interactionConfirmation=null;
 /** 가장 가까운 사용 가능 NPC·사물을 선택하고 공통 버튼을 갱신한다. */
@@ -22,13 +33,15 @@ function confirmEscape(/** accept: 탈출을 수락했는지 여부. */ accept){
 $('escape-yes').onclick=/** Y 버튼의 탈출 수락. */ ()=>confirmEscape(true);
 $('escape-no').onclick=/** N 버튼의 탈출 취소. */ ()=>confirmEscape(false);
 $('escape-dialog').addEventListener('cancel',/** Escape로 닫아도 서버 확인을 취소한다. */ (/** event: 기본 취소 이벤트. */ event)=>{event.preventDefault();confirmEscape(false);});
-$('score-exit').onclick=/** 서버 결과 화면 확인 후 처음 화면으로 돌아간다. */ ()=>{if(!matchResult)return;if(!matchResult.disconnected&&socket?.readyState===WebSocket.OPEN)send('game.result.leave',{resultId:matchResult.id});else{matchResult=null;render();}};
-const /** messages: 연결 종료 등에 사용할 안내 문구 모음. */ messages = { closed: '방이 해제되었습니다.', offline: '연결이 끊어졌습니다. 방에서 퇴장했습니다. 다시 연결 중…' };
+$('score-exit').onclick=/** 서버 결과 화면 확인 후 처음 화면으로 돌아간다. */ ()=>{if(!matchResult)return;if(!matchResult.disconnected&&socket?.readyState===WebSocket.OPEN)send('game.result.leave',{resultId:matchResult.id});else{saveResumeToken(null);matchResult=null;render();}};
+const /** messages: 연결 종료 등에 사용할 안내 문구 모음. */ messages = { closed: '방이 해제되었습니다.', offline: '연결이 끊어졌습니다. 다시 연결 중… 진행 중인 게임은 2분 안에 자동 복귀합니다. 캐릭터는 남아 피해를 받을 수 있습니다.' };
 /** notice: 안내 문구를 표시하거나 비어 있으면 숨긴다. */ function notice(/** message: 사용자나 연결에 전달할 안내 내용. */ message) { $('notice').textContent = message; $('notice').hidden = !message; }
 /** settle: 요청 대기 상태와 제한 시간을 해제하고 UI를 다시 그린다. */ function settle() { pending = null; clearTimeout(timeout); render(); }
 /** send: 메시지 종류와 프로토콜 버전을 붙여 현재 연결로 전송한다. */ function send(/** type: 처리하거나 기다릴 메시지 또는 이벤트 유형. */ type, /** data: 전달하거나 해석한 데이터. */ data = {}) {
   if (!socket || socket.readyState !== WebSocket.OPEN) return notice('서버 연결을 기다려 주세요.');
+  if(resuming)return notice('기존 게임으로 복귀하는 중입니다.');
   if (pending) return;
+  if(type==='room.leave'||type==='game.result.leave')saveResumeToken(null);
   const /** requestId: 요청과 응답을 대응시키는 식별자. */ requestId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
   pending = requestId;
   socket.send(JSON.stringify({ v: 1, type, requestId, ...data }));
@@ -73,7 +86,7 @@ window.addEventListener('click',/** 지도 닫기 뒤 합성 클릭이 공격·�
 },true);
 $('minimap').onkeydown=/** 키보드 접근성으로 전체맵를 연다. */ (/** event: 키 입력. */ event)=>{if(['Enter','Space'].includes(event.code)){event.preventDefault();setExpandedMap(true);}};
 /** render: 접속·로비·진행 상태에 맞춰 화면과 버튼 활성 상태를 갱신한다. */ function render() {
-  const /** online: 서버 연결과 본인 식별자 준비 여부. */ online = socket?.readyState === WebSocket.OPEN && !!playerId;
+  const /** online: 서버 연결과 복귀 확인까지 마친 조작 가능 여부. */ online = socket?.readyState === WebSocket.OPEN && !!playerId&&!resuming;
   const /** playing: 현재 방이 게임 진행 중인지 여부. */ playing = room?.phase === 'started';
   $('score-screen').hidden=!matchResult;
   $('home').hidden = !!room||!!matchResult; $('lobby').hidden = !room || playing;
@@ -112,32 +125,39 @@ $('minimap').onkeydown=/** 키보드 접근성으로 전체맵를 연다. */ (/*
 }
 /** connect: 게임 서버에 연결하고 수신 상태 반영·연결 종료·재접속을 처리한다. */ function connect() {
   playerId = null;
+  resumeToken=readResumeToken();resuming=!!resumeToken;
   const /** ws: 현재 처리 중인 WebSocket 연결. */ ws = socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws?client=${CLIENT_MODE}`);
   $('connection').textContent = '서버에 연결 중…'; render();
   ws.onmessage = /** onmessage: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ (/** data: 전달하거나 해석한 데이터. */ { data }) => {
+    if(socket!==ws)return;
     let /** m: 수신 메시지 또는 문자열 패턴 일치 결과. */ m; try { m = JSON.parse(data); } catch { return; }
     if (m.v !== 1) return;
+    if(m.type==='session.ready'){saveResumeToken(m.token);return;}
+    if(m.type==='session.resumed'){playerId=m.playerId;resuming=false;matchResult=null;motionView.clear();notice('게임에 다시 연결되었습니다.');render();return;}
+    if(m.type==='session.rejected'){saveResumeToken(null);resuming=false;matchResult=null;notice(m.message);render();return;}
     if(m.type==='game.result'){
       matchResult=m.result;room=null;miniMap.clear();itemView.clear();motionView.clear();interactionConfirmation=null;$('escape-dialog').close();
       $('score-value').textContent=String(matchResult.competitionPoints);$('score-reason').textContent={DEATH:'사망했습니다.',TIME_LIMIT:'게임 시간이 종료되었습니다.',ESCAPE:'탈출했습니다.'}[matchResult.reason]??'게임 종료';
       settle();socket.send(JSON.stringify({v:1,type:'game.result.seen',resultId:matchResult.id}));return;
     }
     if(m.type==='game.result.ready')return;
-    if(m.type==='game.result.left'){matchResult=null;notice('');}
+    if(m.type==='game.result.left'){saveResumeToken(null);matchResult=null;notice('');}
     if(m.type==='interaction.prompt'){interactionConfirmation=m.id;resetInput();$('escape-dialog').showModal();}
     if(m.type==='room.list')publicRooms=Array.isArray(m.rooms)?m.rooms:[];
-    if (m.type === 'welcome') { playerId = m.playerId; $('connection').textContent = '● 실시간 서버 연결됨'; }
+    if (m.type === 'welcome') { playerId = m.playerId; $('connection').textContent = '● 실시간 서버 연결됨';if(resumeToken){notice('기존 게임으로 복귀하는 중입니다.');ws.send(JSON.stringify({v:1,type:'session.resume',token:resumeToken}));} }
     if (m.type === 'game.state') { if (room?.code === m.room.code) { itemView.receive(m.room,Date.now()); const /** items: 이전 틱의 아이템을 변경분과 합칠 ID 목록. */ items=new Map((room.items??[]).map(/** ID별 자료를 만든다. */ (/** item: 필드 아이템. */ item)=>[item.id,item]));
       for(const /** item: 이번 틱 변경 아이템. */ item of m.room.itemChanges?.updates??[])items.set(item.id,item);
       for(const /** id: 획득 완료 ID. */ id of m.room.itemChanges?.removed??[])items.delete(id);
       room = {...m.room,map:m.room.map??room.map,items:m.room.items??[...items.values()]}; timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); updateSkillControls();updateTestOptions();updatePlayerStatus();updateInteraction(); $('game-status').textContent=`${room.players.length}명 · 경쟁포인트 ${room.players.find(/** 본인 점수를 조회한다. */ (/** player: 수신 플레이어. */ player)=>player.id===playerId)?.status?.competitionPoints??0}`; } return; }
     if (m.type === 'room.state') { const /** entering: 새로운 방 상태로 진입했는지 여부. */ entering = !room || room.code !== m.room.code; room = m.room; itemView.receive(room,Date.now()); timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); if (entering) {miniMap.clear();syncTargetPriority();} notice(''); }
-    if (m.type === 'room.closed' || m.type === 'room.left') { interactionConfirmation=null;$('escape-dialog').close();room = null; miniMap.clear(); itemView.clear(); notice(m.type === 'room.closed' ? (m.message??messages.closed) : '방에서 나왔습니다.'); if(m.type==='room.closed') settle(); }
+    if (m.type === 'room.closed' || m.type === 'room.left') { saveResumeToken(null);interactionConfirmation=null;$('escape-dialog').close();room = null; miniMap.clear(); itemView.clear(); notice(m.type === 'room.closed' ? (m.message??messages.closed) : '방에서 나왔습니다.'); if(m.type==='room.closed') settle(); }
     if (m.type === 'error') notice(m.message);
     if ((m.type === 'ack' || m.type === 'error') && m.requestId === pending) settle();
     render();
   };
   ws.onclose = /** event: 현재 처리하는 사용자 입력 또는 연결 이벤트. */ /** onclose: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ event => {
+    if(socket!==ws)return;
+    if(event?.code===4001){resumeToken=null;resuming=false;room=null;playerId=null;motionView.clear();resetInput();settle();notice('다른 연결에서 게임에 복귀했습니다. 이 화면을 닫아 주세요.');return;}
     if(matchResult){/** disconnected: 연결이 끝난 결과는 재접속 후에도 첫 화면으로 나갈 수 있다. 보상 자격을 새로 만들지는 않는다. */ matchResult.disconnected=true;}interactionConfirmation=null;$('escape-dialog').close();room = null; miniMap.clear(); itemView.clear(); publicRooms=[]; playerId = null; settle(); notice(messages.offline); $('connection').textContent = '○ 연결 끊김 · 재시도 중';
     clearTimeout(reconnectTimer);
     if (CLIENT_MODE === 'app' && event?.reason === 'App login required') { accountProfile = null; initializeClient(); return; }

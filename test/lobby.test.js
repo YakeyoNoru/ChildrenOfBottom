@@ -3,6 +3,84 @@ import /** assert: 실제 결과와 기대 조건을 비교해 테스트 실패�
 import /** WebSocket: 클라이언트 연결 생성 또는 WebSocket 연결 상태 상수를 제공한다. */ WebSocket from 'ws';
 import { /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증을 제공하는 서버를 생성한다. */ createGameServer } from '../server.js';
 
+/** 실제 소켓 종료·서버 틱 조건을 제한 시간 안에 확인한다. */
+async function waitFor(/** accept: 서버에 반영됐는지 검사할 조건. */ accept){
+ const /** deadline: 실패로 처리할 실제 시각(ms). */ deadline=Date.now()+2000;
+ while(!accept()){if(Date.now()>=deadline)throw Error('서버 조건 대기시간 초과');await new Promise(/** 다음 이벤트 루프에서 서버 상태를 재검사한다. */ (/** resolve: 10ms 대기 완료 함수. */ resolve)=>setTimeout(resolve,10));}
+}
+
+test('guest resumes the same stopped and damageable character without replaying stale input',/** 실제 연결 종료 후 ID·스탯·아이템·좌표·입력 순번 복구를 검증한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
+ const /** a: 원래 방장; b: 관찰자; client: 신규 연결 생성기; rooms: 방 목록; code: 방 코드. */ {a,b,client,rooms,code}=await startedPair(t);
+ const /** room: 진행 중 방; player: 복귀할 동일 서버 객체; token: 비공개 복귀 권한. */ room=rooms.get(code),player=room.players.get(a.id),{token}=await a.next('session.ready');
+ room.objects.clear();room.items.clear();player.status.healthRegen=0;player.status.competitionPoints=37;
+ player.inputQueue=[{seq:9,x:1,y:0}];player.pendingCasts=[{slot:'A',sequence:9}];player.lastReceivedInput=9;
+ a.ws.terminate();await waitFor(/** 서버 연결 종료 처리를 기다린다. */ ()=>player.disconnectedUntil!=null);
+ const /** position: 끊긴 시점의 확정 월드 좌표. */ position={x:player.x,y:player.y};
+ assert.equal(player.roll,null);assert.equal(player.inputQueue.length,0);assert.equal(player.pendingCasts.length,0);
+ await new Promise(/** 이동이 멈춰 있는지 확인할 시간을 준다. */ (/** resolve: 대기 완료 함수. */ resolve)=>setTimeout(resolve,110));
+ assert.equal(player.x,position.x);assert.equal(player.y,position.y);
+ // 다른 참가자의 실제 서버 공격으로 끊긴 캐릭터도 피해를 받는다.
+ const /** attacker: 공격 입력을 보낼 동료 플레이어. */ attacker=room.players.get(b.id);
+ attacker.x=player.x-30;attacker.y=player.y;attacker.facing=0;
+ b.ws.send(JSON.stringify({v:1,type:'game.cast',slot:'A'}));
+ await waitFor(/** 서버 피해 적용을 기다린다. */ ()=>player.status.currentHealth<10);
+ const /** health: 복귀 직전 서버 체력; reconnect: 새 브라우저 연결. */ health=player.status.currentHealth,reconnect=await client();
+ await reconnect.command('session.resume',{token},'session.resumed');
+ const /** state: 재접속으로 받은 지도·아이템 포함 전체 상태. */ state=(await reconnect.next('room.state')).room;
+ assert.equal(room.players.get(a.id),player);assert.equal(player.disconnectedUntil,null);assert.equal(player.status.currentHealth,health);
+ assert.equal(player.status.competitionPoints,37);assert.equal(player.x,position.x);assert.equal(player.y,position.y);assert.equal(room.players.size,2);
+ assert.ok(state.map);assert.ok(Array.isArray(state.items));assert.equal(JSON.stringify(state).includes(token),false);
+ reconnect.ws.send(JSON.stringify({v:1,type:'game.input',seq:1,x:1,y:0}));
+ await waitFor(/** 복귀 후 첫 입력이 정상 승인될 때까지 기다린다. */ ()=>player.lastProcessedInput===1);
+ assert.ok(player.x>position.x);
+});
+
+test('reconnect tokens reject guesses, expire and are revoked by explicit leave',/** 다른 토큰·시간 만료·직접 나가기 이후 복귀 거부를 검증한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
+ let /** clock: 복귀 마감을 검사할 서버 시각(ms). */ clock=Date.now();
+ const /** a: 기존 연결; client: 연결 생성기; rooms: 방 목록; code: 대상 방 번호. */ {a,client,rooms,code}=await startedPair(t,{roomClock:/** 검증 시각을 반환한다. */ ()=>clock});
+ const /** token: 기존 캐릭터 전용 권한; other: 무관한 연결. */ {token}=await a.next('session.ready'),other=await client();
+ assert.equal((await other.command('session.resume',{token:'0'.repeat(64)},'session.rejected')).type,'session.rejected');
+ await a.command('room.leave');
+ await other.command('session.resume',{token},'session.rejected');
+ assert.equal(rooms.get(code).players.has(a.id),false);
+ const /** next: 만료 검증용 다른 게임의 연결. */ next=await client();
+ await next.command('room.create',{name:'expiry'});const /** created: 새로 만든 방 번호. */ created=(await next.next('room.state')).room;
+ await next.command('room.start');const /** nextToken: 만료시킬 복귀 권한. */ {token:nextToken}=await next.next('session.ready');
+ const /** nextRoom: 연결이 끊겨도 유지할 방; nextPlayer: 마감을 기다릴 캐릭터. */ nextRoom=rooms.get(created.code),nextPlayer=nextRoom.players.get(next.id);nextRoom.objects.clear();
+ next.ws.terminate();await waitFor(/** 서버의 연결 종료 처리를 기다린다. */ ()=>nextPlayer.disconnectedUntil!=null);
+ clock+=120000;
+ await other.command('session.resume',{token:nextToken},'session.rejected');
+ assert.equal(rooms.has(created.code),false);
+});
+
+test('death and room time limit while disconnected resume to results rather than gameplay',/** 연결이 끊긴 동안 사망·시간 종료 시 확정 점수화면으로 복귀하는지 검증한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
+ let /** clock: 방 만료를 진행시킬 검증 시각(ms). */ clock=Date.now();
+ const /** a: 연결을 끊을 플레이어; b: 같은 방 플레이어; client: 연결 생성기; rooms: 방 목록; code: 방 번호. */ {a,b,client,rooms,code}=await startedPair(t,{roomClock:/** 검증 시각을 반환한다. */ ()=>clock});
+ const /** room: 대상 게임; player: 연결을 끊을 캐릭터; token: 본인 전용 복귀 권한. */ room=rooms.get(code),player=room.players.get(a.id),{token}=await a.next('session.ready');room.objects.clear();
+ a.ws.terminate();await waitFor(/** 서버의 연결 종료 처리를 기다린다. */ ()=>player.disconnectedUntil!=null);
+ player.status.currentHealth=0;player.status.state='dead';
+ await waitFor(/** 사망 결과가 확정될 때까지 기다린다. */ ()=>!room.players.has(a.id));
+ const /** reconnect: 사망 후 복귀할 연결. */ reconnect=await client();await reconnect.command('session.resume',{token},'session.resumed');
+ const /** result: 복귀하여 받은 확정 결과. */ result=(await reconnect.next('game.result')).result;assert.equal(result.reason,'DEATH');
+ await reconnect.command('game.result.seen',{resultId:result.id},'game.result.ready');await reconnect.command('game.result.leave',{resultId:result.id},'game.result.left');
+ const /** stranger: 종료된 권한을 재사용할 연결; bToken: 생존자의 복귀 권한. */ stranger=await client(),{token:bToken}=await b.next('session.ready');
+ await stranger.command('session.resume',{token},'session.rejected');
+ b.ws.terminate();await waitFor(/** 생존자의 연결 종료 처리를 기다린다. */ ()=>room.players.get(b.id).disconnectedUntil!=null);
+ room.countdownEndsAt=clock+1000;clock+=1000;
+ await waitFor(/** 마지막 생존자도 시간 종료 처리될 때까지 기다린다. */ ()=>!rooms.has(code));
+ await stranger.command('session.resume',{token:bToken},'session.resumed');
+ assert.equal((await stranger.next('game.result')).result.reason,'TIME_LIMIT');
+});
+
+test('resume replaces a half-open connection exactly once without removing its character',/** 예전 소켓의 뒤늦은 종료가 복귀한 캐릭터를 제거하지 않는지 검증한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
+ const /** a: 아직 열린 이전 연결; client: 연결 생성기; rooms: 방 목록; code: 게임 번호. */ {a,client,rooms,code}=await startedPair(t);
+ const /** token: 캐릭터 복귀 권한; next: 새 연결; player: 기존 서버 캐릭터 객체. */ {token}=await a.next('session.ready'),next=await client(),player=rooms.get(code).players.get(a.id);
+ await next.command('session.resume',{token},'session.resumed');await next.next('room.state');
+ await waitFor(/** 예전 소켓의 종료를 확인한다. */ ()=>a.ws.readyState===WebSocket.CLOSED);
+ assert.equal(rooms.get(code).players.get(a.id),player);assert.equal(player.disconnectedUntil,null);
+ assert.equal((await next.command('session.resume',{token},'session.rejected')).type,'session.rejected');
+});
+
 /** setup: 테스트 서버와 정리 작업을 준비해 검증용 인터페이스를 반환한다. */ async function setup(/** t: 테스트 정리·검증 문맥 또는 프레임 시각. */ t, /** options: 기본값을 재정의하는 생성·요청 옵션. */ options) {
   const /** game: 서버 인스턴스와 방 관리 인터페이스. */ game = createGameServer(options);
   await new Promise(/** resolve: 비동기 처리를 성공으로 완료하는 함수. */ /** 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ resolve => game.server.listen(0, '127.0.0.1', resolve));
@@ -161,17 +239,19 @@ test('playing host leaves alone, successor can move, room disappears only after 
   assert.equal(rooms.has(code),true);
   await b.command('room.leave');await b.next('room.left');assert.equal(rooms.has(code),false);
 });
-test('playing host disconnect and heartbeat timeout preserve the remaining game', /** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ async /** t: 테스트 정리·검증 문맥 또는 프레임 시각. */ t => {
-  const /** a: 첫 번째 검증용 값·개체·접속 결과; b: 두 번째 검증용 값·개체·접속 결과; rooms: 접속코드별 방 상태를 보관하는 맵; code: 개체·기술·방 또는 오류를 식별하는 코드. */ {a,b,rooms,code} = await startedPair(t,{heartbeatMs:50});
-  a.ws._autoPong = false;
-  let /** state: 현재 상태 스냅샷. */ state; do {state = await b.next('game.state');} while(state.room.players.length !== 1);
-  assert.equal(state.room.phase,'started'); assert.equal(rooms.get(code).hostId,b.id);
-  b.ws.terminate();
-  await new Promise(/** resolve: 비동기 처리를 성공으로 완료하는 함수. */ /** 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ resolve => b.ws.once('close',resolve));
-  await new Promise(/** resolve: 비동기 처리를 성공으로 완료하는 함수. */ /** 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ resolve => setImmediate(resolve));
-  // 서버의 연결 종료 프레임은 다음 이벤트 루프에서 처리될 수 있다.
-  for(let /** i: 현재 반복 항목의 순번. */ i=0; i<20 && rooms.has(code); i++) await new Promise(/** resolve: 비동기 처리를 성공으로 완료하는 함수. */ /** 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ resolve=>setTimeout(resolve,5));
-  assert.equal(rooms.has(code),false);
+test('heartbeat loss retains both players until the two-minute reconnect deadline',/** 방장·마지막 참가자의 끊김이 즉시 방을 삭제하지 않는지 검증한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
+ let /** clock: 2분 경계를 검증할 서버 시각(ms). */ clock=Date.now();
+ const /** a: 방장 연결; b: 참가자 연결; rooms: 방 목록; code: 진행 중 방 코드. */ {a,b,rooms,code}=await startedPair(t,{heartbeatMs:50,roomClock:/** 고정된 검증 시각을 제공한다. */ ()=>clock});
+ const /** room: 유지 중인 게임. */ room=rooms.get(code);room.objects.clear();
+ a.ws._autoPong=false;
+ await waitFor(/** 무응답 방장이 유예 상태가 될 때까지 기다린다. */ ()=>room.players.get(a.id).disconnectedUntil!=null);
+ assert.equal(room.players.size,2);assert.equal(room.hostId,a.id);
+ b.ws.terminate();
+ await waitFor(/** 마지막 연결도 종료될 때까지 기다린다. */ ()=>room.players.get(b.id).disconnectedUntil!=null);
+ clock+=119999;
+ await new Promise(/** 경계 직전 서버 틱을 기다린다. */ (/** resolve: 대기 완료 함수. */ resolve)=>setTimeout(resolve,70));
+ assert.equal(room.players.size,2);assert.equal(rooms.has(code),true);
+ clock+=1;await waitFor(/** 정확히 2분 뒤 빈 방이 제거될 때까지 기다린다. */ ()=>!rooms.has(code));
 });
 test('movement is validated, bounded, diagonal normalized, stale input stops', /** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ async /** t: 테스트 정리·검증 문맥 또는 프레임 시각. */ t => {
   const /** a: 첫 번째 검증용 값·개체·접속 결과; b: 두 번째 검증용 값·개체·접속 결과; rooms: 접속코드별 방 상태를 보관하는 맵; code: 개체·기술·방 또는 오류를 식별하는 코드. */ {a,b,rooms,code} = await startedPair(t);
@@ -430,7 +510,7 @@ test('room start spawns monsters and synchronizes server AI, retaliation effects
     if(snapshot.presetId==='몬스터C01'){assert.equal(tile.kind,'boss');assert.ok([1,2].includes(tile.height));}
     else{assert.ok(['normal','rich'].includes(tile.kind));assert.ok(snapshot.presetId==='몬스터A01'?[1,2].includes(tile.height):tile.height===2);}
   }
-  const /** monster: 서버 반격을 검증할 생성 몬스터. */ monster=[...room.objects.values()].find(/** 반격할 몬스터를 고른다. */ (/** object: 서버 개체. */ object)=>object.status.objectType==='enemy');
+  const /** monster: 1.5초 반격 패턴을 검증할 일반 몬스터. 보스 패턴과 구분한다. */ monster=[...room.objects.values()].find(/** 일반 반격 프리셋만 고른다. */ (/** object: 서버 개체. */ object)=>object.presetId==='몬스터A01');
   const /** attacker: 인위적 피해의 실제 공격자. */ attacker=room.players.get(connection.id);
   // 생성점까지의 직선이 지형 안에 있도록 대상과 몬스터의 중심을 잠시 일치시킨다.
   attacker.x=monster.x;attacker.y=monster.y;attacker.status.maxHealth=1000;attacker.status.currentHealth=1000;
@@ -504,7 +584,7 @@ test('live-server test options require the exact server player name and never af
 test('three actual monster kills synchronize level and experience to multiplayer snapshots',/** 서버 시전부터 경험치 지급·레벨업·동기화까지 실제 연결로 검증한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
  const /** a: 공격자 연결; b: 관찰자 연결; rooms: 서버 방 목록; code: 방 코드. */ {a,b,rooms,code}=await startedPair(t);
  const /** room: 진행 중 방; player: 경험치 획득 플레이어; createMonster: 실제 몬스터 생성기. */ room=rooms.get(code),player=room.players.get(a.id),{createMonster}=await import('../game/monsters.js');
- room.objects.clear();player.status.attack=100;
+ room.objects.clear();room.items.clear();player.status.attack=100; // 자동 조각 획득 경험치가 처치 경험치 검증에 섞이지 않게 한다.
  for(let /** index: 처치 순번. */ index=0;index<3;index++){
   const /** monster: 프리셋 경험치20 처치 대상. */ monster=createMonster('몬스터A01',{x:player.x+30,y:player.y});monster.status.stunned=true;room.objects.set(monster.id,monster);
   a.ws.send(JSON.stringify({v:1,type:'game.cast',slot:'A'}));

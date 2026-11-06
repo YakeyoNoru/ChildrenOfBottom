@@ -3,9 +3,35 @@ import /** assert: 실제 결과와 기대 조건을 비교해 테스트 실패�
 import { /** readFileSync: 설정·계정·테스트 소스 파일을 동기적으로 읽는다. */ readFileSync } from 'node:fs';
 import /** vm: 브라우저·표시 코드를 격리 문맥에서 실행한다. */ vm from 'node:vm';
 
+test('stored guest token restores the original player after disconnect and page reload',/** 브라우저 저장·자동 복귀·입력 초기화와 명시적 종료를 검증한다. */ ()=>{
+ const /** first: 연결이 끊기기 전 브라우저 화면. */ first=client();
+ first.receive({type:'room.state',room:first.state});first.receive({type:'session.ready',token:'a'.repeat(64)});
+ first.run('motionView.sequence=8;socket.close()');assert.equal(first.storage.size,1);
+ const /** reload: 같은 저장 공간으로 새로 연 화면. */ reload=client('web',first.storage);
+ assert.equal(reload.run('socket.sent.at(-1).type'),'session.resume');assert.equal(reload.run('socket.sent.at(-1).token'),'a'.repeat(64));
+ assert.equal(reload.elements.get('create').disabled,true);
+ reload.receive({type:'session.resumed',playerId:'original-player'});
+ reload.receive({type:'room.state',room:{...reload.state,players:[{id:'original-player',x:0,y:0,name:'복귀자'}]}});
+ assert.equal(reload.run('playerId'),'original-player');assert.equal(reload.run('resuming'),false);assert.equal(reload.run('motionView.sequence'),0);
+ assert.equal(reload.elements.get('game').hidden,false);
+ reload.run("send('room.leave')");assert.equal(first.storage.size,0);
+});
+
+test('expired resume returns to home and takeover close preserves the other tab token',/** 복귀 실패·중복 연결 종료·점수화면 종료 시 토큰 처리를 검사한다. */ ()=>{
+ const /** browser: 복귀 실패를 검사할 화면. */ browser=client();browser.receive({type:'session.ready',token:'b'.repeat(64)});
+ browser.run('connect()');browser.receive({type:'welcome',playerId:'temporary'});
+ browser.receive({type:'session.rejected',message:'유예시간 만료'});
+ assert.equal(browser.storage.size,0);assert.equal(browser.run('resuming'),false);assert.equal(browser.elements.get('create').disabled,false);
+ browser.receive({type:'session.ready',token:'c'.repeat(64)});
+ browser.run('socket.readyState=3;socket.onclose({code:4001})');assert.equal(browser.storage.size,1);assert.equal(browser.run('resumeToken'),null);
+ const /** score: 결과 화면을 떠나는 브라우저. */ score=client();score.receive({type:'session.ready',token:'d'.repeat(64)});
+ score.receive({type:'game.result',result:{id:'result',competitionPoints:7,reason:'DEATH'}});
+ score.receive({type:'game.result.left'});assert.equal(score.storage.size,0);
+});
+
 // 브라우저 API 대역으로 실제 클라이언트의 화면 상태와 입력을 검증한다.
 // npm 테스트 실행에 별도 브라우저 설치를 요구하지 않는다.
-/** client: 실제 클라이언트 코드를 API 대역에서 실행하거나 검증용 접속자를 생성한다. */ function client(/** mode: 웹 게스트와 APK 계정을 구분하는 접속 모드. */ mode='web') {
+/** client: 실제 클라이언트 코드를 API 대역에서 실행하거나 검증용 접속자를 생성한다. */ function client(/** mode: 웹 게스트와 APK 계정을 구분하는 접속 모드. */ mode='web',/** storage: 새로고침 전후 공유할 브라우저 저장 대역. */ storage=new Map()) {
   /** Element: 브라우저 API 또는 연결 객체를 대신해 실제 클라이언트의 상태·입력을 검증한다. */
 class Element extends EventTarget {
     /** children: 상태 목록 등 DOM에 추가된 테스트 하위 요소. */ children=[];
@@ -31,7 +57,8 @@ class Socket {
   const /** document: 테스트용 문서 API 대역. */ document=new EventTarget(); document.hidden=false;document.body=new Element();document.documentElement=new Element();
   document.getElementById=/** id: 대상 개체 또는 요소의 식별자. */ /** getElementById: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ id=>elements.get(id);document.createElement=/** createElement: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ ()=>new Element();
   const /** window: 테스트용 창 이벤트 API 대역. */ window=new EventTarget(), /** timers: 테스트에서 등록한 주기 실행 함수 목록. */ timers=[];
-  const /** context: 그리기 또는 테스트용 격리 실행 문맥. */ context=vm.createContext({document,window,WebSocket:Socket,/** matchMedia: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ matchMedia:()=>({matches:false,/** addEventListener: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ addEventListener(){}}),location:{protocol:'http:',host:'localhost'},crypto:{/** randomUUID: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ randomUUID:()=>String(Math.random())},navigator:{userAgent:''},innerWidth:950,innerHeight:500,/** setTimeout: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ setTimeout:()=>1,/** clearTimeout: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ clearTimeout(){},/** setInterval: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ setInterval:/** fn: 등록하거나 실행할 콜백 함수. */ fn=>timers.push(fn),/** requestAnimationFrame: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ requestAnimationFrame(){}});
+  const /** context: 그리기 또는 테스트용 격리 실행 문맥. */ context=vm.createContext({document,window,WebSocket:Socket,
+    localStorage:{/** 저장된 복귀 토큰을 조회한다. */ getItem(/** key: 계정별 저장 키. */ key){return storage.get(key)??null;},/** 복귀 권한을 보관한다. */ setItem(/** key: 저장 키. */ key,/** value: 저장할 토큰. */ value){storage.set(key,value);},/** 명시적 종료 후 권한을 폐기한다. */ removeItem(/** key: 제거할 키. */ key){storage.delete(key);}},/** matchMedia: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ matchMedia:()=>({matches:false,/** addEventListener: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ addEventListener(){}}),location:{protocol:'http:',host:'localhost'},crypto:{/** randomUUID: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ randomUUID:()=>String(Math.random())},navigator:{userAgent:''},innerWidth:950,innerHeight:500,/** setTimeout: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ setTimeout:()=>1,/** clearTimeout: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ clearTimeout(){},/** setInterval: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ setInterval:/** fn: 등록하거나 실행할 콜백 함수. */ fn=>timers.push(fn),/** requestAnimationFrame: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ requestAnimationFrame(){}});
   vm.runInContext(readFileSync(new URL('../public/client-mode.js',import.meta.url),'utf8'),context);
   vm.runInContext(readFileSync(new URL('../public/viewport.js',import.meta.url),'utf8'),context);
   vm.runInContext(readFileSync(new URL('../public/pit-map-rules.js',import.meta.url),'utf8'),context);
@@ -46,7 +73,7 @@ class Socket {
   const /** receive: 서버 메시지 수신을 재현하는 테스트 함수. */ receive=/** message: 사용자나 연결에 전달할 안내 내용. */ /** receive: 서버 스냅샷을 표시용 이력으로 복사하고 방 변경·순간이동을 반영한다. */ message=>run(`socket.onmessage({data:${JSON.stringify(JSON.stringify({v:1,...message}))}})`);
   receive({type:'welcome',playerId:'me'});
   const /** state: 현재 상태 스냅샷. */ state={code:'ABC123',hostId:'me',phase:'started',players:[{id:'me',name:'나',x:0,y:0},{id:'other',name:'동료',x:10,y:10}]};
-  return {elements,run,receive,state,window,timers};
+  return {elements,run,receive,state,window,timers,storage};
 }
 /** key: 키보드 이벤트를 만들어 지정한 대상에 전달한다. */ function key(/** target: 현재 처리할 대상 또는 이동할 URL. */ target,/** type: 처리하거나 기다릴 메시지 또는 이벤트 유형. */ type,/** code: 개체·기술·방 또는 오류를 식별하는 코드. */ code){const /** e: 검증할 이벤트·요소 모음·적 개체. */ e=new Event(type,{cancelable:true});Object.defineProperty(e,'code',{value:code});target.dispatchEvent(e);}
 
