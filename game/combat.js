@@ -45,7 +45,7 @@ export function applySkillDamage(
   /** now: 피해를 확정하는 서버 시각(밀리초). */ now,
   /** attacker: 서버에서 확인한 실제 공격자 개체. */ attacker=null,
 ) {
-  if (!Number.isFinite(amount) || amount<0 || target.status.state===LifeState.DEAD) return null;
+  if (!Number.isFinite(amount) || amount<0 || target.status.state===LifeState.DEAD || target.status.damageImmune) return null;
   const /** healthBefore: 피해를 적용하기 직전 체력. */ healthBefore = target.status.currentHealth;
   target.status.currentHealth=Math.max(0,healthBefore-amount);
   if(target.status.currentHealth<healthBefore){
@@ -53,6 +53,16 @@ export function applySkillDamage(
     /** healthRegenNextAt: 재피격 시 5초 회복 대기를 처음부터 다시 시작한다. */ target.status.healthRegenNextAt=now+5000;
   }
   normalizeVitals(target.status);
+  if(target.status.state===LifeState.DEAD&&!target.rewardGranted&&attacker?.id===instance.casterId&&attacker.status.objectType==='player'&&attacker.status.state===LifeState.ALIVE&&areEnemies(attacker.status,target.status)){
+    if(target.status.objectType==='player'){
+      /** points: 피해자 사망 시점 경쟁포인트의 절반. 소수점 이하는 버리며 피해자의 확정 점수는 변경하지 않는다. */ const points=Math.floor(target.status.competitionPoints/2);
+      target.rewardGranted=true;attacker.status.competitionPoints+=points;gainExperience(attacker.status,target.status.level*40);
+    }else if(target.status.objectType==='enemy'){
+      target.rewardGranted=true;gainExperience(attacker.status,target.status.experience);
+    }else if(target.status.objectType==='prop'&&target.status.classificationCode==='OBJ0001'){
+      target.rewardGranted=true;attacker.status.competitionPoints+=500;gainExperience(attacker.status,40);attacker.status.skillPoints+=1;
+    }
+  }
   if(attacker?.status?.objectType==='player'&&target.status.objectType==='enemy'&&healthBefore>target.status.currentHealth){
     addThreat(target.status,attacker.id,healthBefore-target.status.currentHealth);
     if(target.status.classificationCode==='TEST003')addThreat(target.status,attacker.id,50);
@@ -95,14 +105,6 @@ export function resolveSkillContacts(
     const /** attacker: 시전 ID에 대응하는 실제 플레이어 또는 몬스터 개체. */ attacker=objects.find(/** 공격자 ID를 검사한다. */ (/** object: 서버에 존재하는 공격 개체. */ object)=>object.id===instance.casterId);
     const /** result: 서버가 확정한 이번 접촉의 피해 결과. */ result=applySkillDamage(instance,target,damageRule(instance,target),now,attacker);
     if(!result) continue;
-    if(result.killed&&!target.rewardGranted&&(target.status.objectType==='enemy'||(target.status.objectType==='prop'&&target.status.classificationCode==='OBJ0001'))){
-      const /** killer: 현재 방에 남아 있는 실제 플레이어 공격자. */ killer=objects.find(/** 공격자 ID를 검증한다. */ (/** object: 월드 개체. */ object)=>object.id===instance.casterId&&object.status.objectType==='player'&&object.status.state==='alive');
-      if(killer){
-        /** rewardGranted: 동일 사망에 대한 처치 보상을 한 번만 확정한다. */ target.rewardGranted=true;
-        if(target.status.objectType==='enemy')gainExperience(killer.status,target.status.experience);
-        else {killer.status.competitionPoints+=500;gainExperience(killer.status,40);killer.status.skillPoints+=1;}
-      }
-    }
     instance.hitTimes.set(target.id,now);
     if(!instance.hits.includes(target.id)) instance.hits.push(target.id);
     instance.results.push(result);results.push(result);

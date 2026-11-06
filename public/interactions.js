@@ -21,3 +21,7 @@ InteractionRules.register('OBJ0001',{
   /** 실제 탈출 전 Y/N 확인을 요청한다. */
   run(){return {type:'escapePrompt',message:'탈출하시겠습니까? Y/N'};},
 });
+InteractionRules.register('NPC_EXIT',{
+  /** 탈출구는 소유자 제한 없이 생존 플레이어 누구나 같은 거리·확인 절차로 이용한다. */
+  run(){return {type:'escapePrompt',message:'탈출하시겠습니까? Y/N'};},
+});

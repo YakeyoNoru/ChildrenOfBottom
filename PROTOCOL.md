@@ -169,7 +169,7 @@ A/B/C의 재사용 대기는 시전자별 `skillCooldowns[slot]`에 다음 사�
 ## 게임 결과·공통 상호작용
 
 - `game.interact {targetId}`: 중심 거리 60 이내 사용 가능한 NPC/사물을 서버 분류코드 처리기로 호출한다.
-- `interaction.prompt {id,message}`: OBJ0001 탈출 Y/N 확인. 서버 발급 ID의 유효시간은 15초다.
+- `interaction.prompt {id,message}`: OBJ0001 귀환등 또는 NPC_EXIT 탈출구의 Y/N 확인. 서버 발급 ID의 유효시간은 15초다.
 - `game.interact.confirm {confirmationId,accept:boolean}`: Y/N 응답. Y는 대상 상태·거리·소유권을 다시 검사한다. 다른 분류코드 처리 결과는 `interaction.result {code,response}`로 전달할 수 있다.
 - `game.result {result:{id,competitionPoints,reason}}`: 사망(DEATH), 타이머 0(TIME_LIMIT), 탈출(ESCAPE) 시 서버 확정 점수. 참가자는 즉시 게임에서 제외된다.
 - `game.result.seen {resultId}` → `game.result.ready {resultId}`: 점수화면 표시 확인 기록. 결과는 본인 연결의 서버 ID만 허용한다.
@@ -184,3 +184,10 @@ A/B/C의 재사용 대기는 시전자별 `skillCooldowns[slot]`에 다음 사�
 `game.testOptions {mapHack:boolean,highSpeed:boolean}` 요청은 기존 requestId/ack 규칙을 따른다. 진행 중 생존 플레이어의 서버 이름이 정확히 `열쇠`인 경우에만 허용한다. 일반 이름은 FORBIDDEN, 불리언 이외 입력은 INVALID_OPTIONS로 거부한다. 적용 직후 room.state를 전송하고 이후 game.state에도 `testOptions`와 변경된 `status.moveSpeed`를 동기화한다. 기본 체크는 모두 false이며 새 참가 개체를 생성할 때 초기화한다. 고속화 적용 시 moveSpeed는 6, 해제 시 적용 전 기본값으로 돌아간다. 맵핵은 전체맵 표시만 변경한다.
 
 귀환등의 탈출 확인이 성공하면 서버는 해당 사물의 `interactionEnabled=false`를 남은 참가자에게 전송한다. 사물 자체의 체력·처치 보상은 유지한다.
+
+
+## 플레이어 처치와 시간제 탈출구
+
+플레이어 처치 시 사망 시점 피해자 경쟁포인트의 절반을 내림하여 처치자 `status.competitionPoints`에 더하며, 피해자 `status.level*40` 경험치를 공통 함수로 지급한다. 피해자의 점수화면 값은 유지한다. 보상은 서버 공통 피해 적용에서 한 번만 확정하고 기존 상태 스냅샷의 점수·경험치·레벨에 반영한다.
+
+실제 `gameStartedAt` 이후 360000ms에 높이 3, 480000ms에 생존 참가자가 2명 이상이면 높이 4의 무작위 타일 중앙에 탈출구 NPC를 각각 한 번 생성한다. 연결 끊김 유예 중인 생존자도 포함한다. `NPC_EXIT`는 `objectType=npc`, `status.damageImmune=true`, `interactionEnabled=true`, `spawnTileId`를 전송하며 모든 생존 플레이어가 공통 상호작용 거리 60 이내에서 이용한다. 모든 개체의 `status.damageImmune` 기본값은 false다. Y 성공 시 해당 NPC가 `room.objects`에서 제거되고 사용자는 `game.result`의 ESCAPE 결과를 받는다. 남은 참가자에게는 제거된 최신 개체 목록을 전송하며 다른 사용자의 동시 확인은 재검증으로 거부한다.

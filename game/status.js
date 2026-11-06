@@ -37,7 +37,7 @@ export /** createStatus: 모든 개체가 공유하는 수치·기술 슬롯·�
     status[field] = value;
   }
   if (!Number.isInteger(status.level) || status.level < 1) throw new TypeError('level must be an integer >= 1');
-  for (const /** field: 현재 처리하는 스테이터스 필드 이름. */ field of ['concealed', 'stunned']) {
+  for (const /** field: 은폐·기절·모든 피해 면역 여부를 저장할 공통 불리언 필드. */ field of ['concealed', 'stunned', 'damageImmune']) {
     status[field] = values[field] ?? false;
     if (typeof status[field] !== 'boolean') throw new TypeError(`Invalid ${field}`);
   }

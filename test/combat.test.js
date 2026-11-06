@@ -2,7 +2,19 @@ import { /** test: 테스트 시나리오를 등록한다. */ test } from 'node:
 import /** assert: 기대 결과를 검사한다. */ assert from 'node:assert/strict';
 import { /** createWorldObject: 검증용 월드 개체를 생성한다. */ createWorldObject } from '../game/status.js';
 import { /** castSkill: 서버 기술을 시전한다. */ castSkill, /** createSkillInstance: 독립 시전 정보를 만든다. */ createSkillInstance, /** skills: 기술 코드별 서버 정의. */ skills, /** skillCooldownRemaining: 남은 재사용 대기를 조회한다. */ skillCooldownRemaining, /** skillSnapshot: 전송용 기술 결과를 만든다. */ skillSnapshot } from '../game/skills.js';
-import { /** resolveSkillContacts: 공통 접촉·피해 흐름을 처리한다. */ resolveSkillContacts } from '../game/combat.js';
+import { /** applySkillDamage: 직접·투사체·장판의 공통 피해 적용을 검사한다. */ applySkillDamage, /** resolveSkillContacts: 공통 접촉·피해 흐름을 처리한다. */ resolveSkillContacts } from '../game/combat.js';
+
+test('player final blow grants floored half points and level times forty experience exactly once',/** 실제 사망 직전 포인트·레벨을 기준으로 보상하고 중복 피격으로 재지급하지 않는지 검사한다. */ ()=>{
+ const /** killer: 마지막 일격 플레이어; victim: 홀수 포인트를 보유한 레벨 3 플레이어; earlier: 선행 공격자. */ killer=createWorldObject({objectType:'player',classificationCode:'killer',competitionPoints:7}),victim=createWorldObject({objectType:'player',classificationCode:'victim',level:3,competitionPoints:101}),earlier=createWorldObject({objectType:'player',classificationCode:'earlier'});
+ const /** first: 선행 공격 정보; final: 마지막 공격 정보. */ first={id:'first',casterId:earlier.id,resultSequence:0},final={id:'last',casterId:killer.id,resultSequence:0};
+ applySkillDamage(first,victim,1,0,earlier);applySkillDamage(final,victim,100,1,killer);
+ assert.equal(victim.status.state,'dead');assert.equal(victim.status.competitionPoints,101);assert.equal(killer.status.competitionPoints,57);
+ assert.equal(killer.status.level,2);assert.equal(killer.status.currentExperience,70);assert.equal(earlier.status.currentExperience,0);
+ assert.equal(applySkillDamage(final,victim,100,2,killer),null);assert.equal(killer.status.competitionPoints,57);assert.equal(killer.status.currentExperience,70);
+ const /** environmental: 처치자 없는 환경 피해 대상. */ environmental=createWorldObject({objectType:'player',classificationCode:'environmental',competitionPoints:100});
+ applySkillDamage({id:'environment',casterId:killer.id,resultSequence:0},environmental,100,3);
+ assert.equal(killer.status.competitionPoints,57);assert.equal(killer.status.currentExperience,70);
+});
 
 /** 시전자와 피격 대상을 독립된 위치·수치로 생성한다. */
 function pair() {

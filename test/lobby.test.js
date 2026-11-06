@@ -9,6 +9,40 @@ async function waitFor(/** accept: 서버에 반영됐는지 검사할 조건. *
  while(!accept()){if(Date.now()>=deadline)throw Error('서버 조건 대기시간 초과');await new Promise(/** 다음 이벤트 루프에서 서버 상태를 재검사한다. */ (/** resolve: 10ms 대기 완료 함수. */ resolve)=>setTimeout(resolve,10));}
 }
 
+test('PvP final blow synchronizes killer rewards and preserves the victim result points',/** 실제 기술 요청부터 처치 보상·사망 점수화면·최신 상태 전송까지 검증한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
+ const /** a: 처치자 연결; b: 피해자 연결; rooms: 서버 방 목록; code: 방 번호. */ {a,b,rooms,code}=await startedPair(t);
+ const /** room: 검증할 방; killer: 처치자; victim: 레벨 3 피해자. */ room=rooms.get(code),killer=room.players.get(a.id),victim=room.players.get(b.id);
+ room.objects.clear();room.items.clear();killer.status.attack=100;victim.status.level=3;victim.status.competitionPoints=101;victim.x=killer.x+30;victim.y=killer.y;killer.facing=0;
+ a.ws.send(JSON.stringify({v:1,type:'game.cast',slot:'A'}));
+ const /** result: 피해자가 받은 서버 확정 결과. */ result=(await b.next('game.result')).result;
+ assert.equal(result.reason,'DEATH');assert.equal(result.competitionPoints,101);
+ assert.equal(killer.status.competitionPoints,50);assert.equal(killer.status.level,2);assert.equal(killer.status.currentExperience,70);
+ let /** state: 처치 후 보상을 포함하는 최신 수신 상태. */ state;
+ do{state=(await a.next('game.state')).room;}while(state.players.find(/** 처치자 수치를 찾는다. */ (/** player: 수신 참가자. */ player)=>player.id===a.id)?.status.competitionPoints!==50);
+ assert.equal(state.players[0].status.currentExperience,70);assert.equal(state.players.length,1);
+});
+
+test('timed exit NPCs use shared Y/N confirmation and disappear atomically for one player',/** 실제 6분·8분 생성과 취소·동시 확인·한 명만 탈출 처리를 검증한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
+ let /** clock: 생성 경계를 진행할 검증 시각(ms). */ clock=Date.now();
+ const /** a: 첫 사용자; b: 동시 사용자; rooms: 서버 방 목록; code: 게임 번호. */ {a,b,rooms,code}=await startedPair(t,{roomClock:/** 검증 시각을 반환한다. */ ()=>clock});
+ const /** room: 진행 중 게임; safeTile: 독기 영향을 받지 않을 높이 4 타일. */ room=rooms.get(code),safeTile=room.map.tiles.find(/** 높이 4 지형을 찾는다. */ (/** tile: 지도 타일. */ tile)=>tile.height===4);
+ room.objects.clear();room.items.clear();
+ for(const /** player: 시간 진행 중 안전한 곳에 배치할 생존자. */ player of room.players.values())Object.assign(player,globalThis.PitMapRules.center(safeTile,room.map));
+ clock=room.gameStartedAt+359999;await new Promise(/** 첫 생성 직전 틱을 기다린다. */ (/** resolve: 대기 완료 함수. */ resolve)=>setTimeout(resolve,70));assert.equal(room.objects.size,0);
+ clock+=1;await waitFor(/** 6분 탈출구 생성이 완료될 때까지 기다린다. */ ()=>room.objects.size===1);
+ const /** first: 3층에 생성한 첫 탈출구. */ first=[...room.objects.values()][0];assert.equal(room.map.tiles.find(/** 출현 타일을 찾는다. */ (/** tile: 지도 타일. */ tile)=>tile.id===first.spawnTileId).height,3);
+ clock=room.gameStartedAt+480000;await waitFor(/** 잔여 인원 2명 조건의 두 번째 생성을 기다린다. */ ()=>room.objects.size===2);
+ assert.equal([...room.objects.values()].some(/** 높이 4 탈출구인지 검사한다. */ (/** exit: 탈출구. */ exit)=>room.map.tiles.find(/** 출현 지형 조회. */ (/** tile: 지도 타일. */ tile)=>tile.id===exit.spawnTileId).height===4),true);
+ for(const /** player: 첫 탈출구를 함께 이용할 두 플레이어. */ player of room.players.values()){player.x=first.x;player.y=first.y;}
+ const /** cancelled: 취소할 첫 확인 요청. */ cancelled=await a.command('game.interact',{targetId:first.id},'interaction.prompt');
+ await a.command('game.interact.confirm',{confirmationId:cancelled.id,accept:false});assert.equal(room.objects.has(first.id),true);
+ const /** promptA: 첫 사용자의 새 확인; promptB: 같은 탈출구를 요청한 두 번째 확인. */ promptA=await a.command('game.interact',{targetId:first.id},'interaction.prompt'),promptB=await b.command('game.interact',{targetId:first.id},'interaction.prompt');
+ const /** result: 먼저 수락한 사용자의 탈출 결과. */ result=await a.command('game.interact.confirm',{confirmationId:promptA.id,accept:true},'game.result');
+ assert.equal(result.result.reason,'ESCAPE');assert.equal(room.objects.has(first.id),false);assert.equal(room.players.has(a.id),false);assert.equal(room.players.has(b.id),true);
+ assert.equal((await b.command('game.interact.confirm',{confirmationId:promptB.id,accept:true},'error')).code,'INTERACTION_UNAVAILABLE');
+ assert.equal(room.objects.size,1);
+});
+
 test('guest resumes the same stopped and damageable character without replaying stale input',/** 실제 연결 종료 후 ID·스탯·아이템·좌표·입력 순번 복구를 검증한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
  const /** a: 원래 방장; b: 관찰자; client: 신규 연결 생성기; rooms: 방 목록; code: 방 코드. */ {a,b,client,rooms,code}=await startedPair(t);
  const /** room: 진행 중 방; player: 복귀할 동일 서버 객체; token: 비공개 복귀 권한. */ room=rooms.get(code),player=room.players.get(a.id),{token}=await a.next('session.ready');

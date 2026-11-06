@@ -416,6 +416,7 @@ const /** canvas: 월드 화면을 그리는 캔버스 요소. */ canvas = $('wo
     if (p.action) { ctx.strokeStyle = p.action === 'A' ? '#f7d98b' : '#93ccea'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x,y,32,0,Math.PI*2); ctx.stroke(); }
     ctx.fillStyle = p.id === playerId ? '#c8e5a6' : p.status?.objectType === 'enemy' ? '#df785c' : ['#e6ac8a','#91c8dd','#c7a8de','#d7cc82'][i%4];
     if (p.status?.objectType === 'player' || p.id === playerId) drawPlayerTriangle(ctx, p, x, y);
+    else if(p.status?.objectType==='npc'&&p.status.classificationCode==='NPC_EXIT'){ctx.beginPath();ctx.ellipse(x,y,12,20,0,0,Math.PI*2);ctx.fillStyle='#80fff0';ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.stroke();}
     else if(p.status?.objectType==='prop'){ctx.fillStyle='#ffe184';ctx.fillRect(x-10,y-15,20,30);ctx.strokeStyle='#4b3826';ctx.lineWidth=3;ctx.strokeRect(x-10,y-15,20,30);}
     else { ctx.beginPath(); ctx.arc(x,y,18,0,Math.PI*2); ctx.fill(); }
     if(p.status?.objectType==='enemy'&&p.status.classificationCode==='TEST003'){ctx.fillStyle='#ffe58b';ctx.textAlign='center';ctx.font='bold 22px system-ui';ctx.fillText('☆',x,y-73);}

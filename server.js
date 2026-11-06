@@ -1,4 +1,5 @@
 import './public/interactions.js';
+import { /** tickExits: 게임 시작 6분·8분 탈출구 생성 기회를 처리한다. */ tickExits } from './game/exits.js';
 import { /** createReturnLamp: 시작 위치에 소유자가 있는 귀환등을 만든다. */ createReturnLamp } from './game/props.js';
 import './public/poison.js';
 import './public/input-timeline.js';
@@ -210,8 +211,9 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
           if(m.accept){
             const /** target: 탈출 확정 직전 다시 검증할 전등. */ target=room.objects.get(confirmation.targetId);
             if(Date.now()>confirmation.expiresAt||!globalThis.InteractionRules.available(player,target))return fail('INTERACTION_UNAVAILABLE','상호작용 대상에서 멀어졌거나 사용할 수 없습니다.');
-            // 탈출 후 사물은 남기되 상호작용 항목을 소멸시킨다. 처치 보상 규칙은 유지한다.
+            // 탈출구 NPC는 한 명이 사용하면 소멸한다. 기존 귀환등은 사물과 처치 보상을 유지한다.
             target.interactionEnabled=false;
+            if(target.status.objectType==='npc'&&target.status.classificationCode==='NPC_EXIT')room.objects.delete(target.id);
             finishPlayer(room,player,'ESCAPE');if(room.players.size)broadcast(room);
           }
         }
@@ -368,6 +370,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
       let /** finished: 이번 틱에 사망으로 분리한 참가자가 있는지 여부. */ finished=false;
       for(const /** player: 서버에서 사망이 확정된 참가자. */ player of [...room.players.values()])if(player.status.state===LifeState.DEAD){finishPlayer(room,player,'DEATH');finished=true;}
       if(finished&&room.players.size)broadcast(room);
+      tickExits(room,roomClock());
       room.itemChanges=globalThis.ItemRules.tick(room.items??new Map(),objects,now,gainExperience);
       const /** state: 현재 상태 스냅샷. */ state = snapshot(room,false);
       for (const /** p: 현재 처리하는 플레이어 또는 검증 개체. */ p of room.players.values()) send(p.ws, 'game.state', { room: state });
