@@ -1,6 +1,7 @@
 import '../public/pit-map-rules.js';
 import { /** createMonster: 프리셋별 몬스터 유닛을 생성한다. */ createMonster } from './monsters.js';
 import { /** castSkill: 공통 접촉·피해 파이프라인으로 기술을 실행한다. */ castSkill } from './skills.js';
+import { /** applySkillDamage: 보스 돌진 접촉 피해를 공통으로 확정한다. */ applySkillDamage } from './combat.js';
 import { /** effectiveStats: 이동속도와 최종 최대체력을 조회한다. */ effectiveStats, /** LifeState: 사망 유닛의 행동을 차단한다. */ LifeState } from './status.js';
 
 /** 일반 높이 1·2 타일마다 A01 0~8마리·A02 2~6마리를 원형 히트박스까지 지형 안에 생성한다. */
@@ -99,6 +100,141 @@ function moveToward(
   return true;
 }
 
+
+/** TEST003 보스의 배회·위협 대상 선정·구르기·돌진·기본공격·복귀를 서버에서 순차 처리한다. */
+function tickBoss(
+  /** boss: 행동할 보스 개체. */ boss,
+  /** objects: 같은 방의 플레이어와 적 개체. */ objects,
+  /** map: 서버 이동 판정 지도. */ map,
+  /** now: 서버 시각(ms). */ now,
+  /** seconds: 이번 서버 틱의 경과 시간(초). */ seconds,
+  /** random: 확률과 배회 방향에 사용할 난수 함수. */ random,
+  /** effects: 공통 기술 표시 효과를 모으는 목록. */ effects,
+){
+  const /** status: 보스의 서버 공통 상태. */ status=boss.status;
+  if(status.state===LifeState.DEAD){status.attackTargetId=null;return;}
+  /** boss.bossAI: 보스의 순차 행동과 시간표를 보관하는 서버 전용 상태. */
+  boss.bossAI??={phase:'idle',until:0,point:null,hitIds:new Set(),nextWanderAt:now+1000+random()*2000};
+  const /** ai: 이번 보스의 행동 시간표. */ ai=boss.bossAI;
+  const /** players: 현재 살아 있는 플레이어만 조회하는 대상 목록. */ players=objects.filter(/** 살아 있는 플레이어만 선정한다. */ (/** object: 대상 후보 개체. */ object)=>object.status.objectType==='player'&&object.status.state===LifeState.ALIVE);
+  const /** byId: 현재 공격대상 ID로 조회한 살아 있는 플레이어. */ byId=players.find(/** 공격대상 ID가 일치하는지 확인한다. */ (/** player: 대상 후보 플레이어. */ player)=>player.id===status.attackTargetId);
+  /** chooseThreat: 누적 위협수치가 가장 높은 살아 있는 플레이어를 찾는 함수. */
+  const chooseThreat=()=>{
+    const /** ordered: 누적 피해량 내림차순의 생존 플레이어 목록. */ ordered=players.filter(/** 위협수치가 기록된 플레이어만 남긴다. */ (/** player: 대상 후보. */ player)=>Object.hasOwn(status.threatTable,player.id)).sort(/** 위협수치가 높은 대상을 우선한다. */ (/** a: 첫 대상. */ a,/** b: 비교 대상. */ b)=>status.threatTable[b.id]-status.threatTable[a.id]);
+    return ordered[0]??null;
+  };
+  /** reset: 생성 좌표로 복귀하여 체력·위협수치·인식상태를 초기화한다. */
+  const reset=()=>{
+    status.awarenessState='returning';status.attackTargetId=null;ai.phase='return';ai.point=null;ai.hitIds.clear();boss.roll=null;
+  };
+  if(status.awarenessState!=='returning'&&distance(boss,status.spawnPosition)>=800)reset();
+  if(status.stunned){boss.roll=null;return;}
+  if(status.awarenessState==='returning'){
+    moveToward(boss,status.spawnPosition,map,seconds,0,true);
+    if(distance(boss,status.spawnPosition)<1){
+      boss.x=status.spawnPosition.x;boss.y=status.spawnPosition.y;
+      status.currentHealth=effectiveStats(status).maxHealth;
+      status.threatTable=Object.create(null);status.attackTargetId=null;status.awarenessState='normal';
+      ai.phase='idle';ai.point=null;ai.nextWanderAt=now+1000+random()*2000;
+    }
+    return;
+  }
+  if(status.awarenessState==='normal'){
+    const /** nearby: 인식 거리 150 이내에서 가장 가까운 생존 플레이어. */ nearby=players.filter(/** 인식 범위에 들어왔는지 확인한다. */ (/** player: 거리 검사 대상. */ player)=>distance(boss,player)<=150).sort(/** 거리가 가까운 순서로 정렬한다. */ (/** a: 첫 플레이어. */ a,/** b: 둘째 플레이어. */ b)=>distance(boss,a)-distance(boss,b))[0];
+    if(status.attackTargetId&&byId||nearby){
+      status.attackTargetId=byId?.id??nearby.id;status.awarenessState='combat';ai.phase='start';
+    }else{
+      if(now>=ai.nextWanderAt){
+        const /** angle: 배회할 무작위 방향(라디안). */ angle=random()*Math.PI*2;
+        const /** length: 배회할 월드 거리(5~70). */ length=5+random()*65;
+        ai.point={x:boss.x+Math.cos(angle)*length,y:boss.y+Math.sin(angle)*length};
+        ai.nextWanderAt=now+1000+random()*2000;
+      }
+      if(ai.point&&(!moveToward(boss,ai.point,map,seconds)||distance(boss,ai.point)<1))ai.point=null;
+      return;
+    }
+  }
+  const /** target: 현재 공격 대상으로 지정된 살아 있는 플레이어. */ target=players.find(/** 공격대상 ID를 조회한다. */ (/** player: 대상 후보. */ player)=>player.id===status.attackTargetId);
+  if(!target||distance(boss,target)>200){reset();return;}
+  if(ai.phase==='start'){
+    if(distance(boss,status.spawnPosition)>=800){reset();return;}
+    if(random()<0.3){
+      const /** angle: 구르기에 사용할 무작위 방향(라디안). */ angle=random()*Math.PI*2;
+      boss.facing=angle;boss.lastMovementInput={x:Math.cos(angle),y:Math.sin(angle)};
+      const /** roll: B 슬롯의 BAS0002 공통 구르기 결과. */ roll=castSkill(boss,objects,'B',now);
+      if(roll?.kind==='roll'){ai.phase='roll';return;}
+    }
+    ai.phase='distance';
+  }
+  if(ai.phase==='roll'){
+    if(boss.roll?.remaining>0){
+      const /** remaining: 이번 틱에 이동할 구르기 거리. */ remaining=Math.min(boss.roll.remaining,boss.roll.speed*seconds);
+      const /** point: 구르기 방향으로 이동할 후보 위치. */ point={x:boss.x+Math.cos(boss.roll.angle)*remaining,y:boss.y+Math.sin(boss.roll.angle)*remaining};
+      const /** allowed: 지형 통행 판정을 통과한 실제 위치. */ allowed=map?globalThis.PitMapRules.constrain(map,boss,point,status.hitboxDiameter/2):point;
+      const /** moved: 실제로 구른 월드 거리. */ moved=distance(boss,allowed);
+      boss.x=allowed.x;boss.y=allowed.y;boss.roll.remaining-=moved;
+      if(moved<remaining)boss.roll.remaining=0;
+      if(boss.roll.remaining>0)return;
+    }
+    boss.roll=null;ai.phase='distance';
+  }
+  if(ai.phase==='distance'){
+    if(distance(boss,target)>=100){
+      ai.point={x:target.x,y:target.y};ai.until=now+800;ai.phase='dashWait';
+    }else ai.phase='approach';
+  }
+  if(ai.phase==='dashWait'){
+    if(now<ai.until)return;
+    ai.phase='dash';ai.hitIds.clear();
+  }
+  if(ai.phase==='dash'){
+    const /** point: 돌진 준비 때 저장한 목표 좌표. */ point=ai.point;
+    if(point&&distance(boss,point)>1){
+      const /** before: 돌진 시작 위치. */ before={x:boss.x,y:boss.y};
+      const /** maxStep: 이동속도 6의 이번 틱 최대 월드 거리. */ maxStep=6*110*seconds;
+      const /** ratio: 목표 좌표를 넘지 않도록 제한하는 이동 비율. */ ratio=Math.min(1,maxStep/distance(boss,point));
+      const /** candidate: 저장 좌표를 향한 이번 이동 후보. */ candidate={x:boss.x+(point.x-boss.x)*ratio,y:boss.y+(point.y-boss.y)*ratio};
+      const /** allowed: 서버 지형 충돌 판정을 거친 돌진 위치. */ allowed=map?globalThis.PitMapRules.constrain(map,before,candidate,status.hitboxDiameter/2):candidate;
+      boss.x=allowed.x;boss.y=allowed.y;boss.facing=Math.atan2(point.y-before.y,point.x-before.x);boss.action='move';
+      for(const /** player: 돌진 중 접촉 피해를 검사할 생존 플레이어. */ player of players){
+        if(ai.hitIds.has(player.id))continue;
+        const /** vx: 이번 돌진 구간의 가로 이동량. */ vx=boss.x-before.x;
+        const /** vy: 이번 돌진 구간의 세로 이동량. */ vy=boss.y-before.y;
+        const /** lengthSquared: 이동 구간의 길이 제곱. */ lengthSquared=vx*vx+vy*vy;
+        const /** projection: 이동 구간에서 플레이어와 가장 가까운 위치 비율. */ projection=lengthSquared?Math.max(0,Math.min(1,((player.x-before.x)*vx+(player.y-before.y)*vy)/lengthSquared)):0;
+        const /** separation: 이동 경로와 플레이어 중심의 최단 거리. */ separation=Math.hypot(player.x-before.x-vx*projection,player.y-before.y-vy*projection);
+        if(separation<=(status.hitboxDiameter+player.status.hitboxDiameter)/2){
+          const /** instance: 돌진 피해를 공통 피해 함수로 전달할 서버 기술 인스턴스. */ instance={id:boss.id+':dash:'+now,code:'TEST003_DASH',casterId:boss.id,resultSequence:0};
+          const /** result: 공통 피해 파이프라인에서 확정한 돌진 접촉 결과. */ result=applySkillDamage(instance,player,effectiveStats(status).attack,now,boss);
+          if(result)ai.hitIds.add(player.id);
+        }
+      }
+      if(distance(boss,point)>1&&distance(before,boss)>0)return;
+    }
+    ai.phase='retarget';
+  }
+  if(ai.phase==='approach'){
+    if(distance(boss,target)>40){moveToward(boss,target,map,seconds,40);return;}
+    ai.point={angle:Math.atan2(target.y-boss.y,target.x-boss.x)};
+    boss.facing=ai.point.angle;ai.until=now+1200;ai.phase='attackWait';
+  }
+  if(ai.phase==='attackWait'){
+    boss.action='windup';
+    if(now<ai.until)return;
+    const /** effect: 저장한 방향으로 사용한 BAS0001 기본공격. */ effect=castSkill(boss,objects,'A',now,undefined,ai.point.angle);
+    if(effect)effects.push(effect);
+    ai.until=now+1500;ai.phase='pause';return;
+  }
+  if(ai.phase==='pause'&&now<ai.until)return;
+  if(ai.phase==='pause'||ai.phase==='retarget'){
+    const /** highest: 누적 위협수치가 가장 높은 생존 플레이어. */ highest=chooseThreat();
+    if(highest)status.attackTargetId=highest.id;
+    const /** next: 재지정된 현재 공격 대상. */ next=players.find(/** 살아 있는 다음 대상인지 검사한다. */ (/** player: 대상 후보. */ player)=>player.id===status.attackTargetId);
+    if(!next||distance(boss,next)>200){reset();return;}
+    ai.phase='start';
+  }
+}
+
 /** 일반·추격·시전 후 정지·생성점 복귀를 서버 틱으로 처리하고 새 기술 표시 효과를 반환한다. */
 export function tickMonsters(
   /** objects: 플레이어·NPC·몬스터의 현재 월드 목록. */ objects,
@@ -110,7 +246,11 @@ export function tickMonsters(
   const /** effects: 이번 틱에 성공한 공격의 공통 기술 인스턴스. */ effects=[];
   const /** byId: 공격대상을 개체ID로 찾기 위한 목록. */ byId=new Map(objects.map(/** 개체ID별 조회 쌍을 만든다. */ (/** object: 현재 월드 개체. */ object)=>[object.id,object]));
   for(const /** monster: 행동을 검사할 월드 개체. */ monster of objects) {
-    if(monster.status.objectType!=='enemy'||monster.status.classificationCode!=='TEST001')continue;
+    if(monster.status.objectType!=='enemy')continue;
+    if(monster.status.classificationCode==='TEST003'){
+      monster.action=null;tickBoss(monster,objects,map,now,seconds,random,effects);continue;
+    }
+    if(monster.status.classificationCode!=='TEST001')continue;
     const /** status: 복귀 좌표·인식상태·공격대상을 가진 서버 수치. */ status=monster.status;
     monster.action=null;
     if(status.state===LifeState.DEAD){
