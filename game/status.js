@@ -49,10 +49,17 @@ export /** createStatus: 모든 개체가 공유하는 수치·기술 슬롯·�
   }
   status.nearestEnemyId = null;
   status.nearestObjectId = null;
+  const /** ownedSkills: 생성 시 전달한 스킬코드→보유 레벨 딕셔너리. 기본은 빈 객체다. */ ownedSkills=values.ownedSkills===undefined?{}:values.ownedSkills;
+  if(!ownedSkills||typeof ownedSkills!=='object'||Array.isArray(ownedSkills)||![Object.prototype,null].includes(Object.getPrototypeOf(ownedSkills)))throw new TypeError('Invalid ownedSkills');
+  /** status.ownedSkills: 모든 오브젝트가 독립적으로 소유하는 기술별 양의 정수 레벨. 기술 슬롯과 별도로 관리한다. */ status.ownedSkills={};
+  for(const /** code: 보유한 기술 코드; level: 해당 기술의 보유 레벨. */ [code,level] of Object.entries(ownedSkills)){
+    if(!code.trim()||!Number.isSafeInteger(level)||level<1)throw new TypeError('Invalid owned skill level');
+    Object.defineProperty(status.ownedSkills,code,{value:level,writable:true,enumerable:true,configurable:true});
+  }
   if (objectType === ObjectType.PLAYER) {
-    status.skillDeckCode = values.skillDeckCode ?? '';
-    status.availableSkills = [...(values.availableSkills ?? [])];
-    if (typeof status.skillDeckCode !== 'string' || !Array.isArray(values.availableSkills ?? []) || !status.availableSkills.every(/** code: 개체·기술·방 또는 오류를 식별하는 코드. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ code => typeof code === 'string')) throw new TypeError('Invalid player skills');
+    const /** decks: 플레이어가 보유한 스킬덱 코드 문자열 목록. */ decks=values.skillDeckCode===undefined?[]:values.skillDeckCode;
+    if(!Array.isArray(decks)||!decks.every(/** 덱 코드가 문자열인지 검사한다. */ (/** code: 목록의 덱 코드. */ code)=>typeof code==='string'))throw new TypeError('Invalid skillDeckCode');
+    /** status.skillDeckCode: 원본 목록과 공유하지 않는 플레이어 전용 스킬덱 코드 배열. */ status.skillDeckCode=[...decks];
   }
   // 상태이상은 향후 잔여시간·중첩 계산에 사용할 개체별 독립 목록이다.
   /** status.statusEffects: 버프·디버프 상태 자료 목록. 현재는 저장만 하며 효과 계산은 별도 구현한다. */ status.statusEffects=copyStatusList(values.statusEffects,'statusEffects');

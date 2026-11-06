@@ -270,6 +270,7 @@ test('score screen shows server points and returns home only through exit button
  }
 });
 test('F and interaction button share owner-only target and Y/N escape confirmation',/** 상호작용 버튼·키보드와 확인 중 공격 방지를 검증한다. */ ()=>{
+ assert.match(readFileSync(new URL('../public/index.html',import.meta.url),'utf8'),/id="interaction-button"[^>]*>※<\/button>/);
  const /** e: 화면 요소; receive: 수신 대역; state: 방 상태; window: 키 입력 대상; run: 격리 실행기. */ {elements:e,receive,state,window,run}=client();
  state.players[0].status={objectType:'player',state:'alive',classificationCode:'P'};
  state.objects=[{id:'lamp',x:0,y:0,ownerId:'me',ownerCode:'P',interactionEnabled:true,status:{objectType:'prop',state:'alive',classificationCode:'OBJ0001'}}];
@@ -309,11 +310,11 @@ test('player experience bar uses server progress and updated level without hidin
 });
 test('status page lists every server status field safely and refreshes while open',/** 일반 사용자 접근·배열·추가 필드·합산값·서버 갱신과 뒤로 이동을 검증한다. */ ()=>{
  const /** e: DOM 요소; receive: 수신 대역; state: 방 상태. */ {elements:e,receive,state}=client();
- state.players[0].status={level:1,currentExperience:40,requiredExperience:50,bonusAttack:0,statusEffects:[],availableSkills:['<script>'],concealed:false,futureField:'새 변수',effective:{attack:1,maxHealth:10}};
+ state.players[0].status={level:1,currentExperience:40,requiredExperience:50,bonusAttack:0,statusEffects:[],ownedSkills:{'<script>':2},skillDeckCode:['DECK001'],concealed:false,futureField:'새 변수',effective:{attack:1,maxHealth:10}};
  receive({type:'room.state',room:state});e.get('game-menu').click();e.get('open-options').click();e.get('open-status').click();assert.equal(e.get('menu-status').hidden,false);assert.equal(e.get('menu-options').hidden,true);
  const /** rows: 실제 DOM에 작성된 변수·값 목록 조회 함수. */ rows=/** 현재 테이블 행을 읽는다. */ ()=>e.get('player-status-list').children.map(/** 행 내용을 텍스트로 읽는다. */ (/** row: 테이블 행. */ row)=>row.children.map(/** 셀 내용 조회. */ (/** cell: 변수명·값 셀. */ cell)=>cell.textContent));
  for(const /** field: 서버 스테이터스 키. */ field of Object.keys(state.players[0].status).filter(/** 합산 객체는 개별 행으로 표시한다. */ (/** field: 필드명. */ field)=>field!=='effective'))assert.ok(rows().some(/** 필드 누락 검사. */ (/** row: 표시 행. */ row)=>row[0].endsWith(`(${field})`)));
- assert.ok(rows().some(/** 안전한 배열 텍스트 검사. */ (/** row: 표시 행. */ row)=>row[1]==='["<script>"]'));assert.ok(rows().some(/** 합산값 행 검사. */ (/** row: 표시 행. */ row)=>row[0]==='합산값 · 기본공격력 (attack)'&&row[1]==='1'));
+ assert.ok(rows().some(/** 기술 딕셔너리의 안전한 텍스트 표시 검사. */ (/** row: 표시 행. */ row)=>row[1]==='{"<script>":2}'));assert.ok(rows().some(/** 합산값 행 검사. */ (/** row: 표시 행. */ row)=>row[0]==='합산값 · 기본공격력 (attack)'&&row[1]==='1'));
  state.players[0].status.level=2;state.players[0].status.currentExperience=10;receive({type:'game.state',room:state});assert.ok(rows().some(/** 서버 갱신 검사. */ (/** row: 표시 행. */ row)=>row[0].endsWith('(level)')&&row[1]==='2'));
  e.get('status-back').click();assert.equal(e.get('menu-options').hidden,false);assert.equal(e.get('menu-status').hidden,true);
 });

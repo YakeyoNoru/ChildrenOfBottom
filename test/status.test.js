@@ -3,21 +3,30 @@ import /** assert: 실제 결과와 기대 조건을 비교해 테스트 실패�
 import { /** createStatus: 모든 개체가 공유하는 수치·기술 슬롯·상태를 검증해 생성한다. */ createStatus, gainExperience, areEnemies, /** createWorldObject: 외부 모듈에서 제공하는 createWorldObject 기능. */ createWorldObject, /** effectiveStats: 기본 수치에 추가 수치를 합산하고 음수를 방지한 최종 능력치를 계산한다. */ effectiveStats, /** regenerate: 생존 개체의 체력과 스킬자원을 경과 시간만큼 회복한다. */ regenerate, /** normalizeVitals: 체력·자원을 최종 최대치 안으로 제한하고 사망 상태를 정규화한다. */ normalizeVitals, /** updateNearestObjects: 생존 개체의 최근접 개체와 설정 우선순위에 맞는 적 ID를 갱신한다. */ updateNearestObjects } from '../game/status.js';
 
 const /** status: 개체 상태 또는 응답 상태. */ status = /** status: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ (/** objectType: 생성하거나 검사할 개체 분류. */ objectType = 'player', /** values: 기본 스테이터스를 재정의할 전달값. */ values = {}) => createStatus({objectType,classificationCode:'TEST',...values});
-test('all object kinds share defaults; skills belong only to players and arrays are independent',/** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ ()=>{
-  for (const /** kind: 검증 대상 개체의 분류. */ kind of ['player','npc','enemy']) {
-    const /** s: 검증할 공통 스테이터스. */ s=status(kind);
+test('all objects own independent skill dictionaries while only players have deck lists',/** 공통 기본값·기술 레벨 딕셔너리·플레이어 전용 덱 목록의 독립성을 검증한다. */ ()=>{
+  for(const /** kind: 공통 정보를 검사할 오브젝트 분류. */ kind of ['player','npc','enemy','prop']){
+    const /** s: 기본값으로 생성한 공통 정보. */ s=status(kind);
     assert.equal(s.objectType,kind);assert.equal(s.classificationCode,'TEST');assert.ok(s.instanceId);
     assert.equal(s.level,1);assert.equal(s.maxHealth,10);assert.equal(s.currentHealth,10);
     assert.equal(s.maxSkillResource,0);assert.equal(s.currentSkillResource,0);
     assert.equal(s.attack,1);assert.equal(s.defense,0);assert.equal(s.healthRegen,0);assert.equal(s.skillResourceRegen,1);assert.equal(s.moveSpeed,2);
     assert.equal(s.concealed,false);assert.equal(s.stunned,false);assert.equal(s.state,'alive');assert.equal(s.bountyPoints,1);
     assert.equal(s.nearestEnemyId,null);assert.equal(s.nearestObjectId,null);
-    for(const /** key: 현재 항목의 식별 키. */ key of ['bonusHealth','bonusAttack','bonusDefense','bonusHealthRegen','bonusMoveSpeed','bonusSkillResource','bonusSkillResourceRegen'])assert.equal(s[key],0);
-    assert.equal('skillDeckCode' in s,kind==='player');assert.equal('availableSkills' in s,kind==='player');
+    for(const /** key: 기본값 0인 추가 능력치. */ key of ['bonusHealth','bonusAttack','bonusDefense','bonusHealthRegen','bonusMoveSpeed','bonusSkillResource','bonusSkillResourceRegen'])assert.equal(s[key],0);
+    assert.equal('skillDeckCode' in s,kind==='player');assert.equal('availableSkills' in s,false);assert.deepEqual({...s.ownedSkills},{});
+    if(kind==='player')assert.deepEqual(s.skillDeckCode,[]);
+    const /** source: 생성 원본 기술 사전; configured: 원본을 복사한 개체. */ source={BAS0001:2},configured=status(kind,{ownedSkills:source});
+    configured.ownedSkills.BAS0001=3;assert.equal(source.BAS0001,2);assert.deepEqual({...s.ownedSkills},{});
+    assert.deepEqual(JSON.parse(JSON.stringify(configured)).ownedSkills,{BAS0001:3});
   }
-  const /** skills: 기술 코드별 공통 기술 정의. */ skills=['SK001'],/** a: 첫 번째 검증용 값·개체·접속 결과. */ a=status('player',{availableSkills:skills}),/** b: 두 번째 검증용 값·개체·접속 결과. */ b=status();
-  a.availableSkills.push('SK002');assert.deepEqual(skills,['SK001']);assert.deepEqual(b.availableSkills,[]);
-  assert.notEqual(a.instanceId,b.instanceId);
+  const /** decks: 원본 스킬덱 목록; a: 덱을 설정한 플레이어; b: 기본 플레이어. */ decks=['DECK001'],a=status('player',{skillDeckCode:decks}),b=status();
+  a.skillDeckCode.push('DECK002');assert.deepEqual(decks,['DECK001']);assert.deepEqual(b.skillDeckCode,[]);assert.notEqual(a.instanceId,b.instanceId);
+  const /** special: 객체 원형과 같은 이름도 안전하게 저장하는 딕셔너리. */ special=status('npc',{ownedSkills:JSON.parse('{"__proto__":2,"constructor":3}')});
+  assert.equal(special.ownedSkills.__proto__,2);assert.equal(Object.getPrototypeOf(special.ownedSkills),Object.prototype);
+});
+test('owned skills and deck lists reject malformed values at creation',/** 딕셔너리·레벨·목록 원소 형식을 검증한다. */ ()=>{
+ for(const /** ownedSkills: 거부할 기술 정보 형태와 레벨. */ ownedSkills of [null,[],1,'BAS0001',new Date(),{'':1},{BAS0001:0},{BAS0001:-1},{BAS0001:1.5},{BAS0001:'2'},{BAS0001:Infinity}])assert.throws(/** 모든 오브젝트에서 같은 검증을 실행한다. */ ()=>status('npc',{ownedSkills}),TypeError);
+ for(const /** skillDeckCode: 거부할 덱 코드 목록. */ skillDeckCode of [null,'DECK001',{},[1],['DECK001',false]])assert.throws(/** 문자열 배열 이외의 덱 정보를 거부한다. */ ()=>status('player',{skillDeckCode}),TypeError);
 });
 test('bonuses add to effective values; regen respects caps, zero resources and death',/** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ ()=>{
   const /** s: 검증할 공통 스테이터스. */ s=status('npc',{currentHealth:5,healthRegen:1,maxSkillResource:4,currentSkillResource:1,bonusHealth:5,bonusAttack:2,bonusDefense:3,bonusHealthRegen:1,bonusMoveSpeed:1,bonusSkillResource:2,bonusSkillResourceRegen:2});
@@ -38,7 +47,7 @@ test('nearest references exclude self/dead, distinguish enemy, and clear when a 
   updateNearestObjects([p]);assert.equal(p.status.nearestObjectId,null);assert.equal(p.status.nearestEnemyId,null);
 });
 test('invalid statuses are rejected rather than leaking NaN, invalid levels or string flags',/** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ ()=>{
-  for(const /** values: 기본 스테이터스를 재정의할 전달값. */ values of [{attack:NaN},{maxHealth:-1},{level:0},{level:1.5},{moveSpeed:Infinity},{concealed:'N'},{stunned:1},{state:'unknown'},{availableSkills:'skill'}])assert.throws(/** 현재 비동기 작업의 완료 또는 후속 처리를 수행한다. */ ()=>status('player',values),TypeError);
+  for(const /** values: 기본 스테이터스를 재정의할 전달값. */ values of [{attack:NaN},{maxHealth:-1},{level:0},{level:1.5},{moveSpeed:Infinity},{concealed:'N'},{stunned:1},{state:'unknown'},{skillDeckCode:'skill'}])assert.throws(/** 현재 비동기 작업의 완료 또는 후속 처리를 수행한다. */ ()=>status('player',values),TypeError);
   assert.throws(/** 현재 비동기 작업의 완료 또는 후속 처리를 수행한다. */ ()=>status('unknown'),TypeError);assert.throws(/** 현재 비동기 작업의 완료 또는 후속 처리를 수행한다. */ ()=>regenerate(status(),-1),TypeError);
 });
 

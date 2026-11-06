@@ -73,7 +73,7 @@ HTTP `GET /health`는 `{"ok":true,"protocolVersion":1}`을 반환합니다. 방 
 
 `room.state` / `game.state`의 room에 `objects` 배열을 추가합니다. `objects`는 플레이어를 포함한 모든 개체의 배열이고 `players`는 기존 로비 호환용 플레이어 배열입니다. 렌더링은 `objects`만 순회하여 중복으로 표시하지 않습니다. `players`와 `objects`의 플레이어 `id`는 같으며 자신의 카메라는 기존 `playerId`로 찾습니다.
 
-개체 형식: `{id, name, x, y, action, status}`. 플레이어의 players 배열 항목에는 `ready`도 있습니다. `status.instanceId === id`이며 공통 스테이터스와 `effective`(추가값을 포함한 최종 수치)를 담습니다. 필드별 정의는 [STATUSES.md](STATUSES.md)를 참고하세요. `concealed`, `stunned`는 JSON boolean이고, `state`는 `alive`/`dead`입니다. 최근접 ID는 개체 ID 또는 null입니다. 플레이어에게만 `skillDeckCode`와 `availableSkills`가 있습니다.
+개체 형식: `{id, name, x, y, action, status}`. 플레이어의 players 배열 항목에는 `ready`도 있습니다. `status.instanceId === id`이며 공통 스테이터스와 `effective`(추가값을 포함한 최종 수치)를 담습니다. 필드별 정의는 [STATUSES.md](STATUSES.md)를 참고하세요. `concealed`, `stunned`는 JSON boolean이고, `state`는 `alive`/`dead`입니다. 최근접 ID는 개체 ID 또는 null입니다. 모든 개체에 `ownedSkills` 딕셔너리(스킬코드→양의 정수 레벨, 기본 `{}`)가 있으며, 플레이어에게만 `skillDeckCode` 배열(덱 코드 문자열 목록, 기본 `[]`)이 있습니다. 이전 사용 가능 기술 목록 필드는 제거했습니다.
 
 스테이터스는 서버 소유이며 game.input에 임의 status/공격력/이동속도/playerId를 넣어도 반영하지 않습니다. NPC/적 스폰은 현재 서버 내부 API만 제공하고 네트워크 생성 요청은 허용하지 않습니다. 이번 확장은 추가 필드이며 기존 메시지 명령 계약을 유지합니다.
 

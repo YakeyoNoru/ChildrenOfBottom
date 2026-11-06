@@ -267,7 +267,7 @@ const statusLabels={
   /** 체력·자원·공격·방어: 추가 수치 적용 전 기본값. */ maxHealth:'기본 최대체력',currentHealth:'현재체력',maxSkillResource:'기본 최대스킬자원',currentSkillResource:'현재스킬자원',attack:'기본공격력',defense:'기본방어력',
   /** 회복·이동 및 추가 능력치 표시명. */ healthRegen:'체력회복속도',skillResourceRegen:'스킬자원회복속도',moveSpeed:'이동속도',bonusHealth:'추가체력',bonusAttack:'추가공격력',bonusDefense:'추가방어력',bonusHealthRegen:'추가체력회복속도',bonusMoveSpeed:'추가이동속도',bonusSkillResource:'추가스킬자원',bonusSkillResourceRegen:'추가스킬자원회복속도',
   /** 경험치와 포인트 표시명. */ requiredExperience:'필요경험치',currentExperience:'현재경험치',skillPoints:'스킬포인트',competitionPoints:'경쟁포인트',tracePoints:'흔적포인트',bonusTracePoints:'추가흔적포인트',trackingPoints:'추적포인트',bonusTrackingPoints:'추가추적포인트',
-  /** 상태와 기술 슬롯 표시명. */ state:'생존상태',concealed:'은폐상태',stunned:'기절상태',statusEffects:'상태이상리스트',skillA:'기술 A',skillB:'기술 B',skillC:'기술 C',skillP:'기술 P',skillDeckCode:'스킬덱 코드',availableSkills:'보유 스킬목록',skillACooldownRemaining:'A 잔여쿨타임(초)',skillBCooldownRemaining:'B 잔여쿨타임(초)',skillCCooldownRemaining:'C 잔여쿨타임(초)',
+  /** 상태와 기술 슬롯 표시명. */ state:'생존상태',concealed:'은폐상태',stunned:'기절상태',statusEffects:'상태이상리스트',skillA:'기술 A',skillB:'기술 B',skillC:'기술 C',skillP:'기술 P',skillDeckCode:'스킬덱 코드 목록',ownedSkills:'보유기술정보(코드:레벨)',skillACooldownRemaining:'A 잔여쿨타임(초)',skillBCooldownRemaining:'B 잔여쿨타임(초)',skillCCooldownRemaining:'C 잔여쿨타임(초)',
   /** 참조·서버 시간과 화면 개체 정보 표시명. */ hitboxDiameter:'히트박스 지름',nearestObjectId:'최근접 개체 ID',nearestEnemyId:'최근접 적 ID',lowestHealthEnemyId:'최저체력 적 ID',lowestHealthRatioEnemyId:'최저체력비율 적 ID',lastDamageAt:'최근 피격 서버시각(ms)',healthRegenNextAt:'다음 회복 서버시각(ms)',effective:'추가 수치 합산값',id:'개체 ID',name:'이름',x:'가로좌표',y:'세로좌표',facing:'방향(라디안)',action:'현재행동',testOptions:'테스트옵션',bountyPoints:'보상포인트',
 };
 /** 본인의 최신 서버 변수 전체를 읽기 전용 목록으로 표시한다. 목록이 열렸을 때만 갱신한다. */
