@@ -3,6 +3,19 @@ import /** assert: 실제 결과와 기대 조건을 비교해 테스트 실패�
 import { /** readFileSync: 설정·계정·테스트 소스 파일을 동기적으로 읽는다. */ readFileSync } from 'node:fs';
 import /** vm: 브라우저·표시 코드를 격리 문맥에서 실행한다. */ vm from 'node:vm';
 
+test('top-center competition score follows only the local server player and clears outside gameplay',/** 초기·실시간·메뉴 갱신·결과 전환에서 본인 점수 표시를 검증한다. */ ()=>{
+ const /** e: 화면 요소; receive: 서버 수신 재현; state: 게임 상태; run: 브라우저 코드 실행기. */ {elements:e,receive,state,run}=client();
+ assert.equal(e.get('competition-score').hidden,true);
+ state.players[0].status={competitionPoints:0};state.players[1].status={competitionPoints:999};
+ receive({type:'room.state',room:state});assert.equal(e.get('competition-score').hidden,false);assert.equal(e.get('competition-score-value').textContent,'0');
+ state.players[0].status.competitionPoints=540;receive({type:'game.state',room:state});assert.equal(e.get('competition-score-value').textContent,'540');
+ run('render()');assert.equal(e.get('competition-score-value').textContent,'540');
+ state.players[0].status.competitionPoints=0;receive({type:'game.state',room:state});assert.equal(e.get('competition-score-value').textContent,'0');
+ receive({type:'game.result',result:{id:'end',competitionPoints:0,reason:'ESCAPE'}});assert.equal(e.get('competition-score').hidden,true);
+ receive({type:'game.result.left'});state.players[0].status.competitionPoints=7;receive({type:'room.state',room:state});assert.equal(e.get('competition-score-value').textContent,'7');
+ receive({type:'room.left'});assert.equal(e.get('competition-score').hidden,true);assert.equal(e.get('competition-score-value').textContent,'0');
+});
+
 test('stored guest token restores the original player after disconnect and page reload',/** 브라우저 저장·자동 복귀·입력 초기화와 명시적 종료를 검증한다. */ ()=>{
  const /** first: 연결이 끊기기 전 브라우저 화면. */ first=client();
  first.receive({type:'room.state',room:first.state});first.receive({type:'session.ready',token:'a'.repeat(64)});
