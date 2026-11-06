@@ -25,12 +25,25 @@ export function calculateSkillDamage(
   return Math.max(0,instance.attack+instance.bonusAttack+instance.bonusDamage);
 }
 
+/** 적에게 실제 피해를 준 플레이어의 누적 위협수치를 공통으로 기록한다. */
+export function addThreat(
+  /** status: 위협수치를 소유한 적의 공통 스테이터스. */ status,
+  /** playerId: 실제 피해를 준 플레이어 개체 ID. */ playerId,
+  /** damage: 체력에서 실제 차감된 피해량. */ damage,
+) {
+  if(status.objectType!=='enemy'||typeof playerId!=='string'||!playerId||!Number.isFinite(damage)||damage<=0)return;
+  /** status.threatTable: 서버에서 관리하는 플레이어별 누적 위협수치. */ status.threatTable??=Object.create(null);
+  /** previous: 동일 플레이어의 이전 누적 위협수치. */ const previous=Object.hasOwn(status.threatTable,playerId)?status.threatTable[playerId]:0;
+  Object.defineProperty(status.threatTable,playerId,{value:previous+damage,writable:true,enumerable:true,configurable:true});
+}
+
 /** 서버에서 체력을 변경하고 화면·로그가 공통으로 사용할 확정 피해 결과를 만든다. */
 export function applySkillDamage(
   /** instance: 공격자와 시전 ID를 보유한 기술 인스턴스. */ instance,
   /** target: 피해를 받을 개체. */ target,
   /** amount: 이 접촉에 대해 계산한 피해량. */ amount,
   /** now: 피해를 확정하는 서버 시각(밀리초). */ now,
+  /** attacker: 서버에서 확인한 실제 공격자 개체. */ attacker=null,
 ) {
   if (!Number.isFinite(amount) || amount<0 || target.status.state===LifeState.DEAD) return null;
   const /** healthBefore: 피해를 적용하기 직전 체력. */ healthBefore = target.status.currentHealth;
@@ -40,8 +53,12 @@ export function applySkillDamage(
     /** healthRegenNextAt: 재피격 시 5초 회복 대기를 처음부터 다시 시작한다. */ target.status.healthRegenNextAt=now+5000;
   }
   normalizeVitals(target.status);
+  if(attacker?.status?.objectType==='player'&&target.status.objectType==='enemy'&&healthBefore>target.status.currentHealth){
+    addThreat(target.status,attacker.id,healthBefore-target.status.currentHealth);
+    if(target.status.classificationCode==='TEST003')addThreat(target.status,attacker.id,50);
+  }
   // 피해 적용 경로를 공유하므로 즉시 공격·투사체·장판 모두 마지막 실제 공격자를 기록한다.
-  if(amount>0&&target.status.objectType==='enemy'&&target.status.state!==LifeState.DEAD&&target.status.awarenessState!=='returning') {
+  if(amount>0&&target.status.objectType==='enemy'&&target.status.state!==LifeState.DEAD&&target.status.awarenessState!=='returning'&&attacker?.status?.objectType==='player') {
     target.status.attackTargetId=instance.casterId;
     target.status.awarenessState='combat';
     if(target.monsterAI)target.monsterAI.hasAttacked=false;
@@ -75,7 +92,8 @@ export function resolveSkillContacts(
     const /** lastHit: 이 기술이 같은 대상에게 마지막으로 피해를 준 시각. */ lastHit=instance.hitTimes.get(target.id);
     if(lastHit!==undefined && (instance.hitIntervalMs===null || now-lastHit<instance.hitIntervalMs)) continue;
     if(!intersectsSkill(instance,target)) continue;
-    const /** result: 서버가 확정한 이번 접촉의 피해 결과. */ result=applySkillDamage(instance,target,damageRule(instance,target),now);
+    const /** attacker: 시전 ID에 대응하는 실제 플레이어 또는 몬스터 개체. */ attacker=objects.find(/** 공격자 ID를 검사한다. */ (/** object: 서버에 존재하는 공격 개체. */ object)=>object.id===instance.casterId);
+    const /** result: 서버가 확정한 이번 접촉의 피해 결과. */ result=applySkillDamage(instance,target,damageRule(instance,target),now,attacker);
     if(!result) continue;
     if(result.killed&&!target.rewardGranted&&(target.status.objectType==='enemy'||(target.status.objectType==='prop'&&target.status.classificationCode==='OBJ0001'))){
       const /** killer: 현재 방에 남아 있는 실제 플레이어 공격자. */ killer=objects.find(/** 공격자 ID를 검증한다. */ (/** object: 월드 개체. */ object)=>object.id===instance.casterId&&object.status.objectType==='player'&&object.status.state==='alive');
