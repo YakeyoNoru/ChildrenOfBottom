@@ -8,7 +8,7 @@ import { /** generateRoomMap: 실제 지도 생성 함수. */ generateRoomMap } 
 
 /** 적 공격으로 사용할 공통 피해 인스턴스를 만들어 마지막 공격자 처리를 실행한다. */
 function hit(/** monster: 피해를 받을 유닛. */ monster, /** attacker: 실제 공격자. */ attacker, /** amount: 실제 피해량. */ amount=1) {
-  return applySkillDamage({id:'test',casterId:attacker.id,code:'BAS0001',resultSequence:0},monster,amount,0);
+  return applySkillDamage({id:'test',casterId:attacker.id,code:'BAS0001',resultSequence:0},monster,amount,0,attacker);
 }
 
 /** 체력이 충분한 검증용 플레이어를 지정 위치에 만든다. */
@@ -47,7 +47,8 @@ test('normal tiles spawn only the requested presets and inclusive population bou
   const /** monsters: 실제 지도 생성 결과. */ monsters=[...spawnMonsters(map).values()];
   for(const /** tile: 종류·높이에 따른 수량을 검증할 타일. */ tile of map.tiles){
     const /** count: 해당 타일 생성 몬스터 수. */ count=monsters.filter(/** 생성 타일을 비교한다. */ (/** monster: 배치 결과. */ monster)=>monster.spawnTileId===tile.id).length;
-    if(tile.kind!=='normal'||![1,2].includes(tile.height))assert.equal(count,0);
+    if(tile.kind==='boss'&&[1,2].includes(tile.height))assert.equal(count,1);
+    else if(tile.kind!=='normal'||![1,2].includes(tile.height))assert.equal(count,0);
     else assert.ok(tile.height===1?count<=8:count>=2&&count<=6);
   }
 });
@@ -190,4 +191,32 @@ test('stun, caster death and the 400 leash cancel a pending windup without relea
       assert.equal(monster.monsterAI.windupUntil,3500);
     }
   }
+});
+
+test('TEST003 boss preset, center spawn and player threat accumulation', /** 보스 기본 능력치·생성 위치·피격 위협수치 누적을 검증한다. */ ()=>{
+  const /** map: 보스 하나만 배치할 검증 지도. */ map={tileRadius:600,landScale:1,tiles:[{id:20,q:0,r:0,height:2,kind:'boss'}],bridges:[]};
+  const /** boss: 중앙에 생성된 보스 몬스터. */ boss=[...spawnMonsters(map).values()][0];
+  assert.equal(boss.presetId,'몬스터C01');assert.equal(boss.x,0);assert.equal(boss.y,0);
+  assert.equal(boss.status.classificationCode,'TEST003');assert.equal(boss.status.level,8);
+  assert.equal(boss.status.maxHealth,250);assert.equal(boss.status.currentHealth,250);
+  assert.equal(boss.status.attack,30);assert.equal(boss.status.defense,2);
+  assert.equal(boss.status.moveSpeed,2.5);assert.equal(boss.status.experience,400);
+  assert.deepEqual({...boss.status.threatTable},{});
+  const /** attacker: 보스에게 실제 피해를 줄 플레이어. */ attacker=player(50,'threat-player');
+  hit(boss,attacker,10);assert.equal(boss.status.threatTable[attacker.id],60);
+  hit(boss,attacker,5);assert.equal(boss.status.threatTable[attacker.id],115);
+  tickMonsters([boss,attacker],null,0,.05,/** 구르기를 선택하지 않는다. */ ()=>.9);
+  assert.equal(boss.status.awarenessState,'combat');
+});
+
+test('TEST003 boss resets at 800 distance and clears threat after returning', /** 보스 이탈 거리와 귀환 후 상태·체력·위협 초기화를 검사한다. */ ()=>{
+  const /** boss: 생성점에서 이탈시킬 보스. */ boss=createMonster('몬스터C01');
+  const /** attacker: 공격대상 플레이어. */ attacker=player(800,'attacker');
+  hit(boss,attacker,20);
+  boss.x=800;
+  tickMonsters([boss,attacker],null,0,.05);
+  assert.equal(boss.status.awarenessState,'returning');
+  for(let /** index: 귀환 완료까지의 틱 순번. */ index=1;index<100;index++)tickMonsters([boss,attacker],null,index*50,.05);
+  assert.equal(boss.x,0);assert.equal(boss.status.currentHealth,250);
+  assert.equal(boss.status.awarenessState,'normal');assert.deepEqual({...boss.status.threatTable},{});
 });
