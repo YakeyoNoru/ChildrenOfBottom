@@ -398,6 +398,7 @@ const /** canvas: 월드 화면을 그리는 캔버스 요소. */ canvas = $('wo
     if (p.status?.objectType === 'player' || p.id === playerId) drawPlayerTriangle(ctx, p, x, y);
     else if(p.status?.objectType==='prop'){ctx.fillStyle='#ffe184';ctx.fillRect(x-10,y-15,20,30);ctx.strokeStyle='#4b3826';ctx.lineWidth=3;ctx.strokeRect(x-10,y-15,20,30);}
     else { ctx.beginPath(); ctx.arc(x,y,18,0,Math.PI*2); ctx.fill(); }
+    if(p.presetId==='몬스터C01'){ctx.fillStyle='#ffe58b';ctx.textAlign='center';ctx.font='bold 22px system-ui';ctx.fillText('☆',x,y-73);}
     if (userSettings.showNames) { ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = '14px system-ui'; ctx.fillText(p.name + (p.id === playerId ? ' (나)' : ''),x,y-54); }
     drawObjectHud(ctx, p, x, y, playerId);
   });
