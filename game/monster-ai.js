@@ -94,7 +94,7 @@ function moveToward(
     if(distance(reverse,previous)>1e-6)return false;
   }
   if(distance(previous,allowed)<1e-8)return false;
-  if(!returning)monster.monsterAI.returnPath.push(previous);
+  if(!returning&&monster.monsterAI)monster.monsterAI.returnPath.push(previous);
   monster.x=allowed.x;monster.y=allowed.y;monster.facing=angle;monster.action='move';
   if(!returning&&distance(monster,monster.status.spawnPosition)>=400)startReturn(monster,map);
   return true;
