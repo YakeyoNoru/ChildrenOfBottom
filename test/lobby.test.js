@@ -196,7 +196,7 @@ test('world snapshots share player/NPC/enemy stats; stun/death and speed use ser
   const /** npc: 검증용 우호 NPC 개체. */ npc=createWorldObject({objectType:'npc',classificationCode:'NPC001',name:'주민',x:p.x+20,y:p.y,maxSkillResource:5,currentSkillResource:2});
   const /** enemy: 선택한 적대 개체 또는 해당 대상까지의 제곱 거리. */ enemy=createWorldObject({objectType:'enemy',classificationCode:'ENEMY001',name:'몬스터',x:p.x+50,y:p.y});
   room.objects.set(npc.id,npc);room.objects.set(enemy.id,enemy);
-  let /** state: 현재 상태 스냅샷. */ state;do{state=await b.next('game.state');}while(state.room.objects.length!==room.objects.size+room.players.size||!state.room.players.find(/** 대상 갱신이 끝난 본인 상태를 확인한다. */ (/** player: 수신 플레이어. */ player)=>player.id===b.id).status.nearestEnemyId);
+  let /** state: 현재 상태 스냅샷. */ state;do{state=await b.next('game.state');}while(!state.room.objects.some(/** object: 새 NPC가 포함된 상태인지 확인한다. */ object=>object.id===npc.id)||!state.room.objects.some(/** object: 새 적이 포함된 상태인지 확인한다. */ object=>object.id===enemy.id)||state.room.objects.length!==room.objects.size+room.players.size||!state.room.players.find(/** 대상 갱신이 끝난 본인 상태를 확인한다. */ (/** player: 수신 플레이어. */ player)=>player.id===b.id).status.nearestEnemyId);
   assert.equal(state.room.players.find(/** x: 검증 좌표·비교 항목 또는 위치 조회 함수. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ x=>x.id===b.id).status.moveSpeed,2);
   assert.equal(state.room.players.find(/** x: 검증 좌표·비교 항목 또는 위치 조회 함수. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ x=>x.id===b.id).status.classificationCode,b.id);
   assert.equal(state.room.objects.find(/** x: 검증 좌표·비교 항목 또는 위치 조회 함수. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ x=>x.id===npc.id).status.objectType,'npc');
@@ -416,16 +416,18 @@ test('room start spawns monsters and synchronizes server AI, retaliation effects
   for(const /** snapshot: 검증할 몬스터 스냅샷. */ snapshot of monsters) {
     assert.deepEqual(snapshot.status.spawnPosition,{x:snapshot.x,y:snapshot.y});
     assert.equal(snapshot.status.awarenessState,'normal');assert.equal(snapshot.status.attackTargetId,null);
-    assert.equal(snapshot.monsterAI,undefined);assert.ok(['몬스터A01','몬스터A02'].includes(snapshot.presetId));
+    assert.equal(snapshot.monsterAI,undefined);assert.ok(['몬스터A01','몬스터A02','몬스터C01'].includes(snapshot.presetId));
     const /** tile: 해당 몬스터 생성 지형. */ tile=room.map.tiles.find(/** 생성 타일을 조회한다. */ (/** candidate: 타일 후보. */ candidate)=>candidate.id===snapshot.spawnTileId);
-    assert.equal(tile.kind,'normal');assert.ok([1,2].includes(tile.height));
+    // 보스와 일반 프리셋의 필드 종류·높이를 각각 검증한다.
+    if(snapshot.presetId==='몬스터C01'){assert.equal(tile.kind,'boss');assert.ok([1,2].includes(tile.height));}
+    else{assert.ok(['normal','rich'].includes(tile.kind));assert.ok(snapshot.presetId==='몬스터A01'?[1,2].includes(tile.height):tile.height===2);}
   }
   const /** monster: 서버 반격을 검증할 생성 몬스터. */ monster=[...room.objects.values()].find(/** 반격할 몬스터를 고른다. */ (/** object: 서버 개체. */ object)=>object.status.objectType==='enemy');
   const /** attacker: 인위적 피해의 실제 공격자. */ attacker=room.players.get(connection.id);
   // 생성점까지의 직선이 지형 안에 있도록 대상과 몬스터의 중심을 잠시 일치시킨다.
   attacker.x=monster.x;attacker.y=monster.y;attacker.status.maxHealth=1000;attacker.status.currentHealth=1000;
   const /** applySkillDamage: 공통 기술 피해 함수. */ {applySkillDamage}=await import('../game/combat.js');
-  applySkillDamage({id:'integration-hit',casterId:attacker.id,code:'BAS0001',resultSequence:0},monster,1,Date.now());
+  applySkillDamage({id:'integration-hit',casterId:attacker.id,code:'BAS0001',resultSequence:0},monster,1,Date.now(),attacker);
   let /** retaliated: 서버 AI가 공격 표시를 생성했는지 여부. */ retaliated=false;
   for(let /** attempt: 1.5초 공격 준비와 전송 여유를 포함한 반격 스냅샷 대기 횟수. */ attempt=0;attempt<60;attempt++) {
     state=(await connection.next('game.state')).room;

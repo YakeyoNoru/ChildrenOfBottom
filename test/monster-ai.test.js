@@ -1,3 +1,4 @@
+import { /** canSpawnMonster: 프리셋별 지형 생성 제약을 공통 판정한다. */ canSpawnMonster } from '../game/monster-ai.js';
 import { /** test: 시나리오 등록 함수. */ test } from 'node:test';
 import /** assert: 결과 검증 도구. */ assert from 'node:assert/strict';
 import { /** spawnMonsters: 타일별 몬스터 배치 함수. */ spawnMonsters, /** tickMonsters: 서버 AI 시뮬레이션 함수. */ tickMonsters } from '../game/monster-ai.js';
@@ -27,32 +28,27 @@ test('enemy common fields capture the spawn position independently and validate 
   }
 });
 
-test('normal tiles spawn only the requested presets and inclusive population bounds', /** 최소·최대 수량과 일반 타일 조건을 실제 히트박스로 검사한다. */ () => {
-  for(const /** height: 검증 타일 높이. */ height of [1,2])for(const /** upper: 수량 범위의 최댓값 검사 여부. */ upper of [false,true]) {
-    let /** seed: 위치를 재현하는 난수 상태. */ seed=123;
-    let /** first: 다음 난수가 수량 선택인지 여부. */ first=true;
-    const /** map: 이번 타일만 포함하는 지도. */ map={tileRadius:600,landScale:1,tiles:[{id:1,q:0,r:0,height,kind:'normal'}],bridges:[]};
-    const /** monsters: 첫 난수만 경계값으로 고정한 배치 결과. */ monsters=[...spawnMonsters(map,/** 수량 경계값 이후에는 위치용 난수를 반환한다. */ ()=>{
-      if(first){first=false;return upper ? .999999 : 0;}
-      seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;
-    }).values()];
-    assert.equal(monsters.length,height===1?(upper?8:0):(upper?6:2));
-    for(const /** monster: 지형 내부와 종류를 검사할 개체. */ monster of monsters){
-      assert.equal(monster.presetId,height===1?'몬스터A01':'몬스터A02');
-      assert.ok(globalThis.PitMapRules.walkable(map,monster.x,monster.y,13));
-      assert.deepEqual(monster.status.spawnPosition,{x:monster.x,y:monster.y});
+test('monster spawn terrain matrix and per-preset population bounds', /** 모든 필드 종류·높이 조합에서 허용·금지 조건과 실제 생성 수를 검사한다. */ ()=>{
+  for(const /** kind: 검사할 지형 종류. */ kind of ['normal','rich','boss','start','safe','unknown'])for(const /** height: 허용 높이와 금지 높이. */ height of [0,1,2,3,4]) {
+    const /** tile: 조합별 단일 지형. */ tile={id:1,q:0,r:0,height,kind};
+    const /** map: 배치 충돌 검사에 사용할 단일 타일 지도. */ map={tileRadius:600,landScale:1,tiles:[tile],bridges:[]};
+    let /** seed: 위치 난수 재현용 상태. */ seed=123;
+    const /** monsters: 실제 공통 생성기를 통과한 모든 몬스터. */ monsters=[...spawnMonsters(map,/** 재현 가능한 배치 난수를 반환한다. */ ()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;}).values()];
+    for(const /** presetId: 검사할 세 프리셋. */ presetId of ['몬스터A01','몬스터A02','몬스터C01']) {
+      const /** allowed: 명세를 독립적으로 계산한 생성 허용 여부. */ allowed=presetId==='몬스터C01'?kind==='boss'&&[1,2].includes(height):['normal','rich'].includes(kind)&&(presetId==='몬스터A01'?[1,2].includes(height):height===2);
+      assert.equal(canSpawnMonster(presetId,tile),allowed,`${presetId} ${kind} ${height}`);
+      const /** spawned: 해당 프리셋의 실제 생성 결과. */ spawned=monsters.filter(/** monster: 검사할 생성 개체. */ monster=>monster.presetId===presetId);
+      if(!allowed)assert.equal(spawned.length,0);
+      else if(presetId==='몬스터C01'){assert.equal(spawned.length,1);assert.deepEqual({x:spawned[0].x,y:spawned[0].y},globalThis.PitMapRules.center(tile,map));}
+      else assert.ok(presetId==='몬스터A01'?spawned.length<=8:spawned.length>=2&&spawned.length<=6);
     }
-  }
-  const /** map: 일반 이외 종류와 높이도 포함하는 실제 지도. */ map=generateRoomMap(29);
-  const /** monsters: 실제 지도 생성 결과. */ monsters=[...spawnMonsters(map).values()];
-  for(const /** tile: 종류·높이에 따른 수량을 검증할 타일. */ tile of map.tiles){
-    const /** count: 해당 타일 생성 몬스터 수. */ count=monsters.filter(/** 생성 타일을 비교한다. */ (/** monster: 배치 결과. */ monster)=>monster.spawnTileId===tile.id).length;
-    if(tile.kind==='boss'&&[1,2].includes(tile.height))assert.equal(count,1);
-    else if(tile.kind!=='normal'||![1,2].includes(tile.height))assert.equal(count,0);
-    else assert.ok(tile.height===1?count<=8:count>=2&&count<=6);
+    for(const /** monster: 히트박스·생성점 검증 대상. */ monster of monsters){
+      assert.equal(monster.spawnTileId,tile.id);assert.deepEqual(monster.status.spawnPosition,{x:monster.x,y:monster.y});
+      assert.ok(globalThis.PitMapRules.walkable(map,monster.x,monster.y,monster.status.hitboxDiameter/2));
+    }
+    for(let /** index: 앞선 개체와 거리 비교할 순번. */ index=0;index<monsters.length;index++)for(const /** other: 같은 타일의 앞선 몬스터. */ other of monsters.slice(0,index))assert.ok(Math.hypot(other.x-monsters[index].x,other.y-monsters[index].y)>=26);
   }
 });
-
 test('TEST001 wanders 5 to 50 units after a 1 to 3 second idle interval without acquiring nearby targets', /** 최소 간격·거리 및 비선제 행동을 검사한다. */ () => {
   const /** monster: 배회할 몬스터. */ monster=createMonster('몬스터A01');
   const /** target: 공격하지 않은 주변 플레이어. */ target=player();
@@ -216,7 +212,7 @@ test('TEST003 boss resets at 800 distance and clears threat after returning', /*
   boss.x=800;
   tickMonsters([boss,attacker],null,0,.05);
   assert.equal(boss.status.awarenessState,'returning');
-  for(let /** index: 귀환 완료까지의 틱 순번. */ index=1;index<100;index++)tickMonsters([boss,attacker],null,index*50,.05);
+  for(let /** index: 귀환 완료까지의 틱 순번. */ index=1;index<100&&boss.status.awarenessState==='returning';index++)tickMonsters([boss,attacker],null,index*50,.05);
   assert.equal(boss.x,0);assert.equal(boss.status.currentHealth,250);
   assert.equal(boss.status.awarenessState,'normal');assert.deepEqual({...boss.status.threatTable},{});
 });
