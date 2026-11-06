@@ -154,6 +154,7 @@ function tickBoss(
       return;
     }
   }
+  if(ai.phase==='idle')ai.phase='start';
   const /** target: 현재 공격 대상으로 지정된 살아 있는 플레이어. */ target=players.find(/** 공격대상 ID를 조회한다. */ (/** player: 대상 후보. */ player)=>player.id===status.attackTargetId);
   if(!target||distance(boss,target)>200){reset();return;}
   if(ai.phase==='start'){
