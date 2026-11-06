@@ -11,7 +11,13 @@ export function spawnMonsters(
   const /** monsters: 개체ID로 조회하는 이번 게임의 몬스터 목록. */ monsters = new Map();
   const /** normals: 육각형의 각 변 바깥 방향 단위 벡터. */ normals = Array.from({length:6}, /** 변 순번에서 법선을 계산한다. */ (/** unused: 사용하지 않는 배열 값. */ unused, /** index: 변 순번. */ index) => ({x:Math.cos(Math.PI/6+index*Math.PI/3),y:Math.sin(Math.PI/6+index*Math.PI/3)}));
   for (const /** tile: 수량과 프리셋을 결정할 필드타일. */ tile of map.tiles) {
-    if(tile.kind!=='normal'||![1,2].includes(tile.height))continue;
+    if(!['normal','boss'].includes(tile.kind)||![1,2].includes(tile.height))continue;
+    if(tile.kind==='boss'){
+      const /** center: 보스 타일의 정확한 월드 중심. */ center=globalThis.PitMapRules.center(tile,map);
+      const /** boss: 보스 지역마다 하나만 생성하는 몬스터C01. */ boss=createMonster('몬스터C01',center);
+      /** boss.spawnTileId: 보스가 처음 생성된 타일 번호. */ boss.spawnTileId=tile.id;
+      monsters.set(boss.id,boss);continue;
+    }
     const /** count: 양 끝을 포함한 이번 타일 생성 수. */ count = tile.height===1 ? Math.floor(random()*9) : 2+Math.floor(random()*5);
     const /** center: 이번 타일의 월드 중심. */ center = globalThis.PitMapRules.center(tile,map);
     const /** radius: 타일 한 변 길이(월드 거리). */ radius = (map.tileRadius??90)*(map.landScale??.89);
