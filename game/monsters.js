@@ -20,11 +20,24 @@ export const MonsterPresets = Object.freeze({
     /** attack: 생성 시 기본공격력. */ attack: 10,
     /** experience: 처치한 플레이어에게 공통 피해 흐름에서 지급할 경험치. */ experience: 50,
   }),
+  /** 몬스터C01: TEST003 보스 전용 프리셋. */
+  몬스터C01:Object.freeze({
+    /** classificationCode: 보스 전용 행동 분류. */ classificationCode:'TEST003',
+    /** level: 보스 레벨. */ level:8,
+    /** hitboxDiameter: 보스 원형 판정 지름. */ hitboxDiameter:30,
+    /** maxHealth: 보스 최대체력. */ maxHealth:250,
+    /** attack: 보스 기본 공격력. */ attack:30,
+    /** defense: 보스 방어력. */ defense:2,
+    /** moveSpeed: 보스 기본 이동속도. */ moveSpeed:2.5,
+    /** skillResourceRegen: 보스의 기본 스킬자원 회복량. */ skillResourceRegen:0,
+    /** bountyPoints: 별도 현상금 보상 미지정. */ bountyPoints:0,
+    /** experience: 보스 처치 경험치. */ experience:400,
+  }),
 });
 
 /** 프리셋의 확정 능력치와 최대체력으로 독립된 몬스터 유닛을 생성한다. 서버 배치·행동은 monster-ai.js에서 연결한다. */
 export function createMonster(
-  /** presetId: 몬스터A01 또는 몬스터A02 프리셋 식별자. */ presetId,
+  /** presetId: 몬스터A01·몬스터A02·몬스터C01 프리셋 식별자. */ presetId,
   /** options: 서버에서 지정할 위치·개체ID·표시 이름. */ options = {},
 ) {
   if (!Object.hasOwn(MonsterPresets, presetId)) throw new TypeError('Unknown monster preset');
