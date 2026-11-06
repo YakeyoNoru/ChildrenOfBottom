@@ -12,6 +12,24 @@ function setup(/** readAlpha: 특정 픽셀이 실제 탐색됐는지 반환하�
  return {model:vm.runInContext('new MiniMap(canvas)',context),calls};
 }
 const /** map: 표시용 지도. */ map={id:'test',tileRadius:600,landScale:1,bridgeWidth:500,tiles:[{id:1,q:0,r:0,height:1}],bridges:[]};
+test('tile numbers follow exploration, map hack, pan and expanded-map bounds',/** 일반·맵핵 표시와 해제 복원 및 화면 밖 번호 생략을 검증한다. */ ()=>{
+ const /** model: 지도 모델; calls: 캔버스 호출 기록. */ {model,calls}=setup(/** 미탐색 마스크를 재현한다. */ ()=>0);
+ const /** canvas: 확대 지도 표시 대상. */ canvas={width:1024,height:640,getContext:/** 기존 기록 문맥을 반환한다. */ ()=>model.canvas.getContext('2d')};
+ model.draw(map,'ROOM',{x:0,y:0},684,canvas,true);
+ assert.equal(calls.some(/** 번호 표시 호출을 찾는다. */ (/** call: 그리기 호출. */ call)=>call[0]==='fillText'),false);
+ calls.length=0;model.draw(map,'ROOM',{x:0,y:0},684,canvas,true,{x:100,y:0},true);
+ const /** label: 맵핵으로 표시한 고유 번호와 화면 좌표. */ label=calls.find(/** 번호 표시 호출을 찾는다. */ (/** call: 그리기 호출. */ call)=>call[0]==='fillText');
+ assert.equal(label[1],'1');assert.ok(Math.abs(label[2]-(512-100*1024/1710))<1e-7);assert.equal(label[3],320);
+ calls.length=0;model.draw(map,'ROOM',{x:0,y:0},684,canvas,true,{x:0,y:0},false);
+ assert.equal(calls.some(/** 맵핵 해제 후 미탐색 번호가 숨는지 검사한다. */ (/** call: 그리기 호출. */ call)=>call[0]==='fillText'),false);
+ calls.length=0;model.draw(map,'ROOM',{x:0,y:0},684,canvas,true,{x:10000,y:0},true);
+ assert.equal(calls.some(/** 화면 밖 번호 호출을 찾는다. */ (/** call: 그리기 호출. */ call)=>call[0]==='fillText'),false);
+ const /** explored: 탐색을 완료한 지도 대역. */ explored=setup();
+ explored.model.draw(map,'ROOM',{x:0,y:0},684,explored.model.canvas,true);
+ assert.ok(explored.calls.some(/** 일반 모드에서도 탐색된 번호가 표시되는지 검사한다. */ (/** call: 그리기 호출. */ call)=>call[0]==='fillText'&&call[1]==='1'));
+ calls.length=0;model.draw(map,'ROOM',{x:0,y:0},684,model.canvas,false,{x:0,y:0},true);
+ assert.equal(calls.some(/** 작은 미니맵에는 번호가 없는지 검사한다. */ (/** call: 그리기 호출. */ call)=>call[0]==='fillText'),false);
+});
 test('minimap reveals radius 250, retains exploration and centers marker while moving',/** 공개 반경·누적 경로·화면 중심 표시를 검사한다. */ ()=>{
  const /** model: 미니맵; calls: 표시 호출. */ {model,calls}=setup();model.draw(map,'ROOM',{x:0,y:0,facing:0});
  assert.ok(calls.some(/** 반경 250의 공개 원인지 확인한다. */ (/** call: 그리기 기록. */ call)=>call[0]==='arc'&&call[1]===0&&call[2]===0&&call[3]===250));

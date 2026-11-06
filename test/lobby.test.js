@@ -94,6 +94,14 @@ test('HTTP serves only public files and health', /** 이 테스트 시나리오�
   const /** url: 해석하거나 접속할 URL. */ {url}=await setup(t);const /** base: 계정 서버 또는 테스트 서버의 기준 주소. */ base=url.replace('ws:','http:').replace('/ws','');
   for(const /** path: 요청 또는 파일의 경로. */ path of ['/','/app.js','/viewport.js','/motion.js','/style.css','/health'])assert.equal((await fetch(base+path)).status,200);
   assert.equal((await fetch(base+'/server.js')).status,404);
+  const /** page: 배포 후 다시 검증해야 하는 진입 화면 응답. */ page=await fetch(base+'/');
+  assert.equal(page.headers.get('cache-control'),'no-cache');
+  const /** html: 실제 진입 화면에 포함된 스크립트 경로. */ html=await page.text();
+  const /** minimapPath: 이전 브라우저 캐시와 구분되는 지도 스크립트 주소. */ minimapPath=html.match(/src="(\/minimap\.js\?v=[^"]+)"/)[1];
+  const /** minimap: 버전 쿼리를 포함해 받은 실제 지도 스크립트 응답. */ minimap=await fetch(base+minimapPath);
+  assert.equal(minimap.status,200);assert.equal(minimap.headers.get('cache-control'),'no-cache');
+  assert.match(await minimap.text(),/drawTileNumbers\(/);
+  assert.equal((await fetch(base+'/server.js?v=test')).status,404);
 });
 test('simultaneous joins never exceed five players', /** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ async /** t: 테스트 정리·검증 문맥 또는 프레임 시각. */ t => {
   const /** client: 테스트용 접속자 생성 함수; rooms: 접속코드별 방 상태를 보관하는 맵. */ {client,rooms}=await setup(t); const /** a: 첫 번째 검증용 값·개체·접속 결과. */ a=await client();

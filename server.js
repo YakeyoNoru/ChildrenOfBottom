@@ -26,11 +26,12 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
   const /** server: 정적 파일과 WebSocket 연결을 제공하는 HTTP 서버. */ server = http.createServer(/** 현재 비동기 작업의 완료 또는 후속 처리를 수행한다. */ async (/** req: 수신한 HTTP 요청. */ req, /** res: HTTP 응답 작성 객체. */ res) => {
     if (await auth.handle(req,res)) return;
     if (req.url === '/health') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end('{"ok":true,"protocolVersion":1}'); }
-    const /** file: 읽거나 저장할 파일 경로. */ file = files[req.url];
+    const /** pathname: 화면 파일의 버전 쿼리를 제외하고 공개 목록과 대조할 요청 경로. */ pathname = new URL(req.url,'http://localhost').pathname;
+    const /** file: 읽거나 저장할 파일 경로. */ file = files[pathname];
     if (!file || !['GET', 'HEAD'].includes(req.method)) { res.writeHead(404); return res.end(); }
     try {
       const /** body: 응답 또는 요청 본문 데이터. */ body = await readFile(new URL(`./public/${file[0]}`, import.meta.url));
-      res.writeHead(200, { 'Content-Type': `${file[1]}; charset=utf-8`, 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'self'; connect-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'" });
+      res.writeHead(200, { 'Content-Type': `${file[1]}; charset=utf-8`, 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'self'; connect-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'" });
       res.end(req.method === 'HEAD' ? undefined : body);
     } catch { res.writeHead(500); res.end('Server error'); }
   });
