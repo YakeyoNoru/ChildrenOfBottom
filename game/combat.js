@@ -58,7 +58,7 @@ export function applySkillDamage(
     if(target.status.classificationCode==='TEST003')addThreat(target.status,attacker.id,50);
   }
   // 피해 적용 경로를 공유하므로 즉시 공격·투사체·장판 모두 마지막 실제 공격자를 기록한다.
-  if(amount>0&&target.status.objectType==='enemy'&&target.status.state!==LifeState.DEAD&&target.status.awarenessState!=='returning'&&attacker?.status?.objectType==='player') {
+  if(amount>0&&target.status.objectType==='enemy'&&target.status.state!==LifeState.DEAD&&target.status.awarenessState!=='returning'&&(attacker?.status?.objectType==='player'||(!attacker&&target.status.classificationCode==='TEST001'))) {
     target.status.attackTargetId=instance.casterId;
     target.status.awarenessState='combat';
     if(target.monsterAI)target.monsterAI.hasAttacked=false;
