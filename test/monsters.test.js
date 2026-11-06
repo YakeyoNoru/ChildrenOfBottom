@@ -5,6 +5,7 @@ import { /** createMonster: 프리셋에서 독립 몬스터 유닛을 생성하
 test('monster presets preserve their shared species and distinct stats', /** 같은 종류의 두 프리셋이 지정 수치와 가득 찬 체력으로 생성되는지 검사한다. */ () => {
   for (const /** id: 생성할 프리셋 이름; level: 기대 레벨; health: 기대 최대·현재체력; attack: 기대 공격력; experience: 기대 처치 경험치. */ [id, level, health, attack, experience] of [
     ['몬스터A01', 1, 20, 3, 20], ['몬스터A02', 5, 50, 10, 50],
+    ['몬스터A03', 5, 50, 10, 50], ['몬스터A04', 5, 50, 10, 50],
   ]) {
     const /** monster: 위치를 지정해 생성한 검증용 몬스터. */ monster = createMonster(id, { x: 12, y: 34 });
     assert.equal(monster.presetId, id);
@@ -34,4 +35,12 @@ test('monster instances have independent identities and mutable state', /** 같�
   assert.equal(createMonster('몬스터A01').status.currentHealth, 20);
   assert.throws(/** 이전 이름은 프리셋으로 허용하지 않는다. */ () => createMonster('몬스터A'), TypeError);
   assert.throws(/** 객체 원형의 필드를 프리셋으로 허용하지 않는다. */ () => createMonster('toString'), TypeError);
+});
+
+
+test('upper boss copies C01 stats and owns independent identity and threat state',/** 상층 보스가 원본 수치와 TEST003 행동을 복사하고 상태를 공유하지 않는지 검사한다. */ ()=>{
+ const /** original: 원본 보스; upper: 높이 3·4용 새 보스. */ original=createMonster('몬스터C01'),upper=createMonster('몬스터C02');
+ for(const /** key: 보스 전용 수치 필드. */ key of ['classificationCode','level','maxHealth','currentHealth','attack','defense','moveSpeed','experience','hitboxDiameter','skillResourceRegen'])assert.equal(upper.status[key],original.status[key]);
+ assert.equal(upper.presetId,'몬스터C02');assert.notEqual(upper.id,original.id);
+ upper.status.threatTable.player=100;assert.deepEqual({...original.status.threatTable},{});
 });

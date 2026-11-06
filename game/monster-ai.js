@@ -4,45 +4,63 @@ import { /** castSkill: 공통 접촉·피해 파이프라인으로 기술을 �
 import { /** applySkillDamage: 보스 돌진 접촉 피해를 공통으로 확정한다. */ applySkillDamage } from './combat.js';
 import { /** effectiveStats: 이동속도와 최종 최대체력을 조회한다. */ effectiveStats, /** LifeState: 사망 유닛의 행동을 차단한다. */ LifeState } from './status.js';
 
-/** canSpawnMonster: 프리셋별 허용 높이와 필드 종류를 공통 판정한다. */
-export function canSpawnMonster(/** presetId: 생성하려는 프리셋. */ presetId, /** tile: 후보 지형 타일. */ tile) {
-  if(!tile||![1,2].includes(tile.height))return false;
-  if(presetId==='몬스터C01')return tile.kind==='boss';
-  if(!['normal','rich'].includes(tile.kind))return false;
-  return presetId==='몬스터A01'||(presetId==='몬스터A02'&&tile.height===2);
+/** MAX_MONSTERS_PER_TILE: 프리셋 종류와 관계없이 하나의 생성 타일에 등록할 수 있는 몬스터 수 상한. */
+export const MAX_MONSTERS_PER_TILE=8;
+
+/** 생성 타일에 현재 등록된 몬스터만 센다. 플레이어·NPC·사물은 제외하고 제거되지 않은 몬스터는 포함한다. */
+export function countTileMonsters(/** tile: 생성 수를 검사할 지형. */ tile,/** monsters: 현재 월드에 등록된 개체 Map. */ monsters){
+  let /** count: 해당 생성 타일의 누적 등록 몬스터 수. */ count=0;
+  for(const /** monster: 검사할 등록 개체. */ monster of monsters.values())if(monster.status?.objectType==='enemy'&&monster.spawnTileId===tile.id)count++;
+  return count;
 }
 
-/** 높이·필드별 허용 프리셋을 생성하고 같은 타일의 원형 히트박스 중첩을 방지한다. */
+/** 프리셋의 높이·필드 조건과 현재 등록 몬스터 수를 공통 판정한다. */
+export function canSpawnMonster(/** presetId: 생성하려는 프리셋. */ presetId,/** tile: 후보 지형 타일. */ tile,/** monsters: 생성 직전 확인할 현재 월드 개체 목록. */ monsters=new Map()){
+  if(!tile||countTileMonsters(tile,monsters)>=MAX_MONSTERS_PER_TILE)return false;
+  if(presetId==='몬스터C01')return tile.kind==='boss'&&[1,2].includes(tile.height);
+  if(presetId==='몬스터C02')return tile.kind==='boss'&&[3,4].includes(tile.height);
+  if(!['normal','rich'].includes(tile.kind))return false;
+  if(presetId==='몬스터A01')return [1,2].includes(tile.height);
+  return (presetId==='몬스터A02'&&tile.height===2)||(presetId==='몬스터A03'&&tile.height===3)||(presetId==='몬스터A04'&&tile.height===4);
+}
+
+/** 매 개체 생성 직전에 타일 정원을 재검사하고 성공한 개체를 즉시 등록한다. 정원·지형 제한이면 null을 반환한다. */
+export function spawnMonsterOnTile(/** presetId: 생성할 몬스터 프리셋. */ presetId,/** tile: 생성 지역. */ tile,/** monsters: 검사와 등록이 공유하는 월드 개체 Map. */ monsters,/** position: 배치 충돌 검사를 마친 월드 중심. */ position){
+  if(!canSpawnMonster(presetId,tile,monsters))return null;
+  const /** monster: 생성 제약을 통과한 독립 서버 몬스터. */ monster=createMonster(presetId,position);
+  /** spawnTileId: 정원 계산과 생성 위치 복귀에 사용할 최초 타일 번호. */ monster.spawnTileId=tile.id;
+  monsters.set(monster.id,monster);return monster;
+}
+
+/** 높이·필드별 프리셋을 배치한다. 기존 개체와 합쳐 타일당 8마리 및 원형 히트박스 간격을 유지한다. */
 export function spawnMonsters(
-  /** map: 게임 시작 시 서버가 생성한 지도. */ map,
-  /** random: 수량·위치 선택에 쓰는 0 이상 1 미만 난수 함수. */ random = Math.random,
-) {
-  const /** monsters: 개체ID로 조회하는 이번 게임의 몬스터 목록. */ monsters = new Map();
-  const /** normals: 육각형의 각 변 바깥 방향 단위 벡터. */ normals = Array.from({length:6}, /** 변 순번에서 법선을 계산한다. */ (/** unused: 사용하지 않는 배열 값. */ unused, /** index: 변 순번. */ index) => ({x:Math.cos(Math.PI/6+index*Math.PI/3),y:Math.sin(Math.PI/6+index*Math.PI/3)}));
-  for (const /** tile: 수량과 프리셋을 결정할 필드타일. */ tile of map.tiles) {
-    if(canSpawnMonster('몬스터C01',tile)){
-      const /** center: 보스 타일의 정확한 월드 중심. */ center=globalThis.PitMapRules.center(tile,map);
-      const /** boss: 보스 지역마다 하나만 생성하는 몬스터C01. */ boss=createMonster('몬스터C01',center);
-      /** boss.spawnTileId: 보스가 처음 생성된 타일 번호. */ boss.spawnTileId=tile.id;
-      monsters.set(boss.id,boss);continue;
+  /** map: 서버가 생성한 지도. */ map,
+  /** random: 수량·위치 선택에 쓰는 0 이상 1 미만 난수 함수. */ random=Math.random,
+  /** monsters: 기존 월드 개체. 생략하면 빈 목록에서 초기 생성하며, 지정하면 같은 목록에 추가한다. */ monsters=new Map(),
+){
+  const /** normals: 육각형 각 변 바깥 방향의 단위 벡터. */ normals=Array.from({length:6},/** 각 변의 법선을 계산한다. */ (/** unused: 사용하지 않는 배열 값. */ unused,/** index: 변 순번. */ index)=>({x:Math.cos(Math.PI/6+index*Math.PI/3),y:Math.sin(Math.PI/6+index*Math.PI/3)}));
+  for(const /** tile: 수량과 프리셋을 결정할 필드타일. */ tile of map.tiles){
+    const /** center: 타일의 월드 중심. */ center=globalThis.PitMapRules.center(tile,map);
+    if(tile.kind==='boss'){
+      if(countTileMonsters(tile,monsters)===0)spawnMonsterOnTile(tile.height<=2?'몬스터C01':'몬스터C02',tile,monsters,center);
+      continue;
     }
-    if(!canSpawnMonster('몬스터A01',tile))continue;
-    const /** center: 이번 타일의 월드 중심. */ center = globalThis.PitMapRules.center(tile,map);
-    const /** radius: 타일 한 변 길이(월드 거리). */ radius = (map.tileRadius??90)*(map.landScale??.89);
-    const /** placed: 이번 타일에 생성한 개체. */ placed = [];
-    for(const /** presetId: 이번 타일에서 생성할 일반 몬스터 프리셋. */ presetId of ['몬스터A01','몬스터A02']) {
-    if(!canSpawnMonster(presetId,tile))continue;
-    const /** count: 프리셋별 기존 수량 범위의 양 끝을 포함한 생성 수. */ count=presetId==='몬스터A01'?Math.floor(random()*9):2+Math.floor(random()*5);
-    const /** targetCount: 이전 프리셋을 포함한 이번 배치 완료 수. */ targetCount=placed.length+count;
-    for(let /** attempt: 프리셋당 배치 재시도 횟수. */ attempt=0;placed.length<targetCount&&attempt<10000;attempt++) {
-      const /** position: 타일 경계와 기존 몬스터 간격을 검사할 후보 월드 위치. */ position = {x:center.x+(random()*2-1)*radius,y:center.y+(random()*2-1)*radius};
-      if(!normals.every(/** 원형 히트박스 전체가 지형 내부인지 검사한다. */ (/** normal: 변의 바깥 법선. */ normal)=>(position.x-center.x)*normal.x+(position.y-center.y)*normal.y<=radius*Math.sqrt(3)/2-13))continue;
-      if(placed.some(/** 같은 타일에서 히트박스가 겹치는 생성을 피한다. */ (/** other: 이미 생성한 몬스터. */ other)=>Math.hypot(other.x-position.x,other.y-position.y)<26))continue;
-      const /** monster: 생성 제약을 통과한 프리셋의 유닛. */ monster = createMonster(presetId,position);
-      /** monster.spawnTileId: 최초 생성 타일의 번호. */ monster.spawnTileId=tile.id;
-      monsters.set(monster.id,monster);placed.push(monster);
-    }
-    if(placed.length!==targetCount)throw new Error('몬스터 배치 공간이 부족합니다.');
+    const /** radius: 타일 한 변 길이(월드 거리). */ radius=(map.tileRadius??90)*(map.landScale??.89);
+    const /** placed: 동일 생성 타일의 기존 몬스터와 이번 생성 개체. */ placed=[...monsters.values()].filter(/** 같은 타일의 몬스터만 남긴다. */ (/** monster: 등록된 월드 개체. */ monster)=>monster.status?.objectType==='enemy'&&monster.spawnTileId===tile.id);
+    for(const /** presetId: 기존 순서를 유지한 일반 몬스터 프리셋. */ presetId of ['몬스터A01','몬스터A02','몬스터A03','몬스터A04']){
+      if(!canSpawnMonster(presetId,tile,monsters))continue;
+      const /** rolledCount: 프리셋별 추첨 생성 수. A03·A04는 A02 수량을 복사한다. */ rolledCount=presetId==='몬스터A01'?Math.floor(random()*9):2+Math.floor(random()*5);
+      const /** count: 기존 등록 수를 제외한 남은 정원까지만 허용한 생성 수. */ count=Math.min(rolledCount,MAX_MONSTERS_PER_TILE-countTileMonsters(tile,monsters));
+      const /** targetCount: 기존 몬스터를 포함한 이번 프리셋 배치 완료 수. */ targetCount=placed.length+count;
+      for(let /** attempt: 배치 공간 탐색 횟수. */ attempt=0;placed.length<targetCount&&attempt<10000;attempt++){
+        const /** position: 타일 경계와 개체 간격을 검사할 후보 월드 중심. */ position={x:center.x+(random()*2-1)*radius,y:center.y+(random()*2-1)*radius};
+        if(!normals.every(/** 히트박스 전체가 지형 안에 있는지 검사한다. */ (/** normal: 변 바깥 법선. */ normal)=>(position.x-center.x)*normal.x+(position.y-center.y)*normal.y<=radius*Math.sqrt(3)/2-13))continue;
+        if(placed.some(/** 기존 몬스터와 원형 히트박스 간격을 검사한다. */ (/** other: 먼저 등록된 몬스터. */ other)=>Math.hypot(other.x-position.x,other.y-position.y)<13+(other.status.hitboxDiameter??26)/2))continue;
+        const /** monster: 정원·지형을 재검사하여 등록한 개체. */ monster=spawnMonsterOnTile(presetId,tile,monsters,position);
+        if(!monster)break;
+        placed.push(monster);
+      }
+      if(placed.length!==targetCount)throw new Error('몬스터 배치 공간이 부족합니다.');
     }
   }
   return monsters;

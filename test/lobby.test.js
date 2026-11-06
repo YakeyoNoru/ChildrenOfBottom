@@ -504,11 +504,11 @@ test('room start spawns monsters and synchronizes server AI, retaliation effects
   for(const /** snapshot: 검증할 몬스터 스냅샷. */ snapshot of monsters) {
     assert.deepEqual(snapshot.status.spawnPosition,{x:snapshot.x,y:snapshot.y});
     assert.equal(snapshot.status.awarenessState,'normal');assert.equal(snapshot.status.attackTargetId,null);
-    assert.equal(snapshot.monsterAI,undefined);assert.ok(['몬스터A01','몬스터A02','몬스터C01'].includes(snapshot.presetId));
+    assert.equal(snapshot.monsterAI,undefined);assert.ok(['몬스터A01','몬스터A02','몬스터A03','몬스터A04','몬스터C01','몬스터C02'].includes(snapshot.presetId));
     const /** tile: 해당 몬스터 생성 지형. */ tile=room.map.tiles.find(/** 생성 타일을 조회한다. */ (/** candidate: 타일 후보. */ candidate)=>candidate.id===snapshot.spawnTileId);
     // 보스와 일반 프리셋의 필드 종류·높이를 각각 검증한다.
-    if(snapshot.presetId==='몬스터C01'){assert.equal(tile.kind,'boss');assert.ok([1,2].includes(tile.height));}
-    else{assert.ok(['normal','rich'].includes(tile.kind));assert.ok(snapshot.presetId==='몬스터A01'?[1,2].includes(tile.height):tile.height===2);}
+    if(snapshot.status.classificationCode==='TEST003'){assert.equal(tile.kind,'boss');assert.ok((snapshot.presetId==='몬스터C01'?[1,2]:[3,4]).includes(tile.height));}
+    else{assert.ok(['normal','rich'].includes(tile.kind));assert.ok(snapshot.presetId==='몬스터A01'?[1,2].includes(tile.height):tile.height===Number(snapshot.presetId.slice(-2)));}
   }
   const /** monster: 1.5초 반격 패턴을 검증할 일반 몬스터. 보스 패턴과 구분한다. */ monster=[...room.objects.values()].find(/** 일반 반격 프리셋만 고른다. */ (/** object: 서버 개체. */ object)=>object.presetId==='몬스터A01');
   const /** attacker: 인위적 피해의 실제 공격자. */ attacker=room.players.get(connection.id);

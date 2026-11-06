@@ -1,7 +1,7 @@
 import { /** createWorldObject: 공통 수치와 고유 개체ID를 생성하는 서버 함수. */ createWorldObject, /** ObjectType: 몬스터의 적 유닛 분류를 지정하는 상수. */ ObjectType } from './status.js';
 
 /** 종류코드와 별개인 프리셋 이름으로 조회하는 몬스터 기본 정의. 지정하지 않은 수치는 공통 기본값을 따른다. */
-export const MonsterPresets = Object.freeze({
+const BaseMonsterPresets = Object.freeze({
   /** 몬스터A01: TEST001 종류의 레벨 1 프리셋. */
   몬스터A01: Object.freeze({
     /** classificationCode: 몬스터 종류코드. 프리셋 식별자로 사용하지 않는다. */ classificationCode: 'TEST001',
@@ -35,9 +35,20 @@ export const MonsterPresets = Object.freeze({
   }),
 });
 
+/** MonsterPresets: 생성 가능한 전체 프리셋. 상층 프리셋은 별도 수치 지정 전까지 원본 능력치와 행동 분류를 복사한다. */
+export const MonsterPresets=Object.freeze({
+  ...BaseMonsterPresets,
+  /** 몬스터A03: 높이 3 일반·풍요용. A02와 같은 레벨 5·체력 50·공격력 10·경험치 50의 TEST001 프리셋. */
+  몬스터A03:Object.freeze({...BaseMonsterPresets.몬스터A02}),
+  /** 몬스터A04: 높이 4 일반·풍요용. A02와 같은 능력치와 TEST001 행동을 사용하는 독립 프리셋. */
+  몬스터A04:Object.freeze({...BaseMonsterPresets.몬스터A02}),
+  /** 몬스터C02: 높이 3·4 보스필드용. C01의 레벨 8·체력 250·공격력 30·경험치 400 및 TEST003 행동을 복사한다. */
+  몬스터C02:Object.freeze({...BaseMonsterPresets.몬스터C01}),
+});
+
 /** 프리셋의 확정 능력치와 최대체력으로 독립된 몬스터 유닛을 생성한다. 서버 배치·행동은 monster-ai.js에서 연결한다. */
 export function createMonster(
-  /** presetId: 몬스터A01·몬스터A02·몬스터C01 프리셋 식별자. */ presetId,
+  /** presetId: MonsterPresets에 등록한 몬스터 프리셋 식별자. */ presetId,
   /** options: 서버에서 지정할 위치·개체ID·표시 이름. */ options = {},
 ) {
   if (!Object.hasOwn(MonsterPresets, presetId)) throw new TypeError('Unknown monster preset');

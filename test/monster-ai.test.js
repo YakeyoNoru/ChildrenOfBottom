@@ -1,4 +1,4 @@
-import { /** canSpawnMonster: 프리셋별 지형 생성 제약을 공통 판정한다. */ canSpawnMonster } from '../game/monster-ai.js';
+import { /** spawnMonsterOnTile: 매 개체 생성 전 정원을 확인하는 공통 등록 함수. */ spawnMonsterOnTile, /** canSpawnMonster: 프리셋별 지형 생성 제약을 공통 판정한다. */ canSpawnMonster } from '../game/monster-ai.js';
 import { /** test: 시나리오 등록 함수. */ test } from 'node:test';
 import /** assert: 결과 검증 도구. */ assert from 'node:assert/strict';
 import { /** spawnMonsters: 타일별 몬스터 배치 함수. */ spawnMonsters, /** tickMonsters: 서버 AI 시뮬레이션 함수. */ tickMonsters } from '../game/monster-ai.js';
@@ -29,19 +29,20 @@ test('enemy common fields capture the spawn position independently and validate 
 });
 
 test('monster spawn terrain matrix and per-preset population bounds', /** 모든 필드 종류·높이 조합에서 허용·금지 조건과 실제 생성 수를 검사한다. */ ()=>{
-  for(const /** kind: 검사할 지형 종류. */ kind of ['normal','rich','boss','start','safe','unknown'])for(const /** height: 허용 높이와 금지 높이. */ height of [0,1,2,3,4]) {
+  for(const /** kind: 검사할 지형 종류. */ kind of ['normal','rich','boss','start','safe','unknown'])for(const /** height: 허용 높이와 금지 높이. */ height of [0,1,2,3,4,5]) {
     const /** tile: 조합별 단일 지형. */ tile={id:1,q:0,r:0,height,kind};
     const /** map: 배치 충돌 검사에 사용할 단일 타일 지도. */ map={tileRadius:600,landScale:1,tiles:[tile],bridges:[]};
     let /** seed: 위치 난수 재현용 상태. */ seed=123;
     const /** monsters: 실제 공통 생성기를 통과한 모든 몬스터. */ monsters=[...spawnMonsters(map,/** 재현 가능한 배치 난수를 반환한다. */ ()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;}).values()];
-    for(const /** presetId: 검사할 세 프리셋. */ presetId of ['몬스터A01','몬스터A02','몬스터C01']) {
-      const /** allowed: 명세를 독립적으로 계산한 생성 허용 여부. */ allowed=presetId==='몬스터C01'?kind==='boss'&&[1,2].includes(height):['normal','rich'].includes(kind)&&(presetId==='몬스터A01'?[1,2].includes(height):height===2);
+    for(const /** presetId: 검사할 전체 프리셋. */ presetId of ['몬스터A01','몬스터A02','몬스터A03','몬스터A04','몬스터C01','몬스터C02']) {
+      const /** allowed: 명세를 독립적으로 계산한 생성 허용 여부. */ allowed=presetId.startsWith('몬스터C')?kind==='boss'&&(presetId==='몬스터C01'?[1,2]:[3,4]).includes(height):['normal','rich'].includes(kind)&&(presetId==='몬스터A01'?[1,2].includes(height):height===Number(presetId.slice(-2)));
       assert.equal(canSpawnMonster(presetId,tile),allowed,`${presetId} ${kind} ${height}`);
       const /** spawned: 해당 프리셋의 실제 생성 결과. */ spawned=monsters.filter(/** monster: 검사할 생성 개체. */ monster=>monster.presetId===presetId);
       if(!allowed)assert.equal(spawned.length,0);
-      else if(presetId==='몬스터C01'){assert.equal(spawned.length,1);assert.deepEqual({x:spawned[0].x,y:spawned[0].y},globalThis.PitMapRules.center(tile,map));}
-      else assert.ok(presetId==='몬스터A01'?spawned.length<=8:spawned.length>=2&&spawned.length<=6);
+      else if(presetId.startsWith('몬스터C')){assert.equal(spawned.length,1);assert.deepEqual({x:spawned[0].x,y:spawned[0].y},globalThis.PitMapRules.center(tile,map));}
+      else assert.ok(presetId==='몬스터A01'?spawned.length<=8:spawned.length>=Math.min(2,8-monsters.filter(/** A02보다 먼저 생성한 A01 수를 센다. */ (/** monster: 생성 몬스터. */ monster)=>monster.presetId==='몬스터A01').length)&&spawned.length<=6);
     }
+    assert.ok(monsters.length<=8);
     for(const /** monster: 히트박스·생성점 검증 대상. */ monster of monsters){
       assert.equal(monster.spawnTileId,tile.id);assert.deepEqual(monster.status.spawnPosition,{x:monster.x,y:monster.y});
       assert.ok(globalThis.PitMapRules.walkable(map,monster.x,monster.y,monster.status.hitboxDiameter/2));
@@ -215,4 +216,34 @@ test('TEST003 boss resets at 800 distance and clears threat after returning', /*
   for(let /** index: 귀환 완료까지의 틱 순번. */ index=1;index<100&&boss.status.awarenessState==='returning';index++)tickMonsters([boss,attacker],null,index*50,.05);
   assert.equal(boss.x,0);assert.equal(boss.status.currentHealth,250);
   assert.equal(boss.status.awarenessState,'normal');assert.deepEqual({...boss.status.threatTable},{});
+});
+
+
+test('shared tile cap counts all existing monster presets and checks each registration',/** 기존 몬스터와 혼합 프리셋 정원·타일별 독립·사물 제외를 검증한다. */ ()=>{
+ const /** tile: 최대 수량을 채울 높이 2 지형; other: 별도 정원을 가진 이웃 지형; objects: 현재 월드 개체. */ tile={id:1,height:2,kind:'normal'},other={...tile,id:2},objects=new Map();
+ for(let /** index: 순서대로 등록할 몬스터 번호. */ index=0;index<8;index++){
+  assert.equal(canSpawnMonster('몬스터A02',tile,objects),true);
+  assert.ok(spawnMonsterOnTile(index%2?'몬스터A02':'몬스터A01',tile,objects,{x:index*30,y:0}));
+ }
+ assert.equal(canSpawnMonster('몬스터A01',tile,objects),false);
+ assert.equal(spawnMonsterOnTile('몬스터A02',tile,objects,{x:300,y:0}),null);assert.equal(objects.size,8);
+ assert.ok(spawnMonsterOnTile('몬스터A02',other,objects,{x:500,y:0}));
+ const /** removed: 명시적으로 목록에서 제거할 몬스터. */ removed=objects.keys().next().value;objects.delete(removed);
+ objects.set('lamp',{spawnTileId:1,status:{objectType:'prop'}});
+ assert.ok(spawnMonsterOnTile('몬스터A02',tile,objects,{x:300,y:0}));
+ assert.equal(spawnMonsterOnTile('몬스터A02',tile,objects,{x:400,y:0}),null);
+ const /** bossTile: 보스도 동일 8마리 상한을 적용할 검증 지형; bosses: 등록 보스 목록. */ bossTile={id:3,height:4,kind:'boss'},bosses=new Map();
+ for(let /** index: 보스 정원 검사 순번. */ index=0;index<8;index++)assert.ok(spawnMonsterOnTile('몬스터C02',bossTile,bosses,{x:index*30,y:0}));
+ assert.equal(spawnMonsterOnTile('몬스터C02',bossTile,bosses,{x:300,y:0}),null);
+});
+
+test('mixed A01 and A02 generation truncates later presets to eight total and respects existing registrations',/** A01 선행 생성 후 남은 정원만 A02에 배정하고 재호출 시 초과 생성하지 않는지 검사한다. */ ()=>{
+ const /** tile: 두 일반 프리셋을 혼합할 지형; map: 충돌 검사용 지도. */ tile={id:1,q:0,r:0,height:2,kind:'normal'},map={tileRadius:600,landScale:1,tiles:[tile],bridges:[]};
+ let /** seed: 위치 선택용 재현 가능한 난수 상태. */ seed=123;
+ let /** first: A01 추첨을 7마리로 고정할 첫 난수 여부. */ first=true;
+ const /** random: 첫 수량만 고정하고 위치는 독립적으로 선택한다. */ random=/** 생성 수량·위치용 난수를 반환한다. */ ()=>{if(first){first=false;return .8;}seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+ const /** objects: 공통 생성기로 배치한 혼합 몬스터. */ objects=spawnMonsters(map,random);
+ assert.equal(objects.size,8);assert.equal([...objects.values()].filter(/** A01 수량을 조회한다. */ (/** monster: 배치된 몬스터. */ monster)=>monster.presetId==='몬스터A01').length,7);
+ assert.equal([...objects.values()].filter(/** 남은 자리를 차지한 A02 수량을 조회한다. */ (/** monster: 배치된 몬스터. */ monster)=>monster.presetId==='몬스터A02').length,1);
+ assert.equal(spawnMonsters(map,random,objects),objects);assert.equal(objects.size,8);
 });
