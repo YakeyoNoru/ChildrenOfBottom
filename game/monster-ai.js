@@ -4,6 +4,8 @@ import { /** castSkill: 공통 접촉·피해 파이프라인으로 기술을 �
 import { /** applySkillDamage: 보스 돌진 접촉 피해를 공통으로 확정한다. */ applySkillDamage } from './combat.js';
 import { /** effectiveStats: 이동속도와 최종 최대체력을 조회한다. */ effectiveStats, /** LifeState: 사망 유닛의 행동을 차단한다. */ LifeState } from './status.js';
 
+const /** BOSS_RETURN_DISTANCE: 보스가 귀환을 시작하는 생성점 기준 월드 거리. */ BOSS_RETURN_DISTANCE=600;
+
 /** MAX_MONSTERS_PER_TILE: 프리셋 종류와 관계없이 하나의 생성 타일에 등록할 수 있는 몬스터 수 상한. */
 export const MAX_MONSTERS_PER_TILE=8;
 
@@ -126,7 +128,7 @@ function moveToward(
   if(distance(previous,allowed)<1e-8)return false;
   if(!returning&&monster.monsterAI)monster.monsterAI.returnPath.push(previous);
   monster.x=allowed.x;monster.y=allowed.y;monster.facing=angle;monster.action='move';
-  // 일반 몬스터만 400 월드 단위에서 복귀한다. 보스는 tickBoss에서 800 경계를 처리한다.
+  // 일반 몬스터만 400 월드 단위에서 복귀한다. 보스는 tickBoss에서 보스의 귀환 거리를 검사한다.
   if(!returning&&monster.monsterAI&&distance(monster,monster.status.spawnPosition)>=400)startReturn(monster,map);
   return true;
 }
@@ -158,7 +160,7 @@ function tickBoss(
   const reset=()=>{
     status.awarenessState='returning';status.attackTargetId=null;ai.phase='return';ai.point=null;ai.hitIds.clear();boss.roll=null;
   };
-  if(status.awarenessState!=='returning'&&distance(boss,status.spawnPosition)>=800)reset();
+  if(status.awarenessState!=='returning'&&distance(boss,status.spawnPosition)>=BOSS_RETURN_DISTANCE)reset();
   if(status.stunned){boss.roll=null;return;}
   if(status.awarenessState==='returning'){
     moveToward(boss,status.spawnPosition,map,seconds,0,true);
@@ -189,7 +191,7 @@ function tickBoss(
   const /** target: 현재 공격 대상으로 지정된 살아 있는 플레이어. */ target=players.find(/** 공격대상 ID를 조회한다. */ (/** player: 대상 후보. */ player)=>player.id===status.attackTargetId);
   if(!target||distance(boss,target)>200){reset();return;}
   if(ai.phase==='start'){
-    if(distance(boss,status.spawnPosition)>=800){reset();return;}
+    if(distance(boss,status.spawnPosition)>=BOSS_RETURN_DISTANCE){reset();return;}
     if(random()<0.3){
       const /** angle: 구르기에 사용할 무작위 방향(라디안). */ angle=random()*Math.PI*2;
       boss.facing=angle;boss.lastMovementInput={x:Math.cos(angle),y:Math.sin(angle)};

@@ -217,11 +217,14 @@ test('boss wandering across 400 keeps its own return threshold', /** 보스가 �
   assert.equal(boss.status.awarenessState,'normal');
   assert.equal(boss.monsterAI,undefined);
 });
-test('TEST003 boss resets at 800 distance and clears threat after returning', /** 보스 이탈 거리와 귀환 후 상태·체력·위협 초기화를 검사한다. */ ()=>{
+test('TEST003 boss resets at 600 distance and clears threat after returning', /** 보스 이탈 거리와 귀환 후 상태·체력·위협 초기화를 검사한다. */ ()=>{
   const /** boss: 생성점에서 이탈시킬 보스. */ boss=createMonster('몬스터C01');
-  const /** attacker: 공격대상 플레이어. */ attacker=player(800,'attacker');
+  const /** attacker: 공격대상 플레이어. */ attacker=player(600,'attacker');
   hit(boss,attacker,20);
-  boss.x=800;
+  boss.x=599;
+  tickMonsters([boss,attacker],null,0,0);
+  assert.notEqual(boss.status.awarenessState,'returning');
+  boss.x=600;
   tickMonsters([boss,attacker],null,0,.05);
   assert.equal(boss.status.awarenessState,'returning');
   for(let /** index: 귀환 완료까지의 틱 순번. */ index=1;index<100&&boss.status.awarenessState==='returning';index++)tickMonsters([boss,attacker],null,index*50,.05);
