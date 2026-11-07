@@ -126,7 +126,8 @@ function moveToward(
   if(distance(previous,allowed)<1e-8)return false;
   if(!returning&&monster.monsterAI)monster.monsterAI.returnPath.push(previous);
   monster.x=allowed.x;monster.y=allowed.y;monster.facing=angle;monster.action='move';
-  if(!returning&&distance(monster,monster.status.spawnPosition)>=400)startReturn(monster,map);
+  // 일반 몬스터만 400 월드 단위에서 복귀한다. 보스는 tickBoss에서 800 경계를 처리한다.
+  if(!returning&&monster.monsterAI&&distance(monster,monster.status.spawnPosition)>=400)startReturn(monster,map);
   return true;
 }
 

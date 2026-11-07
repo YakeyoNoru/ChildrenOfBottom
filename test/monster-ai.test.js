@@ -206,6 +206,17 @@ test('TEST003 boss preset, center spawn and player threat accumulation', /** 보
   assert.equal(boss.status.awarenessState,'combat');
 });
 
+
+test('boss wandering across 400 keeps its own return threshold', /** 보스가 배회 중 일반 몬스터의 복귀 경계를 넘어도 보스 행동을 유지하는지 검사한다. */ () => {
+  const /** boss: 생성점에서 바깥쪽으로 배회할 보스. */ boss=createMonster('몬스터C01');
+  const /** random: 양의 X 방향으로 5 월드 단위를 이동하도록 고정한 난수 함수. */ random=()=>0;
+  tickMonsters([boss],null,0,.05,random);
+  boss.x=399;
+  tickMonsters([boss],null,1000,.05,random);
+  assert.equal(boss.x,404);
+  assert.equal(boss.status.awarenessState,'normal');
+  assert.equal(boss.monsterAI,undefined);
+});
 test('TEST003 boss resets at 800 distance and clears threat after returning', /** 보스 이탈 거리와 귀환 후 상태·체력·위협 초기화를 검사한다. */ ()=>{
   const /** boss: 생성점에서 이탈시킬 보스. */ boss=createMonster('몬스터C01');
   const /** attacker: 공격대상 플레이어. */ attacker=player(800,'attacker');
