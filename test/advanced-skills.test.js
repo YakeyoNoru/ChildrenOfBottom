@@ -1,7 +1,7 @@
 import { /** test: 스킬 효과 검증을 등록한다. */ test } from 'node:test';
 import /** assert: 기술의 서버 결과를 비교한다. */ assert from 'node:assert/strict';
 import { /** createWorldObject: 검증용 개체를 생성한다. */ createWorldObject, /** gainExperience: 환영조각 경험치를 반영한다. */ gainExperience } from '../game/status.js';
-import { /** castSkill: 공통 슬롯 시전을 실행한다. */ castSkill, /** buySkill: 카드 구매를 확정한다. */ buySkill } from '../game/skills.js';
+import { /** castSkill: 공통 슬롯 시전을 실행한다. */ castSkill, /** buySkill: 카드 구매를 확정한다. */ buySkill, /** drawSkills: 공통 드로우를 실행한다. */ drawSkills } from '../game/skills.js';
 import { /** tickPlayerSkill: 지속 효과를 진행한다. */ tickPlayerSkill, /** tickStones: 돌 접촉을 검사한다. */ tickStones } from '../game/advanced-skills.js';
 import '../public/items.js';
 
@@ -45,7 +45,7 @@ test('stone uses fixed aim and hits the first enemy crossed between ticks',/** �
 });
 
 test('purchases consume cards, apply passive effects and enable the level-three escape',/** 덱 소모, 구매 비용, 패시브, 탈출구 예약을 검증한다. */ ()=>{
-  const /** caster: 구매할 레벨 2 플레이어. */ caster=player({level:2,skillPoints:12,x:10,y:20});
+  const /** caster: 구매할 레벨 2 플레이어. */ caster=player({level:2,skillPoints:12,x:10,y:20,handSkillCode:['BAS0007','BAS0008','BAS0006','BAS0006','BAS0006']});
   assert.ok(buySkill(caster,'BAS0007',0));
   assert.equal(caster.status.bonusAttack,14);
   assert.ok(buySkill(caster,'BAS0008',100));
@@ -73,7 +73,7 @@ test('purchases consume cards, apply passive effects and enable the level-three 
 });
 
 test('running crew adds temporary movement and persistent fragment rewards',/** 이동 보너스 만료와 환영조각 보상이 따로 작동하는지 검증한다. */ ()=>{
-  const /** caster: 러닝크루를 구매할 플레이어. */ caster=player({skillPoints:1,bonusMoveSpeed:2});
+  const /** caster: 러닝크루를 구매할 플레이어. */ caster=player({skillPoints:1,bonusMoveSpeed:2,handSkillCode:['BAS0005']});
   assert.ok(buySkill(caster,'BAS0005',0));
   assert.ok(castSkill(caster,[caster],'A',0));
   assert.equal(caster.status.bonusMoveSpeed,3);
@@ -85,4 +85,13 @@ test('running crew adds temporary movement and persistent fragment rewards',/** 
   globalThis.ItemRules.tick(items,[caster],50,gainExperience);
   assert.equal(caster.status.competitionPoints,15);
   assert.equal(caster.status.currentExperience,3);
+});
+
+test('draw recycles the graveyard when needed and preserves duplicate cards without drawing exclusions',/** 덱 부족과 중복 카드, 제외 카드의 보존을 검증한다. */ ()=>{
+  const /** status: 덱 한 장과 이전 손패 두 장이 있는 상태. */ {status}=player({skillDeckCode:['BAS0003'],handSkillCode:['BAS0003','BAS0004'],graveyardSkillDeckCode:['BAS0005'],excludedSkillDeckCode:['BAS0006']});
+  drawSkills(status,/** 매번 첫 번째 덱 카드 위치를 고른다. */ ()=>0);
+  assert.deepEqual(status.handSkillCode,['BAS0003','BAS0005','BAS0003']);
+  assert.deepEqual(status.skillDeckCode,['BAS0004']);
+  assert.deepEqual(status.graveyardSkillDeckCode,[]);
+  assert.deepEqual(status.excludedSkillDeckCode,['BAS0006']);
 });

@@ -331,3 +331,28 @@ test('status page lists every server status field safely and refreshes while ope
  state.players[0].status.level=2;state.players[0].status.currentExperience=10;receive({type:'game.state',room:state});assert.ok(rows().some(/** 서버 갱신 검사. */ (/** row: 표시 행. */ row)=>row[0].endsWith('(level)')&&row[1]==='2'));
  e.get('status-back').click();assert.equal(e.get('menu-options').hidden,false);assert.equal(e.get('menu-status').hidden,true);
 });
+
+test('skill shop opens from B and touch and refreshes the hand after reroll',/** 구매창 진입·종료와 서버 손패 갱신을 확인한다. */ ()=>{
+ const /** elements: 게임 화면 대역; receive: 서버 수신 대역; state: 시작 방; window: 키 입력 대상; run: 클라이언트 실행기. */ {elements,receive,state,window,run}=client();
+ state.skillCatalog={BAS0003:{name:'돌진베기',typeCode:'B',skillPoints:1,basicEffect:'적에게 돌진한다.'},BAS0005:{name:'러닝크루',typeCode:'A',skillPoints:1,basicEffect:'이동속도를 높인다.'}};
+ state.players[0].status={skillPoints:0,rerollCount:1,handSkillCode:['BAS0003','BAS0003']};
+ receive({type:'room.state',room:state});
+ key(window,'keydown','KeyB');
+ assert.equal(elements.get('skill-shop').hidden,false);
+ assert.equal(elements.get('skill-shop-list').children.length,2);
+ assert.equal(elements.get('skill-reroll-label').textContent,'무료리롤수: 1');
+ elements.get('skill-reroll').click();
+ assert.equal(run('socket.sent.at(-1).type'),'game.skill.reroll');
+ receive({type:'ack',requestId:run('pending')});
+ state.players[0].status={skillPoints:0,rerollCount:0,handSkillCode:['BAS0005']};
+ receive({type:'game.state',room:state});
+ assert.equal(elements.get('skill-shop-list').children[0].children[0].textContent,'러닝크루 · A');
+ assert.equal(elements.get('skill-reroll-label').textContent,'리롤: 1SP 소모');
+ assert.equal(elements.get('skill-reroll').disabled,true);
+ key(window,'keydown','KeyB');
+ assert.equal(elements.get('skill-shop').hidden,true);
+ elements.get('skill-shop-open').click();
+ assert.equal(elements.get('skill-shop').hidden,false);
+ elements.get('skill-shop-close').click();
+ assert.equal(elements.get('skill-shop').hidden,true);
+});

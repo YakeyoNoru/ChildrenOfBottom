@@ -64,6 +64,13 @@ export /** createStatus: 모든 개체가 공유하는 수치·기술 슬롯·�
     ]:values.skillDeckCode;
     if(!Array.isArray(decks)||!decks.every(/** 덱 코드가 문자열인지 검사한다. */ (/** code: 목록의 덱 코드. */ code)=>typeof code==='string'))throw new TypeError('Invalid skillDeckCode');
     /** status.skillDeckCode: 원본 목록과 공유하지 않는 플레이어 전용 스킬덱 코드 배열. */ status.skillDeckCode=[...decks];
+    for(const /** field: 묘지·제외·손패의 카드 코드 배열 이름. */ field of ['graveyardSkillDeckCode','excludedSkillDeckCode','handSkillCode']){
+      const /** cards: 개체에 독립적으로 복사할 카드 목록. */ cards=values[field]===undefined?[]:values[field];
+      if(!Array.isArray(cards)||!cards.every(/** 카드 코드는 문자열이다. */ (/** code: 카드 코드. */ code)=>typeof code==='string'))throw new TypeError('Invalid '+field);
+      status[field]=[...cards];
+    }
+    /** maxHandSize: 한 번에 뽑을 카드의 최대 수. */ status.maxHandSize=values.maxHandSize??3;
+    if(!Number.isSafeInteger(status.maxHandSize)||status.maxHandSize<0)throw new TypeError('Invalid maxHandSize');
   }
   // 상태이상은 향후 잔여시간·중첩 계산에 사용할 개체별 독립 목록이다.
   /** status.statusEffects: 버프·디버프 상태 자료 목록. 현재는 저장만 하며 효과 계산은 별도 구현한다. */ status.statusEffects=copyStatusList(values.statusEffects,'statusEffects');

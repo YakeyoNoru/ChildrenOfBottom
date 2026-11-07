@@ -16,6 +16,7 @@ test('all objects own independent skill dictionaries while only players have dec
     assert.equal('skillDeckCode' in s,kind==='player');assert.equal('availableSkills' in s,false);assert.deepEqual({...s.ownedSkills},{});
     if(kind==='player'){
       assert.equal(s.skillDeckCode.length,20);
+      assert.deepEqual([s.graveyardSkillDeckCode,s.excludedSkillDeckCode,s.handSkillCode,s.maxHandSize],[[],[],[],3]);
       for(const /** code: 세 장이 기본 지급되는 카드 코드. */ code of ['BAS0001','BAS0003','BAS0004','BAS0005','BAS0006','BAS0007'])assert.equal(s.skillDeckCode.filter(/** 같은 코드를 센다. */ (/** card: 덱 카드 코드. */ card)=>card===code).length,3);
       assert.equal(s.skillDeckCode.filter(/** 탐지 카드만 센다. */ (/** card: 덱 카드 코드. */ card)=>card==='BAS0008').length,2);
     }

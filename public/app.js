@@ -33,7 +33,7 @@ function updateInteraction(/** me: 선택적 본인 표시 좌표. */ me=room?.p
   interactionTargetId=candidates[0]?.id??null;$('interaction-button').hidden=!interactionTargetId||room?.phase!=='started';
 }
 /** 버튼과 F 키가 공유하는 서버 상호작용 요청 함수. */
-function interact(){if(interactionTargetId&&!$('game-dialog').open&&!$('escape-dialog').open&&$('expanded-map').hidden)send('game.interact',{targetId:interactionTargetId});}
+function interact(){if(interactionTargetId&&!$('game-dialog').open&&!$('escape-dialog').open&&$('expanded-map').hidden&&$('skill-shop').hidden)send('game.interact',{targetId:interactionTargetId});}
 $('interaction-button').onclick=interact;
 /** 서버 확인 ID로 탈출 수락·취소를 전송한다. */
 function confirmEscape(/** accept: 탈출을 수락했는지 여부. */ accept){if(!interactionConfirmation)return;const /** id: 응답할 일회성 확인 ID. */ id=interactionConfirmation;interactionConfirmation=null;$('escape-dialog').close();send('game.interact.confirm',{confirmationId:id,accept});}
@@ -60,7 +60,7 @@ let /** mapDrag: 현재 드래그 포인터 ID와 직전 화면 좌표. */ mapDr
 let /** mapPointerBlockUntil: 지도 닫기 터치 뒤 합성 클릭을 무시할 로컬 종료 시각. */ mapPointerBlockUntil=0;
 /** 전체맵를 열거나 닫으며 조작 입력이 지도 터치와 겹치지 않게 한다. */
 function setExpandedMap(/** open: 전체맵를 표시할지 여부. */ open){
-  if(open)mapPan={x:0,y:0};
+  if(open){setSkillShop(false);mapPan={x:0,y:0};}
   mapDrag=null;
   $('expanded-map').hidden=!open;$('minimap').setAttribute('aria-expanded',String(open));resetInput();
 }
@@ -107,7 +107,7 @@ $('minimap').onkeydown=/** 키보드 접근성으로 전체맵를 연다. */ (/*
   updateCompetitionScore();
   updateInteraction();
   $('game-leave').disabled = !online || !!pending;
-  if (!playing) { mapDrag=null;mapPan={x:0,y:0};$('expanded-map').hidden=true;$('minimap').setAttribute('aria-expanded','false'); motionView.clear(); closeMenu(); resetInput(); }
+  if (!playing) { setSkillShop(false); mapDrag=null;mapPan={x:0,y:0};$('expanded-map').hidden=true;$('minimap').setAttribute('aria-expanded','false'); motionView.clear(); closeMenu(); resetInput(); }
   if (playing) $('game-status').textContent = `${room.players.length}명 생존 · ${room.players.find(/** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ p => p.id === playerId)?.name ?? ''}`;
   for (const /** id: 대상 개체 또는 요소의 식별자. */ id of ['create', 'join-open', 'join','browse-open','rooms-refresh']) $(id).disabled = !online || !!pending;
   renderPublicRooms();
@@ -162,7 +162,7 @@ $('minimap').onkeydown=/** 키보드 접근성으로 전체맵를 연다. */ (/*
     if (m.type === 'room.closed' || m.type === 'room.left') { saveResumeToken(null);interactionConfirmation=null;$('escape-dialog').close();room = null; miniMap.clear(); itemView.clear(); notice(m.type === 'room.closed' ? (m.message??messages.closed) : '방에서 나왔습니다.'); if(m.type==='room.closed') settle(); }
     if(m.type==='error'){
       notice(m.message);
-      if(!$('menu-skills').hidden)$('skill-shop-error').textContent=m.message;
+      if(!$('skill-shop').hidden)$('skill-shop-error').textContent=m.message;
     }
     if ((m.type === 'ack' || m.type === 'error') && m.requestId === pending) settle();
     render();
@@ -214,6 +214,7 @@ let /** desktopInput: 키보드·마우스 조작부 사용 여부. */ desktopIn
 /** updateControls: 키보드·마우스 사용 여부에 따라 터치 조작부를 표시한다. */ function updateControls() {
   const /** visible: 수동 설정이 있으면 우선하고 없으면 장치 감지로 정한 표시 여부. */ visible=userSettings.showTouchControls ?? !desktopInput;
   $('touch-controls').hidden=!visible;
+  $('skill-shop-open').hidden=!visible;
   $('show-touch-controls').checked=visible;
 }
 finePointer.addEventListener('change', /** e: 현재 입력 이벤트 또는 그릴 기술 효과. */ /** change 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ e => { desktopInput = e.matches; resetInput(); updateControls(); });
@@ -245,12 +246,12 @@ function updateSkillControls() {
   }
 }
 /** useSkill: 게임 진행과 조작 가능 여부를 검사하고 슬롯 시전 요청을 보낸다. */ function useSkill(/** slot: 기술을 저장하거나 시전할 A·B·C·P 슬롯. */ slot) {
-  if (room?.phase !== 'started' || socket?.readyState !== WebSocket.OPEN || $('game-dialog').open || $('escape-dialog').open || !$('expanded-map').hidden || document.hidden || viewport.blockedPortrait || rolling() || cooldownRemaining(slot)>0) return;
+  if (room?.phase !== 'started' || socket?.readyState !== WebSocket.OPEN || $('game-dialog').open || $('escape-dialog').open || !$('expanded-map').hidden || !$('skill-shop').hidden || document.hidden || viewport.blockedPortrait || rolling() || cooldownRemaining(slot)>0) return;
   inputPacket();
   socket.send(JSON.stringify({v:1,type:'game.cast',slot,afterInputSeq:motionView.sequence}));
 }
 /** movementInput: 키보드와 조이스틱을 조합해 현재 프레임의 이동 입력을 구한다. */ function movementInput() {
-  const /** blocked: 메뉴·구르기 등으로 현재 조작이 차단되는지 여부. */ blocked = $('game-dialog').open || $('escape-dialog').open || !$('expanded-map').hidden || document.hidden || viewport.blockedPortrait || rolling();
+  const /** blocked: 메뉴·구르기 등으로 현재 조작이 차단되는지 여부. */ blocked = $('game-dialog').open || $('escape-dialog').open || !$('expanded-map').hidden || !$('skill-shop').hidden || document.hidden || viewport.blockedPortrait || rolling();
   const /** x: 가로 좌표·이동 입력 또는 반복 비교 항목. */ x = blocked ? 0 : ((keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) || axis.x);
   const /** y: 세로 좌표 또는 이동 입력. */ y = blocked ? 0 : ((keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) - (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) || axis.y);
   return {x,y,blocked};
@@ -278,7 +279,7 @@ const statusLabels={
   /** objectType~level: 개체 식별과 성장 정보. */ objectType:'오브젝트 구분',classificationCode:'분류코드',instanceId:'개체 ID',level:'레벨',
   /** 체력·자원·공격·방어: 추가 수치 적용 전 기본값. */ maxHealth:'기본 최대체력',currentHealth:'현재체력',maxSkillResource:'기본 최대스킬자원',currentSkillResource:'현재스킬자원',attack:'기본공격력',defense:'기본방어력',
   /** 회복·이동 및 추가 능력치 표시명. */ healthRegen:'체력회복속도',skillResourceRegen:'스킬자원회복속도',moveSpeed:'이동속도',bonusHealth:'추가체력',bonusAttack:'추가공격력',bonusDefense:'추가방어력',bonusHealthRegen:'추가체력회복속도',bonusMoveSpeed:'추가이동속도',bonusSkillResource:'추가스킬자원',bonusSkillResourceRegen:'추가스킬자원회복속도',
-  /** 경험치와 포인트 표시명. */ requiredExperience:'필요경험치',currentExperience:'현재경험치',skillPoints:'스킬포인트',rerollCount:'리롤 가능 횟수',competitionPoints:'경쟁포인트',tracePoints:'흔적포인트',bonusTracePoints:'추가흔적포인트',trackingPoints:'추적포인트',bonusTrackingPoints:'추가추적포인트',
+  /** 경험치와 포인트 표시명. */ requiredExperience:'필요경험치',currentExperience:'현재경험치',skillPoints:'스킬포인트',rerollCount:'리롤 가능 횟수',graveyardSkillDeckCode:'묘지스킬덱코드',excludedSkillDeckCode:'제외스킬덱코드',handSkillCode:'손패스킬코드',maxHandSize:'손패최대수',competitionPoints:'경쟁포인트',tracePoints:'흔적포인트',bonusTracePoints:'추가흔적포인트',trackingPoints:'추적포인트',bonusTrackingPoints:'추가추적포인트',
   /** 상태와 기술 슬롯 표시명. */ state:'생존상태',concealed:'은폐상태',stunned:'기절상태',statusEffects:'상태이상리스트',skillA:'기술 A',skillB:'기술 B',skillC:'기술 C',skillP:'기술 P',skillDeckCode:'스킬덱 코드 목록',ownedSkills:'보유기술정보(코드:레벨)',skillACooldownRemaining:'A 잔여쿨타임(초)',skillBCooldownRemaining:'B 잔여쿨타임(초)',skillCCooldownRemaining:'C 잔여쿨타임(초)',
   /** 참조·서버 시간과 화면 개체 정보 표시명. */ hitboxDiameter:'히트박스 지름',nearestObjectId:'최근접 개체 ID',nearestEnemyId:'최근접 적 ID',lowestHealthEnemyId:'최저체력 적 ID',lowestHealthRatioEnemyId:'최저체력비율 적 ID',lastDamageAt:'최근 피격 서버시각(ms)',healthRegenNextAt:'다음 회복 서버시각(ms)',effective:'추가 수치 합산값',id:'개체 ID',name:'이름',x:'가로좌표',y:'세로좌표',facing:'방향(라디안)',action:'현재행동',testOptions:'테스트옵션',bountyPoints:'보상포인트',
 };
@@ -321,55 +322,88 @@ $('test-high-speed').onchange=sendTestOptions;
   for (const /** name: 현재 항목이나 사용자에게 표시할 이름. */ name of ['main','test','options','status','skills']) $('menu-' + name).hidden = name !== page;
   $('menu-title').textContent = {main:'게임 메뉴',test:'테스트설정',options:'옵션',status:'상태',skills:'스킬'}[page];
 }
-let /** skillShopKey: 구매 화면을 다시 그릴 때 비교할 상태 키. */ skillShopKey=null;
+let /** skillShopKey: 마지막으로 표시한 손패와 구매 자원. */ skillShopKey=null;
+let /** skillEquipKey: 마지막으로 표시한 보유 기술과 슬롯 상태. */ skillEquipKey=null;
 
-/** 덱에 남은 카드와 장착 가능한 보유 기술을 게임 메뉴에 표시한다. */
-function updateSkillShop(){
-  if($('menu-skills').hidden)return;
-  const /** me: 현재 접속한 플레이어의 서버 상태. */ me=room?.players.find(/** 본인 참가자를 찾는다. */ (/** player: 참가자. */ player)=>player.id===playerId)?.status;
-  if(!me||!room.skillCatalog)return;
-  const /** key: 화면 갱신에 영향을 주는 구매·장착 상태. */ key=JSON.stringify([me.skillPoints,me.skillDeckCode,me.ownedSkills,me.skillA,me.skillB,me.skillC,pending]);
-  if(skillShopKey===key)return;
-  skillShopKey=key;
-  $('skill-shop-points').textContent='스킬포인트 '+me.skillPoints;
-  $('skill-shop-list').replaceChildren();
-  for(const /** code: 표시할 덱·보유·시작 기본 기술 코드. */ code of new Set([...(me.skillDeckCode??[]),...Object.keys(me.ownedSkills??{}),'BAS0001','BAS0002'])){
-    const /** skill: 서버에서 받은 기술 정의. */ skill=room.skillCatalog[code];
-    if(!skill)continue;
-    const /** count: 덱에 남은 동일 카드 수. */ count=me.skillDeckCode.filter(/** 동일 기술 카드를 센다. */ (/** card: 덱 카드 코드. */ card)=>card===code).length;
-    const /** level: 현재 보유 기술 레벨. */ level=me.ownedSkills?.[code]??0;
-    const /** card: 기술 하나의 정보와 조작을 묶는 영역. */ card=document.createElement('section');
-    const /** title: 스킬 이름과 슬롯 정보. */ title=document.createElement('strong');
-    title.textContent=skill.name+' · '+skill.typeCode+' · 레벨 '+level;
-    card.append(title);
-    if(skill.basicEffect){
-      const /** effect: 버튼 시전 설명. */ effect=document.createElement('p');
-      effect.textContent='기본효과 · '+skill.basicEffect;
-      card.append(effect);
-    }
-    const /** trigger: 카드 구매 시 발동하는 효과 설명. */ trigger=document.createElement('p');
-    trigger.textContent=(skill.typeCode==='P'?'적용효과 · ':'발동효과 · ')+skill.triggerEffect;
-    card.append(trigger);
-    if(count){
-      const /** buy: 포인트로 카드 한 장을 구매하는 버튼. */ buy=document.createElement('button');
-      buy.textContent='구매 '+skill.skillPoints+'pt · 남은 카드 '+count+'장';
-      buy.disabled=!!pending||me.skillPoints<skill.skillPoints;
-      buy.onclick=/** 구매 조건은 서버에서 다시 검사한다. */ ()=>{$('skill-shop-error').textContent='';send('game.skill.buy',{code});};
-      card.append(buy);
-    }
-    if(skill.typeCode!=='P'&&(level||code==='BAS0001'||code==='BAS0002')){
-      const /** equip: 이미 보유한 기술을 지정 슬롯에 장착하는 버튼. */ equip=document.createElement('button');
-      equip.textContent=me['skill'+skill.typeCode]===code?'장착 중':'장착';
-      equip.disabled=!!pending||me['skill'+skill.typeCode]===code;
-      equip.onclick=/** 장착을 서버에 요청한다. */ ()=>{$('skill-shop-error').textContent='';send('game.skill.equip',{code});};
-      card.append(equip);
-    }
-    $('skill-shop-list').append(card);
+/** 화면 위 구매창을 전환하고 기존 게임 입력을 초기화한다. */
+function setSkillShop(/** open: 구매창을 열지 여부. */ open){
+  if(open&&(room?.phase!=='started'||viewport.blockedPortrait||$('game-dialog').open||$('escape-dialog').open))return;
+  if($('skill-shop').hidden===!open)return;
+  $('skill-shop').hidden=!open;
+  $('skill-shop-open').setAttribute('aria-expanded',String(open));
+  resetInput();
+  if(open){
+    $('skill-shop-error').textContent='';
+    setExpandedMap(false);
+    updateSkillShop();
+    inputPacket();
+    $('skill-shop-close').focus();
   }
 }
-$('open-skills').onclick=/** 게임 중 스킬 구매 목록을 연다. */ ()=>{
-  skillShopKey=null;
+
+/** 손패 구매창과 기존 스킬 장착 화면을 서버 상태로 갱신한다. */
+function updateSkillShop(){
+  if($('skill-shop').hidden&&$('menu-skills').hidden)return;
+  const /** me: 현재 접속한 플레이어의 서버 상태. */ me=room?.players.find(/** 본인 참가자를 찾는다. */ (/** player: 참가자. */ player)=>player.id===playerId)?.status;
+  if(!me||!room.skillCatalog)return;
+  if(!$('menu-skills').hidden)updateSkillEquip(me);
+  if($('skill-shop').hidden)return;
+
+  const /** hand: 서버가 뽑은 손패 카드 코드. */ hand=me.handSkillCode??[];
+  const /** freeRerolls: 남은 무료 리롤 횟수. */ freeRerolls=me.rerollCount??0;
+  const /** key: 손패 및 자원의 변경을 감지할 값. */ key=JSON.stringify([hand,me.skillPoints,freeRerolls,pending]);
+  if(skillShopKey===key)return;
+  skillShopKey=key;
+  $('skill-shop-points').textContent='스킬포인트 '+me.skillPoints+' SP';
+  $('skill-reroll-label').textContent=freeRerolls>0?'무료리롤수: '+freeRerolls:'리롤: 1SP 소모';
+  $('skill-reroll').disabled=!!pending||(hand.length>0&&freeRerolls===0&&me.skillPoints<1);
+  $('skill-shop-list').replaceChildren();
+  for(const /** code: 중복을 포함한 각 손패 카드의 코드. */ code of hand){
+    const /** skill: 서버가 제공한 카드 정의. */ skill=room.skillCatalog[code];
+    if(!skill)continue;
+    const /** card: 기술 설명과 비용을 담은 구매 버튼. */ card=document.createElement('button');
+    const /** title: 카드 이름과 배정 슬롯. */ title=document.createElement('strong');
+    title.textContent=skill.name+' · '+skill.typeCode;
+    const /** description: 기본효과와 구매 시 발동효과. */ description=document.createElement('span');
+    description.textContent=[skill.basicEffect,skill.triggerEffect].filter(Boolean).join(' ');
+    const /** cost: 구매에 필요한 스킬포인트. */ cost=document.createElement('small');
+    cost.textContent=skill.skillPoints+' SP';
+    card.append(title,description,cost);
+    card.disabled=!!pending||me.skillPoints<skill.skillPoints;
+    card.onclick=/** 손패에 있는 카드 한 장을 구매하도록 서버에 요청한다. */ ()=>{
+      $('skill-shop-error').textContent='';
+      send('game.skill.buy',{code});
+    };
+    $('skill-shop-list').append(card);
+  }
+  if(!hand.length)$('skill-shop-list').textContent='손패가 비었습니다. 리롤로 무료 드로우할 수 있습니다.';
+}
+
+/** 구입한 기술과 시작 기본 기술을 다시 장착할 수 있게 표시한다. */
+function updateSkillEquip(/** me: 보유 기술과 장착 슬롯을 가진 서버 상태. */ me){
+  const /** key: 장착 목록에 영향을 주는 상태. */ key=JSON.stringify([me.ownedSkills,me.skillA,me.skillB,me.skillC,pending]);
+  if(skillEquipKey===key)return;
+  skillEquipKey=key;
+  $('skill-equip-list').replaceChildren();
+  for(const /** code: 장착 가능한 보유 및 시작 기본 기술. */ code of new Set(['BAS0001','BAS0002',...Object.keys(me.ownedSkills??{})])){
+    const /** skill: 기술의 서버 정의. */ skill=room.skillCatalog[code];
+    if(!skill||skill.typeCode==='P')continue;
+    const /** equip: 기술을 슬롯에 장착하는 버튼. */ equip=document.createElement('button');
+    const /** equipped: 현재 해당 슬롯에 장착되었는지 여부. */ equipped=me['skill'+skill.typeCode]===code;
+    equip.textContent=skill.name+' · '+skill.typeCode+(equipped?' · 장착 중':' · 장착');
+    equip.disabled=!!pending||equipped;
+    equip.onclick=/** 장착을 서버에 요청한다. */ ()=>send('game.skill.equip',{code});
+    $('skill-equip-list').append(equip);
+  }
+}
+$('skill-shop-open').onclick=/** 터치로 구매창을 연다. */ ()=>setSkillShop(true);
+$('skill-shop-close').onclick=/** 닫기 버튼으로 구매창을 닫는다. */ ()=>setSkillShop(false);
+$('skill-reroll').onclick=/** 손패를 서버에서 다시 뽑는다. */ ()=>{
   $('skill-shop-error').textContent='';
+  send('game.skill.reroll');
+};
+$('open-skills').onclick=/** 보유 기술 장착 목록을 연다. */ ()=>{
+  skillEquipKey=null;
   showMenuPage('skills');
   updateSkillShop();
 };
@@ -389,6 +423,15 @@ $('game-leave').onclick = /** onclick: 해당 브라우저 이벤트에서 화�
 window.addEventListener('keydown', /** e: 현재 입력 이벤트 또는 그릴 기술 효과. */ /** keydown 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ e => {
   if (room?.phase !== 'started' || viewport.blockedPortrait) return;
   if($('escape-dialog').open){if(['KeyY','KeyN'].includes(e.code)&&!e.repeat){e.preventDefault();confirmEscape(e.code==='KeyY');}return;}
+  if(e.code==='KeyB'&&!e.ctrlKey&&!e.metaKey&&!e.altKey){
+    e.preventDefault();
+    if(!e.repeat)setSkillShop($('skill-shop').hidden);
+    return;
+  }
+  if(!$('skill-shop').hidden){
+    if(e.code==='Escape'){e.preventDefault();setSkillShop(false);}
+    return;
+  }
   if(e.code==='KeyF'&&!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey){e.preventDefault();interact();return;}
   if(e.code==='Tab'){e.preventDefault();if(!e.repeat&&!$('game-dialog').open)setExpandedMap($('expanded-map').hidden);return;}
   if(!$('expanded-map').hidden){if(e.code==='Escape'){e.preventDefault();setExpandedMap(false);}return;}
@@ -401,7 +444,7 @@ window.addEventListener('keydown', /** e: 현재 입력 이벤트 또는 그릴 
 });
 window.addEventListener('keyup', /** e: 현재 입력 이벤트 또는 그릴 기술 효과. */ /** keyup 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ e => { keys.delete(e.code); action = desktopAction(); });
 $('game-viewport').addEventListener('mousedown', /** e: 현재 입력 이벤트 또는 그릴 기술 효과. */ /** mousedown 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ e => {
-  if (![0,2].includes(e.button) || room?.phase !== 'started' || $('game-dialog').open || $('escape-dialog').open || viewport.blockedPortrait || e.target.closest?.('button, input, select, dialog, #joystick, #minimap, #expanded-map')) return;
+  if (![0,2].includes(e.button) || room?.phase !== 'started' || $('game-dialog').open || $('escape-dialog').open || !$('skill-shop').hidden || viewport.blockedPortrait || e.target.closest?.('button, input, select, dialog, #joystick, #minimap, #expanded-map')) return;
   e.preventDefault(); desktopInput = true; updateControls();
   if (!mouseButtons.has(e.button)) useSkill(e.button === 0 ? 'A' : 'B');
   mouseButtons.add(e.button); action = desktopAction(); inputPacket();
@@ -446,7 +489,7 @@ let /** viewport: 게임의 유효 화면 크기·배율·여백 정보. */ view
   // 캐릭터 이름의 월드 글자 크기 14에 맞추되 세로 UI의 이중 확대를 피한다.
   hud.style.setProperty('--skill-cooldown-font-size',shrinkHud?'14px':`${14*viewport.scale}px`);
   frame.hidden = viewport.blockedPortrait;
-  if (viewport.blockedPortrait) closeMenu();
+  if(viewport.blockedPortrait){setSkillShop(false);closeMenu();}
   $('rotate-notice').hidden = !viewport.blockedPortrait;
 }
 window.addEventListener('resize', /** resize 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ () => { updateViewport(); resetInput(); inputPacket(); });

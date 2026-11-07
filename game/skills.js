@@ -197,15 +197,40 @@ function allowsWeapon(/** skill: 기술 정의. */ skill,/** status: 장착 무�
   return !skill.allowedAttributeCodes?.length||skill.allowedAttributeCodes.includes(status.weaponAttributeCode);
 }
 
-/** 덱 카드 한 장과 포인트를 사용해 보유 레벨을 올리고 구매 효과를 적용한다. */
+/** 기존 손패를 묘지로 보내고 덱에서 카드 한 장씩 무작위로 뽑는다. */
+export function drawSkills(/** status: 플레이어의 카드 목록과 손패 상한. */ status,/** random: 카드 위치를 고르는 난수 함수. */ random=Math.random){
+  status.graveyardSkillDeckCode.push(...status.handSkillCode);
+  status.handSkillCode.length=0;
+  if(status.skillDeckCode.length<status.maxHandSize){
+    status.skillDeckCode.push(...status.graveyardSkillDeckCode);
+    status.graveyardSkillDeckCode.length=0;
+  }
+  while(status.handSkillCode.length<status.maxHandSize&&status.skillDeckCode.length){
+    const /** index: 남은 덱에서 선택한 카드 위치. */ index=Math.floor(random()*status.skillDeckCode.length);
+    status.handSkillCode.push(...status.skillDeckCode.splice(index,1));
+  }
+}
+
+/** 손패가 비어 있으면 무료로, 그 외에는 리롤 횟수 또는 포인트로 다시 뽑는다. */
+export function rerollSkills(/** status: 서버가 확인한 플레이어의 카드와 자원. */ status){
+  if(status.handSkillCode.length){
+    if(status.rerollCount>0)status.rerollCount-=1;
+    else if(status.skillPoints>=1)status.skillPoints-=1;
+    else return false;
+  }
+  drawSkills(status);
+  return true;
+}
+
+/** 손패 카드 한 장을 제외하고 포인트를 사용해 구매 효과를 적용한다. */
 export function buySkill(/** player: 구매 요청을 보낸 생존 플레이어. */ player,/** code: 구매할 카드 코드. */ code,/** now: 서버 시각(ms). */ now){
   const /** status: 구매에 사용하는 서버 플레이어 상태. */ status=player.status;
   const /** skill: 구매할 기술의 서버 정의. */ skill=Object.hasOwn(skills,code)?skills[code]:null;
   if(status.objectType!=='player'||status.state!==LifeState.ALIVE||!skill)return false;
-  const /** index: 소모할 덱 카드의 위치. */ index=status.skillDeckCode.indexOf(code);
+  const /** index: 구매할 손패 카드의 위치. */ index=status.handSkillCode.indexOf(code);
   if(index<0||status.skillPoints<skill.skillPoints||!allowsWeapon(skill,status))return false;
   status.skillPoints-=skill.skillPoints;
-  status.skillDeckCode.splice(index,1);
+  status.excludedSkillDeckCode.push(...status.handSkillCode.splice(index,1));
   status.ownedSkills[code]=(status.ownedSkills[code]??0)+1;
   if(code==='BAS0007')status.bonusAttack+=(status.level+5)*2;
   if(code==='BAS0008'){

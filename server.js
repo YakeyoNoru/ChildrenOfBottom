@@ -1,5 +1,5 @@
 import { /** tickPlayerSkill: 플레이어의 시간제 기술을 진행한다. */ tickPlayerSkill, /** tickStones: 돌 투사체의 이동과 충돌을 진행한다. */ tickStones } from './game/advanced-skills.js';
-import { /** skills: 서버 기술 정의. */ skills, /** buySkill: 카드 구매를 확정한다. */ buySkill, /** equipSkill: 서버 슬롯을 배정한다. */ equipSkill } from './game/skills.js';
+import { /** skills: 서버 기술 정의. */ skills, /** buySkill: 카드 구매를 확정한다. */ buySkill, /** equipSkill: 서버 슬롯을 배정한다. */ equipSkill, /** drawSkills: 공통 손패 드로우를 실행한다. */ drawSkills, /** rerollSkills: 비용을 확인하고 손패를 다시 뽑는다. */ rerollSkills } from './game/skills.js';
 import './public/interactions.js';
 import { /** tickExits: 게임 시작 6분·8분 탈출구 생성 기회를 처리한다. */ tickExits } from './game/exits.js';
 import { /** createReturnLamp: 시작 위치에 소유자가 있는 귀환등을 만든다. */ createReturnLamp } from './game/props.js';
@@ -273,6 +273,11 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
         if (!TargetPriority.includes(m.targetPriority)) return fail('INVALID_OPTIONS', '올바른 공격 우선대상이 필요합니다.');
         room.players.get(ws.id).targetPriority = m.targetPriority;
         return;
+      } else if(m.type==='game.skill.reroll'){
+        const /** player: 리롤을 요청한 현재 참가자. */ player=room?.players.get(ws.id);
+        if(room?.phase!=='started'||player?.status.state!==LifeState.ALIVE)return fail('INVALID_SKILL','게임 중에만 리롤할 수 있습니다.');
+        if(!rerollSkills(player.status))return fail('INVALID_SKILL','리롤에 필요한 스킬포인트가 부족합니다.');
+        broadcast(room);
       } else if (m.type === 'game.skill.buy' || m.type === 'game.skill.equip') {
         const /** player: 현재 게임에서 기술을 구매하거나 장착할 참가자. */ player=room?.players.get(ws.id);
         if(room?.phase!=='started'||player?.status.state!==LifeState.ALIVE||typeof m.code!=='string')return fail('INVALID_SKILL','게임 중에만 기술을 구매하거나 장착할 수 있습니다.');
@@ -335,6 +340,9 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
           [...room.players.values()].forEach(/** 입장 순서별 지정 타일 중심에 배치한다. */ (/** player: 배치할 참가자. */ player,/** index: 현재 참가자의 입장 순서. */ index)=>{
             const /** tile: 플레이어 순번과 같은 번호의 지형타일. */ tile=room.map.tiles.find(/** 시작 타일을 찾는다. */ (/** item: 지도 타일. */ item)=>item.id===index+1);
             Object.assign(player,globalThis.PitMapRules.center(tile,room.map));
+            player.status.graveyardSkillDeckCode.length=0;
+            player.status.handSkillCode.length=0;
+            drawSkills(player.status);
             player.pendingCasts=[];player.movementClock={last:Date.now(),credit:50};
             player.playerNumber=index+1;player.spawnTileId=tile.id;player.roll=null;player.input={x:0,y:0};player.inputQueue=[];
             /** reconnectToken: 이 게임의 캐릭터 복귀 전용 256비트 비공개 토큰. 공개 스냅샷에는 포함하지 않는다. */ player.ws.reconnectToken=randomBytes(32).toString('hex');

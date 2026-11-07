@@ -12,11 +12,25 @@ async function waitFor(/** accept: 서버에 반영됐는지 검사할 조건. *
 test('players can buy a skill card through the game socket and equip the starting skill again',/** 실제 서버 메시지로 구매·장착과 부족한 포인트 거절을 확인한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
  const /** a: 구매자 소켓; rooms: 방 목록; code: 검증할 방 번호. */ {a,rooms,code}=await startedPair(t);
  const /** player: 구매 요청으로 변경할 서버 참가자. */ player=rooms.get(code).players.get(a.id);
+ assert.equal(player.status.skillDeckCode.length,17);
+ assert.equal(player.status.handSkillCode.length,3);
+ assert.equal((await a.command('game.skill.reroll',{},'error')).code,'INVALID_SKILL');
+ player.status.rerollCount=1;
+ await a.command('game.skill.reroll');
+ assert.equal(player.status.rerollCount,0);
+ assert.equal(player.status.graveyardSkillDeckCode.length,3);
+ player.status.skillPoints=2;
+ await a.command('game.skill.reroll');
+ assert.equal(player.status.skillPoints,1);
+ assert.equal(player.status.graveyardSkillDeckCode.length,6);
+ player.status.handSkillCode=['BAS0001'];
  assert.equal((await a.command('game.skill.buy',{code:'BAS0004'},'error')).code,'INVALID_SKILL');
- assert.equal(player.status.skillDeckCode.length,20);
- player.status.skillPoints=1;
+ player.status.handSkillCode=['BAS0004'];
  await a.command('game.skill.buy',{code:'BAS0004'});
- assert.equal(player.status.skillDeckCode.length,19);
+ assert.deepEqual(player.status.handSkillCode,[]);
+ assert.deepEqual(player.status.excludedSkillDeckCode,['BAS0004']);
+ await a.command('game.skill.reroll');
+ assert.equal(player.status.handSkillCode.length,3);
  assert.equal(player.status.ownedSkills.BAS0004,1);
  assert.equal(player.status.skillA,'BAS0004');
  assert.equal(player.status.skillPoints,0);
