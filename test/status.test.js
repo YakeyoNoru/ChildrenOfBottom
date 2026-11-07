@@ -79,7 +79,7 @@ test('every object kind has zero slot cooldowns and elapsed time clamps remainin
 
 test('progression defaults and reward/effect lists are independent per object',/** 플레이어·적 전용 기본값과 중첩 목록의 독립성을 검증한다. */ ()=>{
  const /** player: 기본 플레이어. */ player=status('player');
- for(const /** field: 검사할 수치 이름; value: 기대 기본값. */ [field,value] of Object.entries({level:1,requiredExperience:50,currentExperience:0,skillPoints:0,competitionPoints:0,tracePoints:20,bonusTracePoints:0,trackingPoints:20,bonusTrackingPoints:0}))assert.equal(player[field],value);
+ for(const /** field: 검사할 수치 이름; value: 기대 기본값. */ [field,value] of Object.entries({level:1,requiredExperience:50,currentExperience:0,skillPoints:0,rerollCount:0,competitionPoints:0,tracePoints:20,bonusTracePoints:0,trackingPoints:20,bonusTrackingPoints:0}))assert.equal(player[field],value);
  const /** source: 중첩된 보상·상태이상 검증 자료. */ source=[{code:'TEST',data:{remainingSeconds:4}}];
  const /** enemy: 자료를 지정한 적; other: 기본 적. */ enemy=status('enemy',{rewards:source,statusEffects:source}),other=status('enemy');
  assert.equal(enemy.level,1);assert.equal(enemy.experience,20);assert.deepEqual(other.rewards,[]);assert.deepEqual(other.statusEffects,[]);
@@ -98,7 +98,7 @@ test('experience awards carry remainder and apply per-level bonuses using the ne
  assert.equal(gainExperience(player,1),1);assert.equal(player.level,2);assert.equal(player.currentExperience,0);assert.equal(player.requiredExperience,90);
  assert.equal(player.bonusHealth,15);assert.equal(player.bonusAttack,5);assert.equal(player.currentHealth,24);
  assert.equal(gainExperience(player,250),2);assert.equal(player.level,4);assert.equal(player.currentExperience,10);assert.equal(player.requiredExperience,230);
- assert.equal(player.bonusHealth,35);assert.equal(player.bonusAttack,9);assert.equal(player.skillPoints,6);
+ assert.equal(player.bonusHealth,35);assert.equal(player.bonusAttack,9);assert.equal(player.skillPoints,6);assert.equal(player.rerollCount,3);
  assert.equal(effectiveStats(player).maxHealth,45);assert.equal(effectiveStats(player).attack,10);
  const /** before: 잘못된 지급 요청 이전 상태 복사. */ before=structuredClone(player);
  for(const /** amount: 허용되지 않는 획득 경험치. */ amount of [-1,NaN,Infinity,'20'])assert.throws(/** 잘못된 지급을 실행한다. */ ()=>gainExperience(player,amount),TypeError);
@@ -107,9 +107,9 @@ test('experience awards carry remainder and apply per-level bonuses using the ne
 
 
 test('level-up rewards apply each intermediate level and preserve resource and health caps',/** 연속 상승의 짝수 보상과 회복량·최대치·기존 포인트 보존을 검증한다. */ ()=>{
- const /** player: 기존 보상과 낮은 체력을 가진 검증 개체. */ player=status('player',{maxHealth:100,currentHealth:1,bonusDefense:3,skillPoints:5,maxSkillResource:4,currentSkillResource:2});
+ const /** player: 기존 보상과 낮은 체력을 가진 검증 개체. */ player=status('player',{maxHealth:100,currentHealth:1,bonusDefense:3,skillPoints:5,rerollCount:2,maxSkillResource:4,currentSkillResource:2});
  assert.equal(gainExperience(player,290),3);
- assert.equal(player.level,4);assert.equal(player.bonusDefense,6);assert.equal(player.skillPoints,11);
+ assert.equal(player.level,4);assert.equal(player.bonusDefense,6);assert.equal(player.skillPoints,11);assert.equal(player.rerollCount,5);
  assert.equal(player.maxSkillResource,6);assert.equal(player.currentSkillResource,2);
  assert.equal(player.currentHealth,49);assert.equal(effectiveStats(player).maxHealth,130);
  const /** capped: 최대체력 제한을 검사할 기본 개체. */ capped=status('player');

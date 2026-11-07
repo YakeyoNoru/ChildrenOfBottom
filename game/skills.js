@@ -64,9 +64,9 @@ export const /** skills: 기술 코드별 공통 기술 정의. */ skills = Obje
     triggerEffect:'환영조각 획득마다 경쟁점수 +5, 경험치 +1을 추가한다.',
   }),
   BAS0006: defineSkill({
-    code:'BAS0006', name:'하스스톤', typeCode:'C', kind:'hearth', skillPoints:3,
+    code:'BAS0006', name:'하스스톤', typeCode:'C', kind:'hearth', skillPoints:3, cooldownMs:600000,
     /** delayMs: 탈출구 생성까지 대기 시간(ms). */ delayMs:10000,
-    basicEffect:'보유 레벨 3일 때 시전 위치에 10초 뒤 탈출구를 생성한다.',
+    basicEffect:'보유 레벨 3일 때 시전 위치에 10초 뒤 탈출구를 생성한다. 재사용 대기 600초.',
   }),
   BAS0007: defineSkill({
     code:'BAS0007', name:'힘세고강한 아침', typeCode:'P', skillPoints:3,

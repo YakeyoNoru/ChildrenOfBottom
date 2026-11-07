@@ -72,6 +72,7 @@ export /** createStatus: 모든 개체가 공유하는 수치·기술 슬롯·�
       /** requiredExperience: 다음 레벨에 필요한 경험치. */ requiredExperience:50,
       /** currentExperience: 현재 누적 경험치. */ currentExperience:0,
       /** skillPoints: 사용 가능한 스킬 포인트. */ skillPoints:0,
+      /** rerollCount: 플레이어에게 남은 리롤 가능 횟수. */ rerollCount:0,
       /** competitionPoints: 경쟁 포인트. */ competitionPoints:0,
       /** tracePoints: 기본 흔적 포인트. */ tracePoints:20,
       /** bonusTracePoints: 기본 흔적에 합산할 추가 포인트. */ bonusTracePoints:0,
@@ -80,6 +81,7 @@ export /** createStatus: 모든 개체가 공유하는 수치·기술 슬롯·�
     })) {
       const /** value: 서버 생성 시 지정한 수치 또는 기본값. */ value=values[field]??fallback;
       if(typeof value!=='number'||!Number.isFinite(value)||(!field.startsWith('bonus')&&value<0))throw new TypeError(`Invalid ${field}`);
+      if(field==='rerollCount'&&!Number.isSafeInteger(value))throw new TypeError('Invalid rerollCount');
       status[field]=value;
     }
   }
@@ -127,6 +129,7 @@ export function gainExperience(/** status: 경험치 진행 필드를 가진 플
     status.bonusAttack+=2;
     status.bonusDefense+=1;
     status.skillPoints+=2;
+    status.rerollCount=(status.rerollCount??0)+1;
     if(level%2===0)status.maxSkillResource+=1;
     // 각 레벨의 최대체력 증가를 먼저 적용한 뒤 해당 레벨의 회복량을 계산한다.
     status.currentHealth=Math.min(effectiveStats(status).maxHealth,status.currentHealth+10+level*2);

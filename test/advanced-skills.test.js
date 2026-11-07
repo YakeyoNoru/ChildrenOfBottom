@@ -68,6 +68,8 @@ test('purchases consume cards, apply passive effects and enable the level-three 
   assert.equal(exit.x,10);
   assert.equal(exit.y,20);
   assert.equal(exit.interactionEnabled,true);
+  assert.equal(castSkill(caster,[caster],'C',600199),null);
+  assert.ok(castSkill(caster,[caster],'C',600200));
 });
 
 test('running crew adds temporary movement and persistent fragment rewards',/** 이동 보너스 만료와 환영조각 보상이 따로 작동하는지 검증한다. */ ()=>{
