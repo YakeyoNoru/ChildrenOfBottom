@@ -5,9 +5,8 @@ body.playing{overflow:hidden}body.playing main>header,body.playing main>footer{d
 #game-status{position:absolute;top:max(28px,env(safe-area-inset-top));right:max(20px,env(safe-area-inset-right));color:#c0d3bb;pointer-events:none}
 #joystick{position:absolute;left:max(28px,env(safe-area-inset-left));bottom:max(32px,env(safe-area-inset-bottom));width:132px;height:132px;border:3px solid #666666;background:#bcd4aa18;border-radius:50%;touch-action:none;user-select:none;display:grid;place-items:center}
 #stick{width:54px;height:54px;border-radius:50%;background:#c7dea688;border:2px solid #666666;pointer-events:none}
-#action-controls{position:absolute;right:max(28px,env(safe-area-inset-right));bottom:max(40px,env(safe-area-inset-bottom));display:flex;align-items:flex-end;gap:20px}#action-controls button{width:68px;height:68px;border-radius:50%;background:#bdd2a644;color:#eff7e8;border:3px solid #666666;font-size:24px;touch-action:none;user-select:none}#action-controls #action-a{margin-bottom:30px}#action-controls button.pressed{background:#c8e5a6;color:#14251e}
 #game-dialog{width:min(400px,90vw);border:1px solid #70845d;border-radius:20px;background:#1b2c22;color:#edf2e7;padding:28px}#game-dialog::backdrop{background:#0009}#game-dialog button{width:100%;margin-top:12px}
-@media(max-height:430px){#joystick{width:108px;height:108px;bottom:20px}#action-controls{bottom:20px}}
+@media(max-height:430px){#joystick{width:108px;height:108px;bottom:20px}}
 
 /* Landscape camera frame: 19:10 baseline, clamped to 19:8 .. 19:15. */
 #game{background:#080d0b}
@@ -18,24 +17,43 @@ body.playing{overflow:hidden}body.playing main>header,body.playing main>footer{d
 #rotate-notice p{max-width:280px}
 
 /* --control-scale: 옵션에서 선택한 조이스틱·기술 버튼의 크기 배율. */
-:root{--control-scale:1}#joystick{width:calc(132px * var(--control-scale));height:calc(132px * var(--control-scale))}#stick{width:calc(54px * var(--control-scale));height:calc(54px * var(--control-scale))}#action-controls button{width:calc(68px * var(--control-scale));height:calc(68px * var(--control-scale))}#game-dialog{max-height:90dvh;overflow:auto}.settings{border-top:1px solid #47604b;padding-top:12px;margin-bottom:14px}.settings input[type=checkbox]{display:inline-block;width:auto}.settings select{font:inherit;background:#203b2b;color:white;padding:8px;border-radius:8px}.settings p{font-size:12px}#client-kind{color:#b7cf99;font-size:13px}.login-button{display:block;padding:16px;margin-top:12px;border-radius:9px;background:#dbe8d0;color:#152015;text-decoration:none;text-align:center}.login-button[aria-disabled=true]{opacity:.4;pointer-events:none}
+:root{--control-scale:1}#joystick{width:calc(132px * var(--control-scale));height:calc(132px * var(--control-scale))}#stick{width:calc(54px * var(--control-scale));height:calc(54px * var(--control-scale))}#game-dialog{max-height:90dvh;overflow:auto}.settings{border-top:1px solid #47604b;padding-top:12px;margin-bottom:14px}.settings input[type=checkbox]{display:inline-block;width:auto}.settings select{font:inherit;background:#203b2b;color:white;padding:8px;border-radius:8px}.settings p{font-size:12px}#client-kind{color:#b7cf99;font-size:13px}.login-button{display:block;padding:16px;margin-top:12px;border-radius:9px;background:#dbe8d0;color:#152015;text-decoration:none;text-align:center}.login-button[aria-disabled=true]{opacity:.4;pointer-events:none}
 
 #game-hud{position:absolute;left:0;top:0;width:100%;height:100%;transform-origin:top left}
 
 .settings input[type=radio]{display:inline-block;width:auto;margin-right:8px}.settings fieldset{margin-top:20px;border:1px solid #47604b;border-radius:8px}.settings fieldset label{font-size:14px;margin:12px 0}#menu-test p{font-size:14px}
 
-/* 기술명은 원형 버튼 안에, 잔여 대기는 비활성 버튼의 투명도와 별개로 위에 표시한다. */
-#action-controls .skill-control{position:relative;display:flex;flex-direction:column;align-items:center}
-#action-controls .skill-control:last-child{margin-bottom:30px}
-#action-controls #action-a{margin-bottom:0}
-#action-controls button{font-size:13px;line-height:1.2;padding:4px;white-space:normal;overflow-wrap:anywhere}
+/* --action-scale: 기술·상호작용 버튼의 크기와 버튼 사이 간격에 적용하는 배율. */
+/* --action-right, --action-bottom: 버튼 묶음의 우측·하단 기준 여백(CSS 픽셀). */
+#game-hud{
+  --action-scale:var(--control-scale);
+  --action-right:max(28px,env(safe-area-inset-right));
+  --action-bottom:max(36px,env(safe-area-inset-bottom));
+}
+@media(max-height:430px){
+  #game-hud{
+    --action-scale:calc(var(--control-scale) * .85);
+    --action-bottom:max(20px,env(safe-area-inset-bottom));
+  }
+}
+
+/* A를 기준으로 B는 오른쪽 위, C는 왼쪽 아래에 배치한다. */
+#action-controls{position:absolute;right:var(--action-right);bottom:var(--action-bottom)}
+#action-controls .skill-control{position:absolute;display:flex}
+.skill-control-a{right:calc(32px * var(--action-scale));bottom:0}
+.skill-control-b{right:0;bottom:calc(124px * var(--action-scale))}
+.skill-control-c{right:calc(178px * var(--action-scale));bottom:0}
+#action-controls button{width:calc(68px * var(--action-scale));height:calc(68px * var(--action-scale));min-height:0;border-radius:50%;background:#bdd2a644;color:#eff7e8;border:3px solid #666666;font-size:13px;line-height:1.2;padding:4px;white-space:normal;overflow-wrap:anywhere;touch-action:none;user-select:none}
+#action-controls #action-a{width:calc(104px * var(--action-scale));height:calc(104px * var(--action-scale));font-size:18px}
+#action-controls button.pressed{background:#c8e5a6;color:#14251e}
 /* --skill-cooldown-font-size: 화면 배율을 반영한 캐릭터 이름과 같은 크기의 UI 글자 크기. */
 .skill-cooldown{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);font:var(--skill-cooldown-font-size,14px) system-ui;color:#fff;text-shadow:0 1px 3px #000;white-space:nowrap;pointer-events:none}
 
-/* 타이머를 메뉴 버튼 왼쪽에 붙이고 터치 조작부 표시 옵션과 독립적으로 유지한다. */
-#game-topbar{position:absolute;top:max(18px,env(safe-area-inset-top));left:max(18px,env(safe-area-inset-left));display:flex;align-items:center;gap:10px}
+/* 메뉴는 왼쪽에 두고 타이머는 상단 중앙 경쟁점수 바로 왼쪽에 배치한다. */
+#game-topbar{position:absolute;top:max(18px,env(safe-area-inset-top));left:max(18px,env(safe-area-inset-left))}
 #game-topbar #game-menu{position:static}
-#room-timer{min-width:72px;text-align:center;font:700 22px system-ui;font-variant-numeric:tabular-nums;color:#eff7e8;background:#20392ddd;border:1px solid #60745b;border-radius:9px;padding:8px;pointer-events:none}
+#game-metrics{position:absolute;top:max(18px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);min-width:98px;min-height:46px;max-width:calc(100% - 360px);pointer-events:none}
+#room-timer{position:absolute;right:calc(100% + 10px);top:50%;transform:translateY(-50%);min-width:72px;text-align:center;font:700 22px system-ui;font-variant-numeric:tabular-nums;color:#eff7e8;background:#20392ddd;border:1px solid #60745b;border-radius:9px;padding:8px;pointer-events:none}
 #room-timer-grace{display:block;font-size:12px;font-weight:400;white-space:nowrap}
 #room-timer.expired{color:#ffaaa0;border-color:#c77970}
 
@@ -58,8 +76,8 @@ body.playing{overflow:hidden}body.playing main>header,body.playing main>footer{d
 /* 점수화면은 확정 경쟁점수와 하단 중앙 복귀 버튼을 제공한다. */
 #score-screen{position:fixed;inset:0;z-index:50;background:#14251e;color:#eff7e8;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
 #score-screen[hidden]{display:none}#score-value{font:700 64px system-ui}#score-exit{position:absolute;bottom:max(32px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);min-width:180px}
-/* 상호작용 버튼은 터치 조작 숨김 여부와 독립적으로 A 버튼 위에 둔다. */
-#interaction-button{position:absolute;right:max(28px,env(safe-area-inset-right));bottom:calc(86px + 68px * var(--control-scale));width:60px;height:48px;border-radius:14px;background:#263e32;color:#fff;border:3px solid #666666;font-size:20px;pointer-events:auto;touch-action:manipulation}
+/* 상호작용 버튼은 터치 조작 숨김 여부와 독립적으로 A 버튼의 왼쪽 위에 둔다. */
+#interaction-button{position:absolute;right:calc(var(--action-right) + 128px * var(--action-scale));bottom:calc(var(--action-bottom) + 110px * var(--action-scale));width:calc(60px * var(--action-scale));height:calc(48px * var(--action-scale));min-height:0;padding:0;border-radius:14px;background:#263e32;color:#fff;border:3px solid #666666;font-size:20px;pointer-events:auto;touch-action:manipulation}
 #escape-dialog{color:#eff7e8;background:#1d3427;border:1px solid #88aa78;border-radius:14px;padding:24px}#escape-dialog::backdrop{background:#0007}#escape-dialog button{min-width:80px;margin:8px}
 
 /* 현재 플레이어 서버 변수 목록은 긴 ID·배열을 줄바꿈해 모바일에서도 읽을 수 있게 한다. */
@@ -70,12 +88,11 @@ body.playing{overflow:hidden}body.playing main>header,body.playing main>footer{d
 /* 재사용 대기 중에도 버튼 테두리는 유지하고 배경·글자색으로 비활성 상태를 구분한다. */
 #action-controls button:disabled{opacity:1;background:#8f968c24;color:#b3b9af}
 /* 경쟁점수는 메뉴·미니맵과 별개로 게임 화면 상단 중앙에 고정한다. */
-#competition-score{position:absolute;top:max(18px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;max-width:calc(100% - 360px);padding:9px 14px;border:2px solid #666666;border-radius:10px;background:#1b2622eb;color:#fff;box-shadow:0 1px 5px #0008;pointer-events:none;font-variant-numeric:tabular-nums}
+#competition-score{display:flex;align-items:center;gap:10px;padding:9px 14px;border:2px solid #666666;border-radius:10px;background:#1b2622eb;color:#fff;box-shadow:0 1px 5px #0008;pointer-events:none;font-variant-numeric:tabular-nums}
 #competition-score span{font-size:13px;white-space:nowrap;color:#d8dfd5}
 #competition-score-value{font-size:22px;line-height:1.2;min-width:1ch;overflow:hidden;text-overflow:ellipsis}
 
 /* 게임 HUD의 지도와 구매창은 같은 패널 크기를 공유한다. */
-#game-topbar{align-items:flex-start}
 #game-menu-controls{display:grid;gap:6px}
 #skill-shop-open,#skill-reroll,#skill-shop-close{padding:0;min-height:36px;border:1px solid #687b70;background:#25312c;color:#fff}
 #skill-shop-panel{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:8px;padding:14px;background:#162a22;border:1px solid #687b70;border-radius:12px;box-sizing:border-box}
