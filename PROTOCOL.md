@@ -73,7 +73,7 @@ HTTP `GET /health`는 `{"ok":true,"protocolVersion":1}`을 반환합니다. 방 
 
 `room.state` / `game.state`의 room에 `objects` 배열을 추가합니다. `objects`는 플레이어를 포함한 모든 개체의 배열이고 `players`는 기존 로비 호환용 플레이어 배열입니다. 렌더링은 `objects`만 순회하여 중복으로 표시하지 않습니다. `players`와 `objects`의 플레이어 `id`는 같으며 자신의 카메라는 기존 `playerId`로 찾습니다.
 
-개체 형식: `{id, name, x, y, action, status}`. 플레이어의 players 배열 항목에는 `ready`도 있습니다. `status.instanceId === id`이며 공통 스테이터스와 `effective`(추가값을 포함한 최종 수치)를 담습니다. 필드별 정의는 [STATUSES.md](STATUSES.md)를 참고하세요. `concealed`, `stunned`는 JSON boolean이고, `state`는 `alive`/`dead`입니다. 최근접 ID는 개체 ID 또는 null입니다. 모든 개체에 `ownedSkills` 딕셔너리(스킬코드→양의 정수 레벨, 기본 `{}`)가 있으며, 플레이어에게만 `skillDeckCode` 배열(덱 코드 문자열 목록, 기본 `[]`)이 있습니다. 이전 사용 가능 기술 목록 필드는 제거했습니다.
+개체 형식: `{id, name, x, y, action, status}`. 플레이어의 players 배열 항목에는 `ready`도 있습니다. `status.instanceId === id`이며 공통 스테이터스와 `effective`(추가값을 포함한 최종 수치)를 담습니다. 필드별 정의는 [STATUSES.md](STATUSES.md)를 참고하세요. `concealed`, `stunned`는 JSON boolean이고, `state`는 `alive`/`dead`입니다. 최근접 ID는 개체 ID 또는 null입니다. 모든 개체에 `ownedSkills` 딕셔너리(스킬코드→양의 정수 레벨, 기본 `{}`)가 있으며, 플레이어에게만 `skillDeckCode` 배열(구매 가능한 카드 코드 문자열 목록)이 있습니다. 이전 사용 가능 기술 목록 필드는 제거했습니다.
 
 스테이터스는 서버 소유이며 game.input에 임의 status/공격력/이동속도/playerId를 넣어도 반영하지 않습니다. NPC/적 스폰은 현재 서버 내부 API만 제공하고 네트워크 생성 요청은 허용하지 않습니다. 이번 확장은 추가 필드이며 기존 메시지 명령 계약을 유지합니다.
 
@@ -191,3 +191,6 @@ A/B/C의 재사용 대기는 시전자별 `skillCooldowns[slot]`에 다음 사�
 플레이어 처치 시 사망 시점 피해자 경쟁포인트의 절반을 내림하여 처치자 `status.competitionPoints`에 더하며, 피해자 `status.level*40` 경험치를 공통 함수로 지급한다. 피해자의 점수화면 값은 유지한다. 보상은 서버 공통 피해 적용에서 한 번만 확정하고 기존 상태 스냅샷의 점수·경험치·레벨에 반영한다.
 
 실제 `gameStartedAt` 이후 360000ms에 높이 3, 480000ms에 생존 참가자가 2명 이상이면 높이 4의 무작위 타일 중앙에 탈출구 NPC를 각각 한 번 생성한다. 연결 끊김 유예 중인 생존자도 포함한다. `NPC_EXIT`는 `objectType=npc`, `status.damageImmune=true`, `interactionEnabled=true`, `spawnTileId`를 전송하며 모든 생존 플레이어가 공통 상호작용 거리 60 이내에서 이용한다. 모든 개체의 `status.damageImmune` 기본값은 false다. Y 성공 시 해당 NPC가 `room.objects`에서 제거되고 사용자는 `game.result`의 ESCAPE 결과를 받는다. 남은 참가자에게는 제거된 최신 개체 목록을 전송하며 다른 사용자의 동시 확인은 재검증으로 거부한다.
+
+
+게임 중 스킬 메뉴는 전체 방 상태의 `skillCatalog`를 표시합니다. `game.skill.buy {code}`는 덱 카드 한 장과 정의의 `skillPoints`를 사용하고 보유 레벨을 1 올립니다. 버튼 기술은 타입 슬롯에 장착됩니다. `game.skill.equip {code}`는 보유 기술과 시작 기본 기술을 해당 슬롯에 장착합니다. 두 요청 모두 서버가 게임 진행 상태, 플레이어 생존 여부, 사용 조건을 검증합니다. 비행 중인 돌의 표시 좌표는 `stones`로 전송됩니다.

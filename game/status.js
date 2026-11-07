@@ -57,7 +57,11 @@ export /** createStatus: 모든 개체가 공유하는 수치·기술 슬롯·�
     Object.defineProperty(status.ownedSkills,code,{value:level,writable:true,enumerable:true,configurable:true});
   }
   if (objectType === ObjectType.PLAYER) {
-    const /** decks: 플레이어가 보유한 스킬덱 코드 문자열 목록. */ decks=values.skillDeckCode===undefined?[]:values.skillDeckCode;
+    const /** decks: 플레이어가 보유한 스킬덱 코드 문자열 목록. */ decks=values.skillDeckCode===undefined?[
+      'BAS0001','BAS0001','BAS0001','BAS0003','BAS0003','BAS0003',
+      'BAS0004','BAS0004','BAS0004','BAS0005','BAS0005','BAS0005',
+      'BAS0006','BAS0006','BAS0006','BAS0007','BAS0007','BAS0007','BAS0008','BAS0008',
+    ]:values.skillDeckCode;
     if(!Array.isArray(decks)||!decks.every(/** 덱 코드가 문자열인지 검사한다. */ (/** code: 목록의 덱 코드. */ code)=>typeof code==='string'))throw new TypeError('Invalid skillDeckCode');
     /** status.skillDeckCode: 원본 목록과 공유하지 않는 플레이어 전용 스킬덱 코드 배열. */ status.skillDeckCode=[...decks];
   }

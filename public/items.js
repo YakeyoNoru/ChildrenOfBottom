@@ -49,7 +49,11 @@ globalThis.ItemRules=Object.freeze({
         if(!target||!this.eligible(item,target)){item.state='ground';delete item.targetId;delete item.startedAt;updates.push({...item});continue;}
         if(now-item.startedAt<50)continue;
         const /** definition: 획득 효과와 보관 방식을 정의한 자료. */ definition=this.definitions[item.code];
-        if(definition.mode==='instant') {target.status.competitionPoints=(target.status.competitionPoints??0)+definition.competitionPoints;if(definition.experience)awardExperience(target.status,definition.experience);}
+        if(definition.mode==='instant') {
+          const /** runningCrew: 환영조각 보상을 늘리는 러닝크루 구매 횟수. */ runningCrew=item.code==='illusionFragment'?target.status.ownedSkills?.BAS0005??0:0;
+          target.status.competitionPoints=(target.status.competitionPoints??0)+definition.competitionPoints+runningCrew*5;
+          if(definition.experience||runningCrew)awardExperience(target.status,definition.experience+runningCrew);
+        }
         else {target.inventory??=[];target.inventory.push({code:item.code});}
         items.delete(item.id);removed.push(item.id);continue;
       }

@@ -1,3 +1,5 @@
+import { /** tickPlayerSkill: 플레이어의 시간제 기술을 진행한다. */ tickPlayerSkill, /** tickStones: 돌 투사체의 이동과 충돌을 진행한다. */ tickStones } from './game/advanced-skills.js';
+import { /** skills: 서버 기술 정의. */ skills, /** buySkill: 카드 구매를 확정한다. */ buySkill, /** equipSkill: 서버 슬롯을 배정한다. */ equipSkill } from './game/skills.js';
 import './public/interactions.js';
 import { /** tickExits: 게임 시작 6분·8분 탈출구 생성 기회를 처리한다. */ tickExits } from './game/exits.js';
 import { /** createReturnLamp: 시작 위치에 소유자가 있는 귀환등을 만든다. */ createReturnLamp } from './game/props.js';
@@ -60,6 +62,8 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
     /** room.snapshotTime: 시계 역행 시에도 감소하지 않는 상태 생성 시각(ms). */ room.snapshotTime=Math.max(room.snapshotTime??0,Date.now());
     return {
       snapshotSequence:room.snapshotSequence,serverTime:room.snapshotTime,
+      ...(includeMap?{skillCatalog:skills}:{}),
+      stones:(room.stones??[]).map(/** 화면 표시용 투사체 좌표만 전송한다. */ (/** stone: 비행 중인 돌. */ stone)=>({id:stone.id,x:stone.x,y:stone.y})),
       ...(includeMap&&room.map?{map:room.map}:{}), mapId:room.map?.id??null, private:room.private??false,code: room.code, hostId: room.hostId, phase: room.phase, maxPlayers:MAX_PLAYERS, timer:globalThis.RoomTimerRules.snapshot(room,roomClock()),
       players: [...room.players.values()].map(/** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** 각 항목을 현재 계산에 필요한 값으로 변환한다. */ p => ({ ...objectSnapshot(p), ready: p.ready })),
       objects: objects.map(objectSnapshot),
@@ -157,12 +161,20 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
   /** 이동 순서가 도달한 기술을 실행 시점의 상태·쿨타임으로 검증한다. */
   function executeCast(/** room: 현재 방. */ room,/** caster: 시전자. */ caster,/** command: 예약한 슬롯·요청 ID. */ command,/** now: 서버 실행 시각. */ now){
     if(!room.players.has(caster.id))return;
-    if(caster.roll?.remaining>0){send(caster.ws,'error',{code:'ACTION_LOCKED',message:'구르는 동안에는 기술을 사용할 수 없습니다.',requestId:command.requestId});return;}
+    if(caster.roll?.remaining>0||caster.status.dashActive){send(caster.ws,'error',{code:'ACTION_LOCKED',message:'이동 기술 중에는 다른 기술을 사용할 수 없습니다.',requestId:command.requestId});return;}
     if(skillCooldownRemaining(caster,command.slot,now)>0){send(caster.ws,'error',{code:'SKILL_COOLDOWN',message:'기술 재사용 대기 중입니다.',requestId:command.requestId});return;}
     updateNearestObjects(allObjects(room));
     const /** effect: 이동을 반영한 시전자 위치에서 생성된 효과. */ effect=castSkill(caster,allObjects(room),command.slot,now);
     if(effect?.kind==='roll'){caster.movementClock??={last:now,credit:0};caster.movementClock.last=now;caster.movementClock.credit=0;}
-    if(effect&&effect.kind!=='roll'){room.skillEffects??=[];room.skillEffects.push(effect);}
+    if(!effect){
+      send(caster.ws,'error',{code:'SKILL_CAST_FAILED',message:'기술 사용 조건을 충족하지 못했습니다.',requestId:command.requestId});
+      return;
+    }
+    if(effect.kind==='stone'){
+      /** room.stones: 방에서 비행 중인 돌 투사체. */ room.stones??=[];
+      room.stones.push(effect);
+    }
+    if(!effect.kind){room.skillEffects??=[];room.skillEffects.push(effect);}
   }
   wss.on('connection', /** connection 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ (/** ws: 현재 처리 중인 WebSocket 연결. */ ws, /** req: 수신한 HTTP 요청. */ req) => {
     const /** allowed: 서버에서 허용하는 브라우저 출처. */ allowed = process.env.ALLOWED_ORIGIN;
@@ -261,12 +273,18 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
         if (!TargetPriority.includes(m.targetPriority)) return fail('INVALID_OPTIONS', '올바른 공격 우선대상이 필요합니다.');
         room.players.get(ws.id).targetPriority = m.targetPriority;
         return;
+      } else if (m.type === 'game.skill.buy' || m.type === 'game.skill.equip') {
+        const /** player: 현재 게임에서 기술을 구매하거나 장착할 참가자. */ player=room?.players.get(ws.id);
+        if(room?.phase!=='started'||player?.status.state!==LifeState.ALIVE||typeof m.code!=='string')return fail('INVALID_SKILL','게임 중에만 기술을 구매하거나 장착할 수 있습니다.');
+        const /** applied: 서버에서 구매 또는 장착을 승인했는지 여부. */ applied=m.type==='game.skill.buy'?buySkill(player,m.code,Date.now()):equipSkill(player,m.code);
+        if(!applied)return fail('INVALID_SKILL','기술 카드, 포인트 또는 장착 조건을 확인해 주세요.');
+        broadcast(room);
       } else if (m.type === 'game.cast') {
         if (!room) return fail('NOT_IN_ROOM', '참여 중인 방이 없습니다.');
         if (room.phase !== 'started') return fail('GAME_NOT_STARTED', '게임 시작 후 사용할 수 있습니다.');
         if (!['A','B','C'].includes(m.slot)) return fail('INVALID_SKILL', '올바른 기술 슬롯이 필요합니다.');
         const /** caster: 기술을 사용하는 개체. */ caster = room.players.get(ws.id), /** now: 현재 처리 시각(밀리초). */ now = Date.now();
-        if (caster.roll?.remaining>0) return fail('ACTION_LOCKED','구르는 동안에는 기술을 사용할 수 없습니다.');
+        if (caster.roll?.remaining>0) return fail('ACTION_LOCKED','이동 기술 중에는 다른 기술을 사용할 수 없습니다.');
         if (skillCooldownRemaining(caster,m.slot,now)>0) return fail('SKILL_COOLDOWN', '기술 재사용 대기 중입니다.');
         const /** sequence: 요청에 연결한 이동 순번. 구버전은 마지막 수신 입력에 연결한다. */ sequence=m.afterInputSeq??caster.lastReceivedInput??0;
         const /** errorCode: 순번·대기열 검증 오류. */ errorCode=globalThis.InputTimeline.enqueue(caster,m.slot,sequence,m.requestId);
@@ -342,11 +360,13 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
       const /** objects: 처리할 월드 개체 목록. */ objects = allObjects(room);
       for (const /** object: 현재 처리하는 월드 개체. */ object of objects) { regenerate(object.status, dt,now); updateSkillCooldowns(object,now); }
       for (const /** p: 현재 처리하는 플레이어 또는 검증 개체. */ p of room.players.values()) {
+        tickPlayerSkill(room,p,objects,now,dt);
         if(p.disconnectedUntil!=null)continue; // 이동만 정지하며 타겟·피해·회복·사망 판정에는 계속 참여한다.
         if (p.sequencedInput) {
           globalThis.InputTimeline.advance(p,room.map,now,/** 해당 이동 직후 시전을 실행한다. */ (/** command: 예약 시전. */ command)=>executeCast(room,p,command,now));
           continue;
         }
+        if(p.status.dashActive)continue;
         if(p.roll) {
           Object.assign(p,globalThis.MovementRules.step(p,{x:0,y:0},p.status,room.map));
           p.action=p.status.stunned||p.status.state===LifeState.DEAD?null:'roll';
@@ -364,6 +384,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
         }
         if (p.x !== previousX || p.y !== previousY) p.facing = Math.atan2(p.y - previousY, p.x - previousX);
       }
+      tickStones(room,objects,now,dt);
       globalThis.PoisonRules.tick(room,roomClock());
       if (now - (room.targetsAt ?? 0) >= 100) { updateNearestObjects(objects); room.targetsAt = now; }
       room.skillEffects.push(...tickMonsters(objects,room.map,now,dt));

@@ -100,6 +100,7 @@ $('minimap').onkeydown=/** 키보드 접근성으로 전체맵를 연다. */ (/*
   $('game').hidden = !playing; document.body.classList.toggle('playing', playing);
   updateViewport();
   updateSkillControls();
+  updateSkillShop();
   updateTestOptions();
   updatePlayerStatus();
   updateRoomTimer();
@@ -156,10 +157,13 @@ $('minimap').onkeydown=/** 키보드 접근성으로 전체맵를 연다. */ (/*
     if (m.type === 'game.state') { if (room?.code === m.room.code) { itemView.receive(m.room,Date.now()); const /** items: 이전 틱의 아이템을 변경분과 합칠 ID 목록. */ items=new Map((room.items??[]).map(/** ID별 자료를 만든다. */ (/** item: 필드 아이템. */ item)=>[item.id,item]));
       for(const /** item: 이번 틱 변경 아이템. */ item of m.room.itemChanges?.updates??[])items.set(item.id,item);
       for(const /** id: 획득 완료 ID. */ id of m.room.itemChanges?.removed??[])items.delete(id);
-      room = {...m.room,map:m.room.map??room.map,items:m.room.items??[...items.values()]}; timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); updateSkillControls();updateTestOptions();updatePlayerStatus();updateInteraction();updateCompetitionScore(); $('game-status').textContent=`${room.players.length}명 생존 · ${room.players.find(/** 본인의 표시 이름을 조회한다. */ (/** player: 수신 플레이어. */ player)=>player.id===playerId)?.name??''}`; } return; }
+      room = {...m.room,skillCatalog:m.room.skillCatalog??room.skillCatalog,map:m.room.map??room.map,items:m.room.items??[...items.values()]}; timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); updateSkillControls();updateSkillShop();updateTestOptions();updatePlayerStatus();updateInteraction();updateCompetitionScore(); $('game-status').textContent=`${room.players.length}명 생존 · ${room.players.find(/** 본인의 표시 이름을 조회한다. */ (/** player: 수신 플레이어. */ player)=>player.id===playerId)?.name??''}`; } return; }
     if (m.type === 'room.state') { const /** entering: 새로운 방 상태로 진입했는지 여부. */ entering = !room || room.code !== m.room.code; room = m.room; itemView.receive(room,Date.now()); timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); if (entering) {miniMap.clear();syncTargetPriority();} notice(''); }
     if (m.type === 'room.closed' || m.type === 'room.left') { saveResumeToken(null);interactionConfirmation=null;$('escape-dialog').close();room = null; miniMap.clear(); itemView.clear(); notice(m.type === 'room.closed' ? (m.message??messages.closed) : '방에서 나왔습니다.'); if(m.type==='room.closed') settle(); }
-    if (m.type === 'error') notice(m.message);
+    if(m.type==='error'){
+      notice(m.message);
+      if(!$('menu-skills').hidden)$('skill-shop-error').textContent=m.message;
+    }
     if ((m.type === 'ack' || m.type === 'error') && m.requestId === pending) settle();
     render();
   };
@@ -219,7 +223,7 @@ finePointer.addEventListener('change', /** e: 현재 입력 이벤트 또는 그
 }
 /** 서버 또는 표시 예측에서 구르기가 진행 중인지 확인한다. */
 function rolling() {
-  return !!(room?.players.find(/** 본인을 조회한다. */ (/** object: 방의 플레이어. */ object)=>object.id===playerId)?.roll?.remaining>0 || motionView.predicted?.roll?.remaining>0);
+  return !!(room?.players.find(/** 본인 돌진 상태를 확인한다. */ (/** player: 참가자. */ player)=>player.id===playerId)?.status?.dashActive || room?.players.find(/** 본인을 조회한다. */ (/** object: 방의 플레이어. */ object)=>object.id===playerId)?.roll?.remaining>0 || motionView.predicted?.roll?.remaining>0);
 }
 /** 현재 서버 스테이터스의 슬롯별 남은 대기(초)를 조회한다. */
 function cooldownRemaining(/** slot: 검사할 기술 슬롯. */ slot) {
@@ -314,9 +318,62 @@ function sendTestOptions(){send('game.testOptions',{mapHack:$('test-map-hack').c
 $('test-map-hack').onchange=sendTestOptions;
 $('test-high-speed').onchange=sendTestOptions;
 /** showMenuPage: 게임 메뉴·테스트설정·옵션 중 선택한 화면만 표시한다. */ function showMenuPage(/** page: 메뉴에서 표시할 하위 화면 이름. */ page) {
-  for (const /** name: 현재 항목이나 사용자에게 표시할 이름. */ name of ['main','test','options','status']) $('menu-' + name).hidden = name !== page;
-  $('menu-title').textContent = {main:'게임 메뉴',test:'테스트설정',options:'옵션',status:'상태'}[page];
+  for (const /** name: 현재 항목이나 사용자에게 표시할 이름. */ name of ['main','test','options','status','skills']) $('menu-' + name).hidden = name !== page;
+  $('menu-title').textContent = {main:'게임 메뉴',test:'테스트설정',options:'옵션',status:'상태',skills:'스킬'}[page];
 }
+let /** skillShopKey: 구매 화면을 다시 그릴 때 비교할 상태 키. */ skillShopKey=null;
+
+/** 덱에 남은 카드와 장착 가능한 보유 기술을 게임 메뉴에 표시한다. */
+function updateSkillShop(){
+  if($('menu-skills').hidden)return;
+  const /** me: 현재 접속한 플레이어의 서버 상태. */ me=room?.players.find(/** 본인 참가자를 찾는다. */ (/** player: 참가자. */ player)=>player.id===playerId)?.status;
+  if(!me||!room.skillCatalog)return;
+  const /** key: 화면 갱신에 영향을 주는 구매·장착 상태. */ key=JSON.stringify([me.skillPoints,me.skillDeckCode,me.ownedSkills,me.skillA,me.skillB,me.skillC,pending]);
+  if(skillShopKey===key)return;
+  skillShopKey=key;
+  $('skill-shop-points').textContent='스킬포인트 '+me.skillPoints;
+  $('skill-shop-list').replaceChildren();
+  for(const /** code: 표시할 덱·보유·시작 기본 기술 코드. */ code of new Set([...(me.skillDeckCode??[]),...Object.keys(me.ownedSkills??{}),'BAS0001','BAS0002'])){
+    const /** skill: 서버에서 받은 기술 정의. */ skill=room.skillCatalog[code];
+    if(!skill)continue;
+    const /** count: 덱에 남은 동일 카드 수. */ count=me.skillDeckCode.filter(/** 동일 기술 카드를 센다. */ (/** card: 덱 카드 코드. */ card)=>card===code).length;
+    const /** level: 현재 보유 기술 레벨. */ level=me.ownedSkills?.[code]??0;
+    const /** card: 기술 하나의 정보와 조작을 묶는 영역. */ card=document.createElement('section');
+    const /** title: 스킬 이름과 슬롯 정보. */ title=document.createElement('strong');
+    title.textContent=skill.name+' · '+skill.typeCode+' · 레벨 '+level;
+    card.append(title);
+    if(skill.basicEffect){
+      const /** effect: 버튼 시전 설명. */ effect=document.createElement('p');
+      effect.textContent='기본효과 · '+skill.basicEffect;
+      card.append(effect);
+    }
+    const /** trigger: 카드 구매 시 발동하는 효과 설명. */ trigger=document.createElement('p');
+    trigger.textContent=(skill.typeCode==='P'?'적용효과 · ':'발동효과 · ')+skill.triggerEffect;
+    card.append(trigger);
+    if(count){
+      const /** buy: 포인트로 카드 한 장을 구매하는 버튼. */ buy=document.createElement('button');
+      buy.textContent='구매 '+skill.skillPoints+'pt · 남은 카드 '+count+'장';
+      buy.disabled=!!pending||me.skillPoints<skill.skillPoints;
+      buy.onclick=/** 구매 조건은 서버에서 다시 검사한다. */ ()=>{$('skill-shop-error').textContent='';send('game.skill.buy',{code});};
+      card.append(buy);
+    }
+    if(skill.typeCode!=='P'&&(level||code==='BAS0001'||code==='BAS0002')){
+      const /** equip: 이미 보유한 기술을 지정 슬롯에 장착하는 버튼. */ equip=document.createElement('button');
+      equip.textContent=me['skill'+skill.typeCode]===code?'장착 중':'장착';
+      equip.disabled=!!pending||me['skill'+skill.typeCode]===code;
+      equip.onclick=/** 장착을 서버에 요청한다. */ ()=>{$('skill-shop-error').textContent='';send('game.skill.equip',{code});};
+      card.append(equip);
+    }
+    $('skill-shop-list').append(card);
+  }
+}
+$('open-skills').onclick=/** 게임 중 스킬 구매 목록을 연다. */ ()=>{
+  skillShopKey=null;
+  $('skill-shop-error').textContent='';
+  showMenuPage('skills');
+  updateSkillShop();
+};
+$('skills-back').onclick=/** 스킬 목록에서 게임 메뉴로 돌아간다. */ ()=>showMenuPage('main');
 $('open-test-settings').onclick = /** onclick: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ () => { if($('open-test-settings').hidden)return;showMenuPage('test'); $('test-back').focus(); };
 $('open-options').onclick = /** onclick: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ () => { showMenuPage('options'); $('control-scale').focus(); };
 $('test-back').onclick = /** onclick: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ () => { showMenuPage('options'); $('open-test-settings').focus(); };
@@ -411,10 +468,17 @@ const /** canvas: 월드 화면을 그리는 캔버스 요소. */ canvas = $('wo
     if(x<-5||x>w+5||y<-5||y>h+5)continue;
     ctx.beginPath();ctx.arc(x,y,2.5,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();ctx.strokeStyle='#000';ctx.lineWidth=1;ctx.stroke();
   }
+  for(const /** stone: 서버에서 받은 비행 중인 검은 돌. */ stone of room.stones??[]){
+    ctx.beginPath();
+    ctx.arc(stone.x+ox,stone.y+oy,2.5,0,Math.PI*2);
+    ctx.fillStyle='#000';
+    ctx.fill();
+  }
+  const /** revealPlayers: 서버에서 확정한 지도 탐지 효과가 남아 있는지 여부. */ revealPlayers=(me.status?.playerRevealUntil??0)>(room.serverTime??Date.now());
   updateInteraction(me);
-  miniMap.draw(room.map,room.code,me,viewport.worldWidth,miniMap.canvas,false,{x:0,y:0},false,room.objects??[]);
+  miniMap.draw(room.map,room.code,me,viewport.worldWidth,miniMap.canvas,false,{x:0,y:0},false,room.objects??[],revealPlayers);
   if(!$('expanded-map').hidden&&miniMap.terrain){
-    miniMap.draw(room.map,room.code,me,viewport.worldWidth*10/2.5,$('expanded-map-canvas'),true,mapPan,me.name==='열쇠'&&me.testOptions?.mapHack===true,room.objects??[]);
+    miniMap.draw(room.map,room.code,me,viewport.worldWidth*10/2.5,$('expanded-map-canvas'),true,mapPan,me.name==='열쇠'&&me.testOptions?.mapHack===true,room.objects??[],revealPlayers);
   }
   drawSkillEffects(ctx, room.skillEffects ?? [], ox, oy);
   displayObjects.forEach(/** 각 항목에 현재 단계의 상태 갱신 또는 표시 처리를 적용한다. */ (/** p: 현재 처리하는 플레이어 또는 검증 개체. */ p,/** i: 현재 반복 항목의 순번. */ i) => {

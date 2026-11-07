@@ -9,6 +9,21 @@ async function waitFor(/** accept: 서버에 반영됐는지 검사할 조건. *
  while(!accept()){if(Date.now()>=deadline)throw Error('서버 조건 대기시간 초과');await new Promise(/** 다음 이벤트 루프에서 서버 상태를 재검사한다. */ (/** resolve: 10ms 대기 완료 함수. */ resolve)=>setTimeout(resolve,10));}
 }
 
+test('players can buy a skill card through the game socket and equip the starting skill again',/** 실제 서버 메시지로 구매·장착과 부족한 포인트 거절을 확인한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
+ const /** a: 구매자 소켓; rooms: 방 목록; code: 검증할 방 번호. */ {a,rooms,code}=await startedPair(t);
+ const /** player: 구매 요청으로 변경할 서버 참가자. */ player=rooms.get(code).players.get(a.id);
+ assert.equal((await a.command('game.skill.buy',{code:'BAS0004'},'error')).code,'INVALID_SKILL');
+ assert.equal(player.status.skillDeckCode.length,20);
+ player.status.skillPoints=1;
+ await a.command('game.skill.buy',{code:'BAS0004'});
+ assert.equal(player.status.skillDeckCode.length,19);
+ assert.equal(player.status.ownedSkills.BAS0004,1);
+ assert.equal(player.status.skillA,'BAS0004');
+ assert.equal(player.status.skillPoints,0);
+ await a.command('game.skill.equip',{code:'BAS0001'});
+ assert.equal(player.status.skillA,'BAS0001');
+});
+
 test('PvP final blow synchronizes killer rewards and preserves the victim result points',/** 실제 기술 요청부터 처치 보상·사망 점수화면·최신 상태 전송까지 검증한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
  const /** a: 처치자 연결; b: 피해자 연결; rooms: 서버 방 목록; code: 방 번호. */ {a,b,rooms,code}=await startedPair(t);
  const /** room: 검증할 방; killer: 처치자; victim: 레벨 3 피해자. */ room=rooms.get(code),killer=room.players.get(a.id),victim=room.players.get(b.id);

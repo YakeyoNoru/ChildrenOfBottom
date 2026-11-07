@@ -9,7 +9,7 @@ globalThis.MovementRules = Object.freeze({
     /** map: 서버와 클라이언트가 공유하는 지도. 미지정이면 기존 빈 필드 호환. */ map=null,
   ) {
     const /** bound: 지도 사용 시 지형 경계를 따르고 빈 필드만 기존 범위로 제한한다. */ bound=map?Infinity:1500;
-    const /** blocked: 현재 이동을 금지하는 상태인지 여부. */ blocked=status.stunned||status.state==='dead';
+    const /** blocked: 현재 이동을 금지하는 상태인지 여부. */ blocked=status.stunned||status.dashActive||status.state==='dead';
     if(position.roll) {
       if(blocked) return {x:position.x,y:position.y,facing:position.facing,roll:null,lastMovementInput:{x:0,y:0}};
       const /** distance: 이번 고정 스텝에 전진할 거리. 마지막에는 남은 거리만 이동한다. */ distance=Math.min(position.roll.remaining,position.roll.speed*.05);

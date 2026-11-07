@@ -14,13 +14,17 @@ test('all objects own independent skill dictionaries while only players have dec
     assert.equal(s.nearestEnemyId,null);assert.equal(s.nearestObjectId,null);
     for(const /** key: 기본값 0인 추가 능력치. */ key of ['bonusHealth','bonusAttack','bonusDefense','bonusHealthRegen','bonusMoveSpeed','bonusSkillResource','bonusSkillResourceRegen'])assert.equal(s[key],0);
     assert.equal('skillDeckCode' in s,kind==='player');assert.equal('availableSkills' in s,false);assert.deepEqual({...s.ownedSkills},{});
-    if(kind==='player')assert.deepEqual(s.skillDeckCode,[]);
+    if(kind==='player'){
+      assert.equal(s.skillDeckCode.length,20);
+      for(const /** code: 세 장이 기본 지급되는 카드 코드. */ code of ['BAS0001','BAS0003','BAS0004','BAS0005','BAS0006','BAS0007'])assert.equal(s.skillDeckCode.filter(/** 같은 코드를 센다. */ (/** card: 덱 카드 코드. */ card)=>card===code).length,3);
+      assert.equal(s.skillDeckCode.filter(/** 탐지 카드만 센다. */ (/** card: 덱 카드 코드. */ card)=>card==='BAS0008').length,2);
+    }
     const /** source: 생성 원본 기술 사전; configured: 원본을 복사한 개체. */ source={BAS0001:2},configured=status(kind,{ownedSkills:source});
     configured.ownedSkills.BAS0001=3;assert.equal(source.BAS0001,2);assert.deepEqual({...s.ownedSkills},{});
     assert.deepEqual(JSON.parse(JSON.stringify(configured)).ownedSkills,{BAS0001:3});
   }
   const /** decks: 원본 스킬덱 목록; a: 덱을 설정한 플레이어; b: 기본 플레이어. */ decks=['DECK001'],a=status('player',{skillDeckCode:decks}),b=status();
-  a.skillDeckCode.push('DECK002');assert.deepEqual(decks,['DECK001']);assert.deepEqual(b.skillDeckCode,[]);assert.notEqual(a.instanceId,b.instanceId);
+  a.skillDeckCode.push('DECK002');assert.deepEqual(decks,['DECK001']);assert.equal(b.skillDeckCode.length,20);assert.notEqual(a.instanceId,b.instanceId);
   const /** special: 객체 원형과 같은 이름도 안전하게 저장하는 딕셔너리. */ special=status('npc',{ownedSkills:JSON.parse('{"__proto__":2,"constructor":3}')});
   assert.equal(special.ownedSkills.__proto__,2);assert.equal(Object.getPrototypeOf(special.ownedSkills),Object.prototype);
 });

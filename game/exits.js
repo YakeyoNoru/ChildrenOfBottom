@@ -17,9 +17,15 @@ export function tickExits(/** room: 지도·참가자·개체·생성 이력을 
     if(!tiles.length)continue;
     const /** tile: 무작위로 선택한 출현 타일. */ tile=tiles[Math.floor(random()*tiles.length)];
     const /** center: 해당 타일 중앙의 확정 월드 좌표. */ center=globalThis.PitMapRules.center(tile,room.map);
+    spawnExit(room,center,tile.id);
+  }
+}
+
+
+/** 동일한 상호작용 규칙을 사용하는 일회용 탈출구를 생성한다. */
+export function spawnExit(/** room: 탈출구를 등록할 방. */ room,/** center: 탈출구 월드 좌표. */ center,/** tileId: 지도에서 출현한 타일 번호. */ tileId=null){
     const /** exit: 모든 피해에 면역이며 공격·구르기 기술이 없는 탈출구 NPC. */ exit=createWorldObject({objectType:'npc',classificationCode:'NPC_EXIT',name:'탈출구',...center,damageImmune:true,healthRegen:0,moveSpeed:0,skillA:'',skillB:''});
     /** interactionEnabled: 모든 생존 플레이어가 확인 대화를 요청할 수 있는지 여부. */ exit.interactionEnabled=true;
-    /** spawnTileId: 실제 출현한 지형 타일 번호. */ exit.spawnTileId=tile.id;
+    /** spawnTileId: 실제 출현한 지형 타일 번호. */ exit.spawnTileId=tileId;
     room.objects.set(exit.id,exit);
-  }
 }

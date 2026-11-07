@@ -1,11 +1,25 @@
+import { /** startAdvancedSkill: 새 기술의 시전 조건과 초기 효과를 처리한다. */ startAdvancedSkill } from './advanced-skills.js';
 import { /** intersectsSkill: 공통 기술 영역과 대상의 교차를 검사한다. */ intersectsSkill, /** resolveSkillContacts: 접촉부터 피해 결과까지 공통 처리한다. */ resolveSkillContacts } from './combat.js';
 export { resolveSkillContacts, skillSnapshot } from './combat.js';
 import { /** areEnemies: 자신·NPC를 제외한 유닛 대상의 적대 관계를 판정한다. */ areEnemies, /** LifeState: 생존·사망 상태 상수. */ LifeState, /** normalizeVitals: 체력·자원을 최종 최대치 안으로 제한하고 사망 상태를 정규화한다. */ normalizeVitals } from './status.js';
 
+/** 기술별 구매 비용과 허용 무기 속성의 공통 기본값을 적용한다. */
+function defineSkill(/** definition: 기술별 정의와 설명. */ definition) {
+  return Object.freeze({
+    /** skillPoints: 카드 한 장을 구매할 때 소모하는 스킬포인트. */ skillPoints:1,
+    /** allowedAttributeCodes: 허용하는 무기 속성코드. 빈 목록은 제한이 없다. */ allowedAttributeCodes:Object.freeze([]),
+    /** basicEffect: 버튼으로 시전할 때 적용하는 효과 설명. */ basicEffect:'',
+    /** triggerEffect: 카드 구매에 따르는 효과 설명. */ triggerEffect:'구매 시 보유 레벨 +1',
+    ...definition,
+  });
+}
+
 // 기술 정의는 서버가 관리한다. T1은 테스트 범위 표시의 유지 시간만 제어한다.
 export const /** skills: 기술 코드별 공통 기술 정의. */ skills = Object.freeze({
   // BAS0001: 기본 A 슬롯에 연결하는 전방 사각형 기본공격 정의.
-  BAS0001: Object.freeze({
+  BAS0001: defineSkill({
+    /** typeCode: 배정 가능한 버튼. */ typeCode:'A',
+    /** basicEffect: 버튼 사용 시 공격 설명. */ basicEffect:'전방 폭 50, 길이 72 공격. 기본공격력과 추가공격력 합계에 5를 더한 피해.',
     /** code: 슬롯에서 조회할 기술 고유 코드. */ code: 'BAS0001',
     /** name: 기술의 표시 이름. */ name: '기본공격',
     /** T1: Y이면 범위 표시를 4초 유지하며 피해는 시전 시 한 번만 적용한다. */ T1: 'Y',
@@ -17,7 +31,9 @@ export const /** skills: 기술 코드별 공통 기술 정의. */ skills = Obje
     /** debugDurationMs: T1이 Y일 때 시전 위치의 범위를 유지할 시간(밀리초). */ debugDurationMs: 4000,
   }),
   /** BAS0002: 시전자 이동 방향으로 정해진 거리를 전진하는 비공격 기술. */
-  BAS0002: Object.freeze({
+  BAS0002: defineSkill({
+    /** typeCode: 배정 가능한 버튼. */ typeCode:'B',
+    /** basicEffect: 버튼 사용 시 이동 설명. */ basicEffect:'이동 또는 주시 방향으로 이동속도의 3배로 72만큼 구른다.',
     /** code: B 슬롯의 기본 기술 코드. */ code:'BAS0002',
     /** name: 기술 표시 이름. */ name:'구르기',
     /** kind: 피해 판정 대신 강제 이동 상태를 시작하는 기술 구분. */ kind:'roll',
@@ -25,6 +41,40 @@ export const /** skills: 기술 코드별 공통 기술 정의. */ skills = Obje
     /** cooldownMs: 시전 성공 후 B 슬롯 재사용을 막을 시간(밀리초). */ cooldownMs:2000,
     /** distance: 캐릭터 표시 지름 36의 두 배 거리(월드 좌표). */ distance:72,
     /** speedMultiplier: 시전 순간 최종 이동속도에 곱할 배율. */ speedMultiplier:3,
+  }),
+  BAS0003: defineSkill({
+    code:'BAS0003', name:'돌진베기', typeCode:'B', kind:'dashStrike', cooldownMs:8000,
+    /** targetRange: 시전 가능한 적 중심 거리. */ targetRange:120,
+    /** windupMs: 이동 전 정지 시간(ms). */ windupMs:300,
+    /** stopDistance: 공격을 시작할 대상 중심 거리. */ stopDistance:20,
+    /** speed: 공통 이동속도 단위. */ speed:5,
+    basicEffect:'120 이내 적을 향해 0.3초 정지 후 속도 5로 돌진한다. 거리 20에서 공격력과 추가공격력 합계만큼 피해. 대상이 없으면 실패.',
+  }),
+  BAS0004: defineSkill({
+    code:'BAS0004', name:'돌던지기', typeCode:'A', kind:'stone', cooldownMs:2000,
+    /** targetRange: 투사체 조준에 필요한 적 중심 거리. */ targetRange:100,
+    /** distance: 투사체 최대 이동 거리. */ distance:150,
+    /** speed: 공통 이동속도 단위. */ speed:5,
+    basicEffect:'100 이내 적의 현재 위치를 향해 검은 돌을 던진다. 150 이동 또는 첫 적 접촉 시 소멸. 공격력과 추가공격력 합계만큼 피해. 대상이 없으면 실패.',
+  }),
+  BAS0005: defineSkill({
+    code:'BAS0005', name:'러닝크루', typeCode:'A', kind:'sprint', cooldownMs:12000,
+    /** durationMs: 이동속도 증가 지속 시간(ms). */ durationMs:5000,
+    basicEffect:'5초간 이동속도 +1.',
+    triggerEffect:'환영조각 획득마다 경쟁점수 +5, 경험치 +1을 추가한다.',
+  }),
+  BAS0006: defineSkill({
+    code:'BAS0006', name:'하스스톤', typeCode:'C', kind:'hearth', skillPoints:3,
+    /** delayMs: 탈출구 생성까지 대기 시간(ms). */ delayMs:10000,
+    basicEffect:'보유 레벨 3일 때 시전 위치에 10초 뒤 탈출구를 생성한다.',
+  }),
+  BAS0007: defineSkill({
+    code:'BAS0007', name:'힘세고강한 아침', typeCode:'P', skillPoints:3,
+    triggerEffect:'구매 시 추가공격력에 (현재 플레이어 레벨 + 5) × 2를 더한다.',
+  }),
+  BAS0008: defineSkill({
+    code:'BAS0008', name:'짐승같은감', typeCode:'P', skillPoints:0,
+    triggerEffect:'구매 후 20초간 미니맵과 전체맵에 다른 생존 플레이어의 위치를 표시한다.',
   }),
 });
 export /** circleIntersectsSkill: 공격 방향으로 좌표를 투영해 원형 히트박스와 전방 사각형의 교차를 검사한다. */ function circleIntersectsSkill(/** caster: 기술을 사용하는 개체. */ caster, /** target: 선택된 적대 개체 또는 히트박스를 검사할 대상. */ target, /** angle: 방향을 나타내는 라디안 각도. */ angle, /** skill: 이번 시전에 적용할 기술 정의. */ skill) {
@@ -34,8 +84,16 @@ export /** castSkill: 서버 기술 슬롯과 선택 대상 또는 저장 방향
   if(aimAngle!==null&&!Number.isFinite(aimAngle))return null;
   if (!['A','B','C'].includes(slot) || caster.status.stunned || caster.status.state === LifeState.DEAD || caster.roll?.remaining>0) return null;
   const /** skill: 이번 시전에 적용할 기술 정의. */ skill = definitions[caster.status['skill'+slot]];
-  if (!skill || skillCooldownRemaining(caster,slot,now)>0) return null;
+  if (!skill || !allowsWeapon(skill,caster.status) || skill.typeCode==='P' || caster.status.dashActive || skillCooldownRemaining(caster,slot,now)>0) return null;
   if(skill.kind==='roll') return startRoll(caster,skill,slot,now);
+  if(skill.kind){
+    const /** effect: 시전 조건을 통과한 새 기술의 실행 상태. */ effect=startAdvancedSkill(caster,objects,skill,now);
+    if(!effect)return null;
+    caster.skillCooldowns??={};
+    caster.skillCooldowns[slot]=now+(skill.cooldownMs??0);
+    updateSkillCooldowns(caster,now);
+    return effect;
+  }
   const /** target: 선택된 적대 개체 또는 히트박스를 검사할 대상. */ target = objects.find(/** o: 현재 비교하거나 변환할 개체. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ o=>o.id===caster.status.nearestEnemyId && o.status.state!==LifeState.DEAD && areEnemies(caster.status,o.status));
   const /** angle: 서버 지정 방향이 있으면 현재 대상 위치와 무관하게 사용하는 라디안 각도. */ angle = aimAngle ?? (target ? Math.atan2(target.y-caster.y,target.x-caster.x) : caster.facing ?? -Math.PI/2);
   const /** instance: 이번 시전만의 위치·공격 수치·피격 기록을 가진 서버 객체. */ instance=createSkillInstance(caster,skill,angle,now);
@@ -132,4 +190,36 @@ export function getSkillSlotNames(
   return Object.fromEntries(['A','B','C'].map(
     /** 각 슬롯에 할당된 이름 또는 미지정을 반환한다. */
     (/** slot: 이름을 조회할 기술 슬롯. */ slot)=>[slot,skills[status['skill'+slot]]?.name??'미지정']));
+}
+
+/** 서버에서 무기 속성에 따른 기술 사용 가능 여부를 확인한다. */
+function allowsWeapon(/** skill: 기술 정의. */ skill,/** status: 장착 무기의 속성 정보를 가진 상태. */ status){
+  return !skill.allowedAttributeCodes?.length||skill.allowedAttributeCodes.includes(status.weaponAttributeCode);
+}
+
+/** 덱 카드 한 장과 포인트를 사용해 보유 레벨을 올리고 구매 효과를 적용한다. */
+export function buySkill(/** player: 구매 요청을 보낸 생존 플레이어. */ player,/** code: 구매할 카드 코드. */ code,/** now: 서버 시각(ms). */ now){
+  const /** status: 구매에 사용하는 서버 플레이어 상태. */ status=player.status;
+  const /** skill: 구매할 기술의 서버 정의. */ skill=Object.hasOwn(skills,code)?skills[code]:null;
+  if(status.objectType!=='player'||status.state!==LifeState.ALIVE||!skill)return false;
+  const /** index: 소모할 덱 카드의 위치. */ index=status.skillDeckCode.indexOf(code);
+  if(index<0||status.skillPoints<skill.skillPoints||!allowsWeapon(skill,status))return false;
+  status.skillPoints-=skill.skillPoints;
+  status.skillDeckCode.splice(index,1);
+  status.ownedSkills[code]=(status.ownedSkills[code]??0)+1;
+  if(code==='BAS0007')status.bonusAttack+=(status.level+5)*2;
+  if(code==='BAS0008'){
+    /** playerRevealUntil: 지도에서 플레이어 표식을 숨길 서버 시각(ms). */ status.playerRevealUntil=now+20000;
+  }
+  if(skill.typeCode!=='P')equipSkill(player,code);
+  return true;
+}
+
+/** 구매한 버튼 기술 또는 시작 기본 기술을 지정된 타입 슬롯에 배정한다. */
+export function equipSkill(/** player: 장착할 플레이어. */ player,/** code: 장착할 스킬코드. */ code){
+  const /** skill: 요청한 기술의 서버 정의. */ skill=Object.hasOwn(skills,code)?skills[code]:null;
+  if(!skill||skill.typeCode==='P'||!allowsWeapon(skill,player.status))return false;
+  if(code!=='BAS0001'&&code!=='BAS0002'&&!Object.hasOwn(player.status.ownedSkills,code))return false;
+  player.status['skill'+skill.typeCode]=code;
+  return true;
 }
