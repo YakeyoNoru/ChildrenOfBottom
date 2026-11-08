@@ -45,6 +45,8 @@ body.playing{overflow:hidden}body.playing main>header,body.playing main>footer{d
 .skill-control-c{right:calc(178px * var(--action-scale));bottom:0}
 #action-controls button{width:calc(68px * var(--action-scale));height:calc(68px * var(--action-scale));min-height:0;border-radius:50%;background:#bdd2a644;color:#eff7e8;border:3px solid #666666;font-size:13px;line-height:1.2;padding:4px;white-space:normal;overflow-wrap:anywhere;touch-action:none;user-select:none}
 #action-controls #action-a{width:calc(104px * var(--action-scale));height:calc(104px * var(--action-scale));font-size:18px}
+/* 기술 레벨은 버튼 안에서 기술명 아래에 표시한다. */
+.skill-level{display:block;font-size:.8em;white-space:nowrap}
 #action-controls button.pressed{background:#c8e5a6;color:#14251e}
 /* --skill-cooldown-font-size: 화면 배율을 반영한 캐릭터 이름과 같은 크기의 UI 글자 크기. */
 .skill-cooldown{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);font:var(--skill-cooldown-font-size,14px) system-ui;color:#fff;text-shadow:0 1px 3px #000;white-space:nowrap;pointer-events:none}

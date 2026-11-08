@@ -260,16 +260,21 @@ function rolling() {
 function cooldownRemaining(/** slot: 검사할 기술 슬롯. */ slot) {
   return room?.players.find(/** 본인을 조회한다. */ (/** object: 플레이어 상태. */ object)=>object.id===playerId)?.status?.['skill'+slot+'CooldownRemaining']??0;
 }
-/** 서버가 확정한 잔여 대기와 구르기 잠금에 따라 기술 버튼을 활성화한다. */
+/** 본인의 장착 기술명·보유 레벨·잔여 대기를 표시하고 시전 가능 여부를 반영한다. */
 function updateSkillControls() {
+  const /** me: 서버가 전송한 본인 기술명과 상태. */ me=room?.players.find(/** 본인을 찾는다. */ (/** object: 플레이어 개체. */ object)=>object.id===playerId);
   for(const /** slot: 갱신할 기술 버튼 슬롯. */ slot of ['A','B','C']) {
     const /** button: 화면의 기술 버튼. */ button=$('action-'+slot.toLowerCase());
-    const /** me: 서버가 전송한 본인 기술명과 상태. */ me=room?.players.find(/** 본인을 찾는다. */ (/** object: 플레이어 개체. */ object)=>object.id===playerId);
     const /** name: 현재 슬롯에 할당된 서버 기술명. */ name=me?.skillNames?.[slot]??'미지정';
     const /** remaining: 서버가 확정한 남은 대기 시간(초). */ remaining=cooldownRemaining(slot);
     const /** label: 버튼 위의 잔여 시간 표시 요소. */ label=$('cooldown-'+slot.toLowerCase());
     $('skill-name-'+slot.toLowerCase()).textContent=name;
-    button.setAttribute('aria-label',name);
+    const /** code: 현재 슬롯에 장착한 기술 코드. */ code=me?.status?.['skill'+slot];
+    const /** levelText: 보유 목록의 장착 기술 레벨을 표시하며 미지정 슬롯은 비워 둔다. */ levelText=code?`Lv.${me.status.ownedSkills?.[code]??0}`:'';
+    const /** levelLabel: 버튼 안 기술명 아래의 레벨 표시 요소. */ levelLabel=$('skill-level-'+slot.toLowerCase());
+    levelLabel.textContent=levelText;
+    levelLabel.hidden=!levelText;
+    button.setAttribute('aria-label',levelText?`${name} ${levelText}`:name);
     label.textContent=remaining>0?(Math.ceil(remaining*10)/10).toFixed(1)+'초':'';
     label.hidden=remaining<=0;
     button.disabled=remaining>0||rolling();

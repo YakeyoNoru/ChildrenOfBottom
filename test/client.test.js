@@ -204,13 +204,14 @@ test('remaining cooldown disables touch skills and keyboard or mouse cast until 
  assert.equal(e.get('action-a').disabled,false);run("useSkill('A')");assert.equal(run('socket.sent.at(-1).slot'),'A');
 });
 
-test('assigned skill names and cooldown labels update from server state',/** 이름과 잔여 시간 표시·완료 숨김·할당 변경을 검증한다. */ ()=>{
+test('assigned skill names, owned levels and cooldown labels update from server state',/** 이름, 보유 레벨과 기본값, 잔여 시간 및 할당 변경을 검증한다. */ ()=>{
  const /** e: UI 요소; receive: 수신 함수; state: 기본 방. */ {elements:e,receive,state}=client();
- receive({type:'room.state',room:{...state,players:[{...state.players[0],skillNames:{A:'기본공격',B:'구르기',C:'미지정'},status:{skillACooldownRemaining:.45,skillBCooldownRemaining:2}}]}});
+ receive({type:'room.state',room:{...state,players:[{...state.players[0],skillNames:{A:'기본공격',B:'구르기',C:'미지정'},status:{skillA:'BAS0001',skillB:'BAS0002',ownedSkills:{BAS0001:2},skillACooldownRemaining:.45,skillBCooldownRemaining:2}}]}});
  assert.equal(e.get('skill-name-a').textContent,'기본공격');assert.equal(e.get('skill-name-b').textContent,'구르기');
+ assert.equal(e.get('skill-level-a').textContent,'Lv.2');assert.equal(e.get('skill-level-b').textContent,'Lv.0');assert.equal(e.get('skill-level-c').hidden,true);
  assert.equal(e.get('cooldown-a').textContent,'0.5초');assert.equal(e.get('cooldown-b').textContent,'2.0초');assert.equal(e.get('cooldown-c').hidden,true);
- receive({type:'game.state',room:{...state,players:[{...state.players[0],skillNames:{A:'구르기',B:'기본공격'},status:{skillACooldownRemaining:0}}]}});
- assert.equal(e.get('cooldown-a').hidden,true);assert.equal(e.get('skill-name-a').textContent,'구르기');
+ receive({type:'game.state',room:{...state,players:[{...state.players[0],skillNames:{A:'돌던지기',B:'구르기'},status:{skillA:'BAS0004',skillB:'BAS0002',ownedSkills:{BAS0004:3},skillACooldownRemaining:0}}]}});
+ assert.equal(e.get('cooldown-a').hidden,true);assert.equal(e.get('skill-name-a').textContent,'돌던지기');assert.equal(e.get('skill-level-a').textContent,'Lv.3');
 });
 
 test('room timer displays countdown and grace then returns home with server closure message',/** 서버 시간 표시와 종료 시 입력·대기 해제를 검증한다. */ ()=>{
