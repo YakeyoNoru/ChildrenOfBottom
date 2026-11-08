@@ -39,7 +39,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
     try {
       const /** body: 응답 또는 요청 본문 데이터. */ body = await readFile(new URL(`./public/${file[0]}`, import.meta.url));
       res.writeHead(200, { 'Content-Type': `${file[1]}; charset=utf-8`, 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'self'; connect-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'" });
-      res.end(req.method === 'HEAD' ? undefined : body);
+      res.end(req.method === 'HEAD' ? undefined : pathname==='/'&&auth.allowsTestLogin(req) ? body.toString().replace('<body>','<body data-test-login>') : body);
     } catch { res.writeHead(500); res.end('Server error'); }
   });
   const /** wss: 게임 연결을 관리하는 WebSocket 서버. */ wss = new WebSocketServer({ server, path: '/ws', maxPayload: 4096 });
@@ -282,7 +282,8 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
       }else if (m.type === 'room.create' || m.type === 'room.join') {
         if(ws.matchResult)return fail('RESULT_PENDING','점수화면에서 로비로 나가기를 눌러 주세요.');
         if (room) return fail('ALREADY_IN_ROOM', '이미 방에 참여 중입니다.');
-        if (typeof m.name !== 'string' || !m.name.trim() || m.name.trim().length > 20 || /[\x00-\x1f]/.test(m.name)) return fail('INVALID_NAME', '이름은 1~20자로 입력하세요.');
+        const /** name: 로그인 계정의 저장 닉네임 또는 게스트가 보낸 이름. */ name=ws.account?.provider==='test'?ws.account.displayName:typeof m.name==='string'?m.name.trim():'';
+        if(!name||name.length>20||(!ws.account&&!/^[\p{L}\p{M}\p{N}@. ]+$/u.test(name))||(typeof m.name==='string'&&/[\x00-\x1f]/.test(m.name)))return fail('INVALID_NAME','이름은 1~20자로 입력하세요. 특수기호는 @와 .만 사용할 수 있습니다.');
         if (m.type === 'room.create') {
           if (rooms.size >= 1000) return fail('SERVER_FULL', '서버가 가득 찼습니다.');
           let /** code: 개체·기술·방 또는 오류를 식별하는 코드. */ code; do { code = randomBytes(4).toString('hex').slice(0, 6).toUpperCase(); } while (rooms.has(code));
@@ -296,7 +297,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
           if (room.phase !== 'lobby') return fail('GAME_STARTED', '이미 시작한 방입니다.');
           if (room.players.size >= MAX_PLAYERS) return fail('ROOM_FULL', '방이 꽉찼습니다');
         }
-        ws.roomCode = room.code; room.players.set(ws.id, { id: ws.id, name: m.name.trim(), /** testOptions: 새 참가자의 테스트 체크는 기본 해제한다. */ testOptions:{/** mapHack: 전체맵 미탐색 표시. */ mapHack:false,/** highSpeed: 이동속도 6 적용. */ highSpeed:false}, ready: false, x: 0, y: 0, input: { x: 0, y: 0 }, inputAt: 0, action: null, facing: -Math.PI / 2, targetPriority: 'nearest', status: createStatus({ objectType: ObjectType.PLAYER, classificationCode: ws.account?.id ?? ws.id, instanceId: ws.id }), ws }); broadcast(room);
+        ws.roomCode = room.code; room.players.set(ws.id, { id: ws.id, name, /** testOptions: 새 참가자의 테스트 체크는 기본 해제한다. */ testOptions:{/** mapHack: 전체맵 미탐색 표시. */ mapHack:false,/** highSpeed: 이동속도 6 적용. */ highSpeed:false}, ready: false, x: 0, y: 0, input: { x: 0, y: 0 }, inputAt: 0, action: null, facing: -Math.PI / 2, targetPriority: 'nearest', status: createStatus({ objectType: ObjectType.PLAYER, classificationCode: ws.account?.id ?? ws.id, instanceId: ws.id }), ws }); broadcast(room);
       } else if(m.type==='game.testOptions'){
         if(!room)return fail('NOT_IN_ROOM','참여 중인 방이 없습니다.');
         const /** player: 이 연결의 실제 서버 플레이어. */ player=room.players.get(ws.id);
@@ -462,6 +463,6 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const /** game: 서버 인스턴스와 방 관리 인터페이스. */ game = createGameServer();
-  game.server.listen(Number(process.env.PORT || 3000), process.env.HOST || '0.0.0.0', /** 현재 비동기 작업의 완료 또는 후속 처리를 수행한다. */ () => console.log(`ChildrenOfBottom: http://localhost:${game.server.address().port}`));
+  game.server.listen(Number(process.env.PORT || 3000), process.env.TEST_ACCOUNT_LOGIN==='1' ? '127.0.0.1' : process.env.HOST || '0.0.0.0', /** 현재 비동기 작업의 완료 또는 후속 처리를 수행한다. */ () => console.log(`ChildrenOfBottom: http://localhost:${game.server.address().port}`));
   for (const /** signal: 서버 종료를 요청한 운영체제 신호. */ signal of ['SIGINT', 'SIGTERM']) process.on(signal, /** 등록된 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ async () => { await game.close(); process.exit(0); });
 }

@@ -17,6 +17,18 @@ export /** createAuthService: 제공자 로그인·앱 세션·계정 설정 API
   const /** base: 계정 서버 또는 테스트 서버의 기준 주소. */ base = options.baseUrl ?? process.env.PUBLIC_BASE_URL ?? '';
   if (base && new URL(base).origin !== base) throw Error('PUBLIC_BASE_URL must be an origin without trailing slash');
   const /** store: 게임 계정 조회와 저장 인터페이스. */ store = options.store ?? createAccountStore(options.accountsFile ?? process.env.ACCOUNTS_FILE ?? '.data/accounts.json');
+  const /** testLoginEnabled: 로컬 테스트 서버에서만 임시 계정 로그인을 켜는 설정. */ testLoginEnabled=options.testLoginEnabled??(process.env.TEST_ACCOUNT_LOGIN==='1');
+  const /** testStore: 실제 계정과 분리해 테스트 계정을 저장하는 인터페이스. */ testStore=testLoginEnabled?createAccountStore(options.testAccountsFile??'.data/test-accounts.json'):null;
+  const /** testAccounts: 가입을 열기 전 서버가 등록하는 두 테스트 계정. */ testAccounts=new Map([
+    ['33dot',testStore?.upsert('test','33dot','33')],
+    ['noru8294',testStore?.upsert('test','noru8294','노루')],
+  ]);
+  /** 로컬 주소로 직접 연결한 요청만 테스트 로그인과 테스트 세션을 사용한다. */
+  function allowsTestLogin(/** req: 주소와 호스트를 검사할 요청. */ req) {
+    return !!testStore&&['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress)&&
+      /^(?:localhost|127\.0\.0\.1|\[::1\])(?::[0-9]+)?$/i.test(req.headers.host??'')&&
+      !Object.keys(req.headers).some(/** 프록시가 덧붙인 전달 헤더를 찾는다. */ (/** name: 수신 헤더 이름. */ name)=>name==='forwarded'||name.startsWith('x-forwarded-'));
+  }
   const /** fetcher: 외부 인증 API를 호출하는 함수. */ fetcher = options.fetch ?? fetch;
   const /** credentials: 인증 제공자별 서버 전용 자격 설정. */ credentials = options.providers ?? {
     google:{ clientId:process.env.GOOGLE_CLIENT_ID, clientSecret:process.env.GOOGLE_CLIENT_SECRET },
@@ -25,13 +37,13 @@ export /** createAuthService: 제공자 로그인·앱 세션·계정 설정 API
   const /** configured: 인증 제공자 설정을 테스트에서 활성화할지 여부. */ configured = /** name: 인증 제공자 또는 쿠키 이름. */ /** configured: 해당 제공자에 필요한 서버 주소·인증키가 있는지 확인한다. */ name => !!(base && credentials[name]?.clientId && credentials[name]?.clientSecret);
   const /** states: 만료 시각을 포함한 OAuth 진행 상태 맵. */ states=new Map(), /** grants: 앱 복귀용 일회성 교환 코드 맵. */ grants=new Map(), /** sessions: 앱 계정의 유효 로그인 세션 맵. */ sessions=new Map();
   const /** secure: HTTPS 환경에서만 붙이는 Secure 쿠키 속성. */ secure=base.startsWith('https://') ? '; Secure' : '';
-  const /** cookie: 보안 속성을 포함한 쿠키 문자열 생성 함수. */ cookie=/** cookie: HTTPOnly·SameSite·만료 정책을 포함한 쿠키를 만든다. */ (/** name: 인증 제공자 또는 쿠키 이름. */ name,/** value: 검사하거나 변환할 현재 값. */ value,/** maxAge: 쿠키를 유지할 기간(초). */ maxAge=1800)=>`${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
+  const /** cookie: 보안 속성을 포함한 쿠키 문자열 생성 함수. */ cookie=/** cookie: HTTPOnly·SameSite·만료 정책을 포함한 쿠키를 만든다. */ (/** name: 인증 제공자 또는 쿠키 이름. */ name,/** value: 검사하거나 변환할 현재 값. */ value,/** maxAge: 쿠키를 유지할 기간(초). */ maxAge=1800)=>`${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${name==='subtrpg_test'?'':secure}`;
   const /** json: 캐시 금지 JSON 응답 전송 함수. */ json=/** json: 캐시를 막은 JSON 응답을 지정한 HTTP 상태로 전송한다. */ (/** res: HTTP 응답 작성 객체. */ res,/** status: HTTP 응답 상태 코드. */ status,/** data: 전달하거나 해석한 데이터. */ data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
   const /** error: 오류 정보 또는 오류 응답 처리기. */ error=/** error: 요청 실패 내용을 오류 응답으로 전달한다. */ (/** res: HTTP 응답 작성 객체. */ res,/** status: HTTP 응답 상태 코드. */ status,/** message: 사용자나 연결에 전달할 안내 내용. */ message)=>json(res,status,{error:message});
   const /** accountView: 공개 가능한 계정 필드만 선택하는 함수. */ accountView=/** a: 비교할 첫 문자열 또는 공개할 계정. */ /** accountView: 클라이언트에 공개해도 되는 계정 정보만 선택한다. */ a=>({id:a.id,displayName:a.displayName,provider:a.provider});
-  /** session: 요청 쿠키로 유효한 앱 로그인 세션을 조회하고 만료 항목을 제거한다. */ function session(/** req: 수신한 HTTP 요청. */ req) {
-    const /** token: 세션 또는 인증 응답의 토큰. */ token=cookies(req).subtrpg_app, /** s: 조회한 앱 세션. */ s=sessions.get(token);
-    if(!s||s.expires<Date.now()){sessions.delete(token);return null;}return {...s,token};
+  /** 요청 쿠키로 접속 모드에 맞는 세션을 조회하고 만료 항목을 제거한다. */ function session(/** req: 수신한 HTTP 요청. */ req,/** mode: 인증 세션의 접속 구분. */ mode='app') {
+    const /** token: 세션 또는 인증 응답의 토큰. */ token=cookies(req)[mode==='web'?'subtrpg_test':'subtrpg_app'], /** s: 조회한 앱 세션. */ s=sessions.get(token);
+    if(!s||s.expires<Date.now()){sessions.delete(token);return null;}return (s.mode??'app')===mode?{...s,token}:null;
   }
   /** authorize: 앱 세션·출처·CSRF 토큰을 확인해 계정 변경 요청을 허가한다. */ function authorize(/** req: 수신한 HTTP 요청. */ req,/** res: HTTP 응답 작성 객체. */ res) {
     const /** s: 조회한 앱 세션. */ s=session(req);
@@ -43,15 +55,38 @@ export /** createAuthService: 제공자 로그인·앱 세션·계정 설정 API
     const /** now: 현재 처리 시각(밀리초). */ now=Date.now();for(const /** map: 정리할 인증 데이터 맵. */ map of [states,grants,sessions])for(const /** key: 현재 항목의 식별 키; value: 검사하거나 변환할 현재 값. */ [key,value]of map)if(value.expires<now)map.delete(key);
   },60000);cleanup.unref();
   return {
-    /** identity: 앱 모드의 유효 세션만 계정 신원으로 변환한다. 웹은 게스트를 유지한다. */ identity(/** req: 수신한 HTTP 요청. */ req,/** mode: 웹 게스트와 APK 계정을 구분하는 접속 모드. */ mode) { if(mode!=='app')return null;const /** s: 조회한 앱 세션. */ s=session(req);return s?store.find(s.accountId):null; },
+    allowsTestLogin,
+    /** identity: 앱 또는 허용된 로컬 웹 세션을 계정 신원으로 변환한다. */ identity(/** req: 수신한 HTTP 요청. */ req,/** mode: 웹 게스트와 APK 계정을 구분하는 접속 모드. */ mode) { if(mode==='web'&&!allowsTestLogin(req))return null;const /** s: 해당 접속 모드의 로그인 세션. */ s=session(req,mode);return s?(mode==='web'?testStore:store).find(s.accountId):null; },
     /** close: 반복 작업이나 연결을 정리하여 사용 중인 자원을 해제한다. */ close(){clearInterval(cleanup);},
     /** handle: 요청 경로에 맞는 인증·계정 API를 처리하고 처리 여부를 반환한다. */ async handle(/** req: 수신한 HTTP 요청. */ req,/** res: HTTP 응답 작성 객체. */ res) {
       const /** url: 해석하거나 접속할 URL. */ url=new URL(req.url,'http://local');const /** path: 요청 또는 파일의 경로. */ path=url.pathname;
       if(!path.startsWith('/auth/')&&!path.startsWith('/api/'))return false;
       try {
+        if(path==='/api/test-login'&&req.method==='POST'){
+          if(!allowsTestLogin(req))return error(res,404,'NOT_FOUND'),true;
+          if(req.headers.origin!=='http://'+req.headers.host)return error(res,403,'FORBIDDEN'),true;
+          let /** data: 테스트 로그인 아이디만 담는 요청 본문. */ data;
+          try{data=JSON.parse(await body(req));}catch{return error(res,400,'INVALID_LOGIN'),true;}
+          // 공통 비밀번호 1을 사용하는 동안에는 입력 아이디만 검사하고 비밀번호 필드를 받지 않는다.
+          if(!data||Object.keys(data).length!==1||typeof data.id!=='string'||!/^[a-z0-9@.]{5,20}$/i.test(data.id))return error(res,400,'INVALID_LOGIN'),true;
+          const /** account: 고정 등록 목록에서 조회한 테스트 계정. */ account=testAccounts.get(data.id.toLowerCase());
+          if(!account)return error(res,401,'INVALID_LOGIN'),true;
+          sessions.delete(session(req,'web')?.token);
+          const /** token: 계정 ID에 연결할 테스트 세션 난수. */ token=random();
+          sessions.set(token,{mode:'web',accountId:account.id,csrf:random(),expires:Date.now()+1800000});
+          res.setHeader('Set-Cookie',cookie('subtrpg_test',token,1800));
+          json(res,200,{account:accountView(account)});return true;
+        }
+        if(path==='/api/test-logout'&&req.method==='POST'){
+          if(!allowsTestLogin(req))return error(res,404,'NOT_FOUND'),true;
+          const /** s: 종료할 테스트 세션. */ s=session(req,'web');
+          if(req.headers.origin!=='http://'+req.headers.host||!s||!equal(req.headers['x-csrf-token'],s.csrf))return error(res,403,'FORBIDDEN'),true;
+          sessions.delete(s.token);res.setHeader('Set-Cookie',cookie('subtrpg_test','',0));json(res,200,{ok:true});return true;
+        }
         if(path==='/api/session'&&req.method==='GET'){
-          const /** s: 조회한 앱 세션. */ s=appRequest(req)?session(req):null, /** a: 비교할 첫 문자열 또는 공개할 계정. */ a=s?store.find(s.accountId):null;
-          json(res,200,{mode:appRequest(req)?'app':'web',account:a?accountView(a):null,settings:a?a.settings:defaultSettings(),csrf:a?s.csrf:null,providers:{google:configured('google'),kakao:configured('kakao')}});return true;
+          const /** mode: 요청이 사용하는 계정 세션 구분. */ mode=appRequest(req)?'app':'web';
+          const /** s: 로그인 세션. */ s=mode==='app'||allowsTestLogin(req)?session(req,mode):null, /** a: 공개 필드만 응답할 계정. */ a=s?(mode==='app'?store:testStore).find(s.accountId):null;
+          json(res,200,{mode,account:a?accountView(a):null,settings:a?a.settings:defaultSettings(),csrf:a?s.csrf:null,providers:{google:configured('google'),kakao:configured('kakao')}});return true;
         }
         if(path==='/api/settings'&&req.method==='PUT'){
           const /** s: 조회한 앱 세션. */ s=authorize(req,res);if(!s)return true;

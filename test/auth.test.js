@@ -8,7 +8,7 @@ import /** WebSocket: 클라이언트 연결 생성 또는 WebSocket 연결 상�
 import { /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증을 제공하는 서버를 생성한다. */ createGameServer } from '../server.js';
 import { /** createAccountStore: 계정 파일을 읽고 조회·생성·설정 저장 인터페이스를 제공한다. */ createAccountStore } from '../auth/accounts.js';
 
-/** setup: 테스트 서버와 정리 작업을 준비해 검증용 인터페이스를 반환한다. */ async function setup(/** t: 테스트 정리·검증 문맥 또는 프레임 시각. */ t, /** configured: 인증 제공자 설정을 테스트에서 활성화할지 여부. */ configured=true) {
+/** setup: 테스트 서버와 정리 작업을 준비해 검증용 인터페이스를 반환한다. */ async function setup(/** t: 테스트 정리·검증 문맥 또는 프레임 시각. */ t, /** configured: 인증 제공자 설정을 테스트에서 활성화할지 여부. */ configured=true, /** testLoginEnabled: 로컬 테스트 로그인을 켤지 여부. */ testLoginEnabled=false) {
   const /** dir: 테스트가 사용하는 임시 저장 폴더. */ dir=await mkdtemp(join(tmpdir(),'subtrpg-auth-')),/** file: 읽거나 저장할 파일 경로. */ file=join(dir,'accounts.json');
   let /** calls: 대체 인증 API 호출 기록. */ calls=[];
   const /** mockFetch: 실제 제공자 통신을 대신하는 테스트 응답 함수. */ mockFetch=/** mockFetch: 실제 인증 제공자 대신 고정 응답을 반환하고 호출을 기록한다. */ async(/** url: 해석하거나 접속할 URL. */ url,/** options: 기본값을 재정의하는 생성·요청 옵션. */ options)=>{
@@ -17,7 +17,7 @@ import { /** createAccountStore: 계정 파일을 읽고 조회·생성·설정 
     if(url.includes('googleapis.com'))return new Response(JSON.stringify({sub:'google-subject',name:'구글유저'}));
     return new Response(JSON.stringify({id:12345,kakao_account:{profile:{nickname:'카카오유저'}}}));
   };
-  const /** game: 서버 인스턴스와 방 관리 인터페이스. */ game=createGameServer({auth:{baseUrl:'https://game.test',accountsFile:file,providers:configured?{google:{clientId:'google-id',clientSecret:'secret'},kakao:{clientId:'kakao-id',clientSecret:'secret'}}:{},fetch:mockFetch}});
+  const /** game: 서버 인스턴스와 방 관리 인터페이스. */ game=createGameServer({auth:{baseUrl:'https://game.test',accountsFile:file,testLoginEnabled,testAccountsFile:join(dir,'test-accounts.json'),providers:configured?{google:{clientId:'google-id',clientSecret:'secret'},kakao:{clientId:'kakao-id',clientSecret:'secret'}}:{},fetch:mockFetch}});
   await new Promise(/** r: 비동기 완료 콜백. */ /** 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ r=>game.server.listen(0,'127.0.0.1',r));const /** base: 계정 서버 또는 테스트 서버의 기준 주소. */ base='http://127.0.0.1:'+game.server.address().port;
   t.after(/** 현재 비동기 작업의 완료 또는 후속 처리를 수행한다. */ async()=>{await game.close();await rm(dir,{recursive:true,force:true});});
   const /** request: 테스트 서버로 HTTP 요청을 보내는 함수. */ request=/** request: 테스트 서버로 요청을 보내고 자동 리디렉션 없이 응답을 받는다. */ (/** path: 요청 또는 파일의 경로. */ path,/** options: 기본값을 재정의하는 생성·요청 옵션. */ options={})=>fetch(base+path,{redirect:'manual',...options});
@@ -39,6 +39,7 @@ test('providers require real configuration and APK proof; invalid state is rejec
   const /** request: 테스트 서버로 HTTP 요청을 보내는 함수. */ {request}=await setup(t,false);
   assert.equal((await request('/auth/start/google?challenge='+'a'.repeat(43))).status,503);
   const /** session: 검증할 앱 로그인 세션. */ session=await(await request('/api/session')).json();assert.equal(session.account,null);assert.equal(session.providers.google,false);
+  assert.equal((await request('/api/test-login',{method:'POST',body:'{"id":"33dot"}'})).status,404);
 });
 test('Google/Kakao create separate stable IDs; settings persist; web stays guest even with app cookie',/** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ async /** t: 테스트 정리·검증 문맥 또는 프레임 시각. */ t=>{
   const /** request: 테스트 서버로 HTTP 요청을 보내는 함수; signIn: 인증 흐름 전체를 실행하는 테스트 보조 함수; calls: 대체 인증 API 호출 기록; file: 읽거나 저장할 파일 경로. */ {request,signIn,calls,file}=await setup(t);
@@ -89,4 +90,36 @@ test('touch control override persists as a boolean and rejects invalid settings'
  store.saveSettings(account.id,{controlScale:1,showNames:true,showTouchControls:false});
  assert.equal(createAccountStore(file).find(account.id).settings.showTouchControls,false);
  assert.throws(/** 문자열로 전달된 표시 설정은 거절해야 한다. */ ()=>store.saveSettings(account.id,{controlScale:1,showNames:true,showTouchControls:'false'}));
+});
+
+test('local test login accepts only seeded accounts and uses the saved nickname in rooms',/** 테스트 로그인 격리, 계정 식별, 서버 닉네임 및 가입 차단을 검증한다. */ async (/** t: 임시 서버 정리 문맥. */ t)=>{
+  const /** request: 로컬 로그인 HTTP 요청; base: 테스트 서버 주소. */ {request,base}=await setup(t,false,true);
+  /** 회원 아이디를 전송하고 선택적으로 테스트 요청 헤더를 추가한다. */
+  function login(/** id: 로그인에 사용할 회원 아이디. */ id,/** headers: 접근 제한을 검증할 추가 헤더. */ headers={}){
+    return request('/api/test-login',{method:'POST',headers:{Origin:base,...headers},body:JSON.stringify({id})});
+  }
+  assert.match(await (await request('/')).text(),/<body data-test-login>/);
+  assert.equal((await login('33dot',{'X-Forwarded-For':'192.0.2.10'})).status,404);
+  assert.equal((await login('33dot',{Origin:'https://other.test'})).status,403);
+  assert.equal((await login('unknown')).status,401);
+  assert.equal((await login('33dot!')).status,400);
+  assert.equal((await request('/api/register',{method:'POST'})).status,404);
+  const /** first: 첫 회원 로그인 응답; second: 두 번째 회원 로그인 응답. */ first=await login('33DOT'),second=await login('noru8294');
+  assert.equal(first.status,200);assert.equal(second.status,200);
+  const /** cookie: 첫 회원의 HTTP 세션 증명. */ cookie=first.headers.get('set-cookie').split(';')[0];
+  const /** account: 첫 회원에게 공개한 계정 정보. */ {account}=await first.json();
+  assert.equal(account.displayName,'33');
+  assert.equal((await second.json()).account.displayName,'노루');
+  assert.deepEqual((await (await login('33dot')).json()).account,account);
+  assert.deepEqual((await (await request('/api/session',{headers:{Cookie:cookie}})).json()).account,account);
+  const /** ws: 로그인 쿠키를 전달하는 게임 연결. */ ws=new WebSocket(base.replace('http:','ws:')+'/ws?client=web',{headers:{Cookie:cookie}});
+  t.after(/** 검증용 게임 소켓을 닫는다. */ ()=>ws.terminate());
+  await new Promise(/** 첫 서버 메시지가 오면 요청을 시작한다. */ (/** resolve: 접속 완료 콜백. */ resolve)=>ws.once('message',resolve));
+  const /** state: 방 생성 이후 수신할 참가자 상태. */ state=new Promise(/** 방 상태 메시지를 선택한다. */ (/** resolve: 방 상태 수신 콜백. */ resolve)=>ws.on('message',/** 서버 응답을 읽는다. */ (/** raw: 수신 원본 메시지. */ raw)=>{
+    const /** message: 해석한 서버 응답. */ message=JSON.parse(raw);
+    if(message.type==='room.state')resolve(message.room);
+  }));
+  ws.send(JSON.stringify({v:1,type:'room.create',name:'다른이름'}));
+  const /** player: 서버가 만든 첫 참가자. */ [player]=(await state).players;
+  assert.equal(player.name,'33');assert.equal(player.status.classificationCode,account.id);
 });

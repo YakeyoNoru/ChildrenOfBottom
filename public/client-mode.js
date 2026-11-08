@@ -14,7 +14,11 @@ let /** settingsCsrf: 앱 설정 저장 요청의 위조 방지 토큰. */ setti
   document.getElementById('client-kind').textContent = CLIENT_MODE === 'web' ? '웹 게스트' : 'APK · 로그인 확인 중';
   applyUserSettings();
   syncTargetPriority();
-  if (CLIENT_MODE === 'web') { connect(); return; }
+  if (CLIENT_MODE === 'web') {
+    if(document.body.hasAttribute?.('data-test-login')) await initializeTestLogin();
+    else connect();
+    return;
+  }
   try {
     const /** response: HTTP 요청에 대한 응답. */ response = await fetch('/api/session', { headers: { 'X-Client-Mode': 'app' }, cache: 'no-store' });
     const /** data: 전달하거나 해석한 데이터. */ data = await response.json();
@@ -39,6 +43,63 @@ let /** settingsCsrf: 앱 설정 저장 요청의 위조 방지 토큰. */ setti
     connect();
   } catch { document.getElementById('connection').textContent = '계정 서버에 연결할 수 없습니다. 앱을 다시 실행해 주세요.'; }
 }
+/** 로컬 테스트 계정의 로그인 화면과 기존 게스트 로비를 연결한다. */
+async function initializeTestLogin() {
+  const /** login: 테스트 로그인 화면. */ login=document.getElementById('test-login');
+  const /** home: 방을 만들거나 참여하는 화면. */ home=document.getElementById('home');
+  const /** feedback: 로그인 요청의 결과를 표시하는 요소. */ feedback=document.getElementById('test-login-error');
+  home.hidden=true;
+  try {
+    const /** response: 기존 테스트 세션을 조회한 응답. */ response=await fetch('/api/session',{cache:'no-store'});
+    if(!response.ok)throw Error('Session lookup failed');
+    const /** data: 서버가 확인한 계정과 설정. */ data=await response.json();
+    if(data.account) {
+      accountProfile=data.account;settingsCsrf=data.csrf;userSettings=data.settings;applyUserSettings();
+      document.getElementById('client-kind').textContent=data.account.displayName;
+      document.getElementById('guest-name').hidden=true;
+      const /** logout: 테스트 계정을 종료하고 로그인 화면으로 복귀하는 버튼. */ logout=document.getElementById('test-logout');
+      logout.hidden=false;
+      logout.onclick=/** 현재 테스트 세션을 서버에서 종료한다. */ async ()=>{
+        try {
+          const /** result: 로그아웃 요청 응답. */ result=await fetch('/api/test-logout',{method:'POST',headers:{'X-CSRF-Token':settingsCsrf}});
+          if(!result.ok)throw Error('Logout failed');
+          location.replace('/');
+        }catch{notice('로그아웃을 완료하지 못했습니다.');}
+      };
+      connect();return;
+    }
+  }catch{feedback.textContent='계정 서버에 연결할 수 없습니다.';}
+  if(readResumeToken()){connect();return;}
+  login.hidden=false;
+  document.getElementById('connection').textContent='로그인 방법을 선택해 주세요.';
+  document.getElementById('test-login-guest').onclick=/** 닉네임을 입력하는 기존 게스트 흐름으로 진행한다. */ ()=>{
+    login.hidden=true;connect();
+  };
+  document.getElementById('test-login-form').onsubmit=/** 입력한 아이디로 테스트 세션을 요청한다. */ async (/** event: 폼의 기본 이동을 막을 제출 이벤트. */ event)=>{
+    event.preventDefault();
+    const /** buttons: 로그인 중 중복 요청과 게스트 전환을 막을 버튼. */ buttons=[event.submitter,document.getElementById('test-login-guest')].filter(Boolean);
+    for(const /** button: 요청 처리 중 잠글 조작 버튼. */ button of buttons)button.disabled=true;
+    try {
+      const /** id: 로그인할 테스트 계정 아이디. */ id=document.getElementById('test-login-id').value;
+      const /** response: 테스트 세션 발급 결과. */ response=await fetch('/api/test-login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+      if(response.ok)location.replace('/');
+      else feedback.textContent='등록된 아이디를 확인해 주세요.';
+    }catch{feedback.textContent='계정 서버에 연결할 수 없습니다.';}
+    finally{for(const /** button: 요청이 끝나 다시 사용할 조작 버튼. */ button of buttons)button.disabled=false;}
+  };
+}
+
+/** 일반 이름 입력에서는 허용한 문자만 남긴다. */
+document.getElementById('name').oninput=/** 키보드·붙여넣기로 입력한 이름의 허용 문자를 확인한다. */ (/** event: 닉네임 입력 이벤트. */ event)=>{
+  if(!event.isComposing)event.target.value=event.target.value.replace(/[^\p{L}\p{M}\p{N}@. ]/gu,'');
+};
+document.getElementById('code-input').oninput=/** 방 접속코드의 입력 형식을 유지한다. */ (/** event: 접속코드 입력 이벤트. */ event)=>{
+  if(!event.isComposing)event.target.value=event.target.value.replace(/[^a-f0-9]/gi,'');
+};
+document.getElementById('test-login-id').oninput=/** 입력한 테스트 계정 아이디에서 허용하지 않는 문자를 제거한다. */ (/** event: 아이디 입력 이벤트. */ event)=>{
+  if(!event.isComposing)event.target.value=event.target.value.replace(/[^a-z0-9@.]/gi,'');
+};
+
 /** saveUserSettings: 옵션 변경을 반영하고 앱 계정이면 로컬 캐시와 서버에 저장한다. */ async function saveUserSettings() {
   userSettings = { ...(userSettings.showTouchControls!==undefined?{showTouchControls:userSettings.showTouchControls}:{}), controlScale: Number(document.getElementById('control-scale').value), showNames: document.getElementById('show-names').checked, targetPriority: ['nearest','lowestHealth','lowestHealthRatio'].find(/** value: 검사하거나 변환할 현재 값. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ value => document.getElementById('target-' + value).checked) ?? 'nearest' };
   applyUserSettings();

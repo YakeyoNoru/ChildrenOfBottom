@@ -260,7 +260,8 @@ test('solo start, malformed messages, duplicate membership, invalid codes and na
   assert.equal((await a.command('room.create',{name:' '},'error')).code,'INVALID_NAME');
   assert.equal((await a.command('room.join',{name:'A',code:'???'},'error')).code,'INVALID_CODE');
   assert.equal((await a.command('invented',{},'error')).code,'UNKNOWN_TYPE');
-  await a.command('room.create',{name:'<script>alert(1)</script>'.slice(0,20)});
+  assert.equal((await a.command('room.create',{name:'<script>alert(1)</script>'.slice(0,20)},'error')).code,'INVALID_NAME');
+  await a.command('room.create',{name:'열쇠 @ A.1'});
   assert.equal((await a.command('room.create',{name:'A'},'error')).code,'ALREADY_IN_ROOM');
   await a.command('room.start');let /** state: 현재 상태 스냅샷. */ state;do{state=await a.next('room.state');}while(state.room.phase!=='started');
 });
