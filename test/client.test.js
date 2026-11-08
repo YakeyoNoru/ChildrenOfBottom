@@ -356,3 +356,21 @@ test('skill shop opens from B and touch and refreshes the hand after reroll',/**
  elements.get('skill-shop-close').click();
  assert.equal(elements.get('skill-shop').hidden,true);
 });
+
+test('compact world updates preserve unchanged fields and apply births, changes and removals', /** 전체 상태를 받은 화면에서 유형별 변경을 복원하는지 검사한다. */ () => {
+  const /** receive: 수신 메시지 재현 함수; state: 초기 방 상태; run: 화면 상태 조회 함수. */ {receive,state,run}=client();
+  for (const /** player: 서버가 월드 목록에도 포함하는 플레이어. */ player of state.players) player.status={objectType:'player'};
+  const /** enemy: 위치·체력·위협 정보가 변하는 몬스터. */ enemy={id:'enemy-delta',x:10,y:20,status:{objectType:'enemy',currentHealth:30,maxHealth:30,attackTargetId:'old'}};
+  const /** npc: 새로 등장한 NPC. */ npc={id:'npc-delta',x:40,y:50,status:{objectType:'npc'}};
+  const /** prop: 이번 틱에 사라지는 사물. */ prop={id:'prop-delta',x:30,y:20,status:{objectType:'prop'}};
+  receive({type:'room.state',room:{...state,objects:[...state.players,enemy,prop]}});
+  const /** delta: 생성·위치 이동·체력 변경·대상 삭제·개체 소멸을 담은 틱. */ delta={
+    added:[npc],removed:[prop.id],
+    updated:[{id:enemy.id,fields:{set:{x:11},unset:[]},status:{set:{currentHealth:25,threatTable:{player:5}},unset:['attackTargetId']}}],
+  };
+  receive({type:'game.state',room:{...state,objects:undefined,objectChanges:delta}});
+  const /** objects: 화면이 복원한 월드 개체 목록. */ objects=JSON.parse(run('JSON.stringify(room.objects)'));
+  assert.deepEqual(objects,[...state.players,{...enemy,x:11,status:{objectType:'enemy',currentHealth:25,maxHealth:30,threatTable:{player:5}}},npc]);
+  receive({type:'room.state',room:{...state,objects:[...state.players,prop]}});
+  assert.deepEqual(JSON.parse(run('JSON.stringify(room.objects)')),[...state.players,prop]);
+});

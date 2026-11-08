@@ -1,3 +1,4 @@
+import { /** objectBaseline: 비교 기준 복사; objectChanges: 비플레이어 개체 변경 계산. */ objectBaseline, objectChanges } from './game/snapshot-delta.js';
 import { /** tickPlayerSkill: 플레이어의 시간제 기술을 진행한다. */ tickPlayerSkill, /** tickStones: 돌 투사체의 이동과 충돌을 진행한다. */ tickStones } from './game/advanced-skills.js';
 import { /** skills: 서버 기술 정의. */ skills, /** buySkill: 카드 구매를 확정한다. */ buySkill, /** equipSkill: 서버 슬롯을 배정한다. */ equipSkill, /** drawSkills: 공통 손패 드로우를 실행한다. */ drawSkills, /** rerollSkills: 비용을 확인하고 손패를 다시 뽑는다. */ rerollSkills } from './game/skills.js';
 import './public/interactions.js';
@@ -71,7 +72,17 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
       skillEffects: (room.skillEffects ?? []).map(/** effect: 시전 위치·피해 결과·표시 만료 시각을 담은 기술 효과. */ /** 각 항목을 현재 계산에 필요한 값으로 변환한다. */ effect => skillSnapshot(effect)),
     };
   };
-  const /** broadcast: 방 참가자 전체에 상태를 전송하는 함수. */ broadcast = /** room: 현재 처리하는 방의 상태. */ /** broadcast: 방 참가자 모두에게 최신 방 상태를 알린다. */ room => { for (const /** p: 현재 처리하는 플레이어 또는 검증 개체. */ p of room.players.values()) send(p.ws, 'room.state', { room: snapshot(room) }); };
+  const /** baselines: 방별로 직전에 보낸 비플레이어 비교 기준. */ baselines = new WeakMap();
+  /** 전체 방 상태를 보내고 변경 전송의 기준을 새로 잡는다. */
+  function broadcast(/** room: 전체 상태를 보낼 방. */ room) {
+    const /** state: 방장 변경·입장·재접속 시 보내는 전체 상태. */ state = snapshot(room);
+    const /** baseline: 이 전체 상태를 받은 접속자의 변경 전송 기준. */ baseline = [...room.players.values()].some(/** 변경 전송 지원 여부를 확인한다. */ (/** player: 방 참가자. */ player) => player.ws.compactObjects) ? objectBaseline(state.objects) : null;
+    baselines.set(room, baseline);
+    for (const /** player: 전체 방 상태 수신자. */ player of room.players.values()) {
+      send(player.ws, 'room.state', {room: state});
+      player.ws.objectBaseline = baseline;
+    }
+  }
   /** 시간 만료 시 전원을 방에서 분리하고 방 데이터·효과를 정리한다. 소켓 연결 자체는 유지한다. */
   function closeExpiredRoom(/** room: 종료할 방. */ room) {
     rooms.delete(room.code);
@@ -179,6 +190,8 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
   wss.on('connection', /** connection 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ (/** ws: 현재 처리 중인 WebSocket 연결. */ ws, /** req: 수신한 HTTP 요청. */ req) => {
     const /** allowed: 서버에서 허용하는 브라우저 출처. */ allowed = process.env.ALLOWED_ORIGIN;
     if (req.headers.origin && req.headers.origin !== (allowed || `http://${req.headers.host}`) && req.headers.origin !== (!allowed ? `https://${req.headers.host}` : allowed)) { ws.close(1008, 'Origin rejected'); return; }
+    /** compactObjects: 비플레이어 변경 전송을 명시적으로 지원하는 클라이언트인지 표시한다. */
+    ws.compactObjects = new URL(req.url,'http://local').searchParams.get('objects') === 'delta1';
     const /** mode: 웹 게스트와 APK 계정을 구분하는 접속 모드. */ mode = new URL(req.url,'http://local').searchParams.get('client') === 'app' ? 'app' : 'web';
     ws.account = auth.identity(req,mode);
     if (mode === 'app' && !ws.account) { ws.close(1008,'App login required'); return; }
@@ -402,7 +415,16 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
       tickExits(room,roomClock());
       room.itemChanges=globalThis.ItemRules.tick(room.items??new Map(),objects,now,gainExperience);
       const /** state: 현재 상태 스냅샷. */ state = snapshot(room,false);
-      for (const /** p: 현재 처리하는 플레이어 또는 검증 개체. */ p of room.players.values()) send(p.ws, 'game.state', { room: state });
+      const /** previous: 직전 상태를 받은 접속자를 식별하는 기준. */ previous = baselines.get(room);
+      const /** compact: 변경 전송을 요청한 참가자가 있는지 나타낸다. */ compact = [...room.players.values()].some(/** 전송 형식을 확인한다. */ (/** player: 방 참가자. */ player) => player.ws.compactObjects);
+      const /** current: 이번 틱 비플레이어 상태의 복사본. */ current = compact ? objectBaseline(state.objects) : null;
+      const /** delta: 모든 변경 전송 참가자가 공유할 이번 틱의 변경분. */ delta = current && previous ? objectChanges(previous, current) : null;
+      const /** reduced: 플레이어와 아이템은 기존 자료를 유지한 경량 상태. */ reduced = delta ? {...state, objects: undefined, objectChanges: delta} : null;
+      for (const /** player: 이번 틱 상태 수신자. */ player of room.players.values()) {
+        send(player.ws, 'game.state', {room: player.ws.compactObjects && previous === player.ws.objectBaseline && reduced ? reduced : state});
+        player.ws.objectBaseline = current;
+      }
+      baselines.set(room, current);
     }
   }, 50);
   simulation.unref();

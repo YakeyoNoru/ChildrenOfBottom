@@ -132,10 +132,40 @@ $('minimap').onkeydown=/** 키보드 접근성으로 전체맵를 연다. */ (/*
   $('leave').disabled = !!pending || !online;
   $('hint').textContent = started ? '현재는 로비 프로토타입입니다.' : host ? canStart ? '시작할 수 있습니다. 혼자 시작도 가능합니다.' : '다른 참가자의 준비를 기다리는 중입니다.' : '준비 상태를 방장에게 알려 주세요.';
 }
+// 변경분을 직전 방 상태에 적용하고 players를 합쳐 기존 화면용 개체 목록을 복원한다.
+function mergeWorldObjects(/** previous: 직전 화면에 적용한 개체 목록. */ previous, /** state: 이번 틱의 방 상태. */ state) {
+  const /** delta: 서버가 보낸 비플레이어 생성·변경·제거 정보. */ delta = state.objectChanges;
+  if (!delta) return state.objects;
+  const /** objects: 최신 비플레이어 개체를 식별자로 조회하는 목록. */ objects = new Map();
+  for (const /** object: 직전 화면의 개체. */ object of previous ?? []) {
+    if (object.status.objectType !== 'player') objects.set(object.id, object);
+  }
+  for (const /** id: 이번 틱에 소멸한 개체의 식별자. */ id of delta.removed) objects.delete(id);
+  for (const /** object: 이번 틱에 생성된 개체. */ object of delta.added) objects.set(object.id, object);
+  for (const /** update: 일반 필드 또는 스테이터스가 바뀐 개체. */ update of delta.updated) {
+    const /** object: 변경을 적용할 직전 개체. */ object = objects.get(update.id);
+    if (!object) continue;
+    const /** next: 화면 보간이 사용하는 이전 개체를 보존하는 새 상태. */ next = {...object};
+    applyObjectFields(next, update.fields);
+    if (update.status) {
+      next.status = {...object.status};
+      applyObjectFields(next.status, update.status);
+    }
+    objects.set(next.id, next);
+  }
+  return [...state.players, ...objects.values()];
+}
+
+// 전송된 필드를 교체하고 서버에서 삭제된 키를 화면 상태에서도 지운다.
+function applyObjectFields(/** target: 이번 틱에 사용할 새 상태. */ target, /** change: 필드 추가·교체·삭제 목록. */ change) {
+  if (!change) return;
+  Object.assign(target, change.set);
+  for (const /** key: 이번 틱에 삭제된 필드 이름. */ key of change.unset) delete target[key];
+}
 /** connect: 게임 서버에 연결하고 수신 상태 반영·연결 종료·재접속을 처리한다. */ function connect() {
   playerId = null;
   resumeToken=readResumeToken();resuming=!!resumeToken;
-  const /** ws: 현재 처리 중인 WebSocket 연결. */ ws = socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws?client=${CLIENT_MODE}`);
+  const /** ws: 현재 처리 중인 WebSocket 연결. */ ws = socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws?client=${CLIENT_MODE}&objects=delta1`);
   $('connection').textContent = '서버에 연결 중…'; render();
   ws.onmessage = /** onmessage: 해당 브라우저 이벤트에서 화면 상태와 입력을 갱신한다. */ (/** data: 전달하거나 해석한 데이터. */ { data }) => {
     if(socket!==ws)return;
@@ -157,7 +187,7 @@ $('minimap').onkeydown=/** 키보드 접근성으로 전체맵를 연다. */ (/*
     if (m.type === 'game.state') { if (room?.code === m.room.code) { itemView.receive(m.room,Date.now()); const /** items: 이전 틱의 아이템을 변경분과 합칠 ID 목록. */ items=new Map((room.items??[]).map(/** ID별 자료를 만든다. */ (/** item: 필드 아이템. */ item)=>[item.id,item]));
       for(const /** item: 이번 틱 변경 아이템. */ item of m.room.itemChanges?.updates??[])items.set(item.id,item);
       for(const /** id: 획득 완료 ID. */ id of m.room.itemChanges?.removed??[])items.delete(id);
-      room = {...m.room,skillCatalog:m.room.skillCatalog??room.skillCatalog,map:m.room.map??room.map,items:m.room.items??[...items.values()]}; timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); updateSkillControls();updateSkillShop();updateTestOptions();updatePlayerStatus();updateInteraction();updateCompetitionScore(); $('game-status').textContent=`${room.players.length}명 생존 · ${room.players.find(/** 본인의 표시 이름을 조회한다. */ (/** player: 수신 플레이어. */ player)=>player.id===playerId)?.name??''}`; } return; }
+      room = {...m.room,objects:mergeWorldObjects(room.objects,m.room),skillCatalog:m.room.skillCatalog??room.skillCatalog,map:m.room.map??room.map,items:m.room.items??[...items.values()]}; timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); updateSkillControls();updateSkillShop();updateTestOptions();updatePlayerStatus();updateInteraction();updateCompetitionScore(); $('game-status').textContent=`${room.players.length}명 생존 · ${room.players.find(/** 본인의 표시 이름을 조회한다. */ (/** player: 수신 플레이어. */ player)=>player.id===playerId)?.name??''}`; } return; }
     if (m.type === 'room.state') { const /** entering: 새로운 방 상태로 진입했는지 여부. */ entering = !room || room.code !== m.room.code; room = m.room; itemView.receive(room,Date.now()); timerReceivedAt=Date.now(); motionView.receive(room,playerId,Date.now()); if (entering) {miniMap.clear();syncTargetPriority();} notice(''); }
     if (m.type === 'room.closed' || m.type === 'room.left') { saveResumeToken(null);interactionConfirmation=null;$('escape-dialog').close();room = null; miniMap.clear(); itemView.clear(); notice(m.type === 'room.closed' ? (m.message??messages.closed) : '방에서 나왔습니다.'); if(m.type==='room.closed') settle(); }
     if(m.type==='error'){

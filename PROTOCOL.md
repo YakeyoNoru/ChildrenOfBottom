@@ -196,3 +196,12 @@ A/B/C의 재사용 대기는 시전자별 `skillCooldowns[slot]`에 다음 사�
 게임 중 스킬 메뉴는 전체 방 상태의 `skillCatalog`를 표시합니다. `game.skill.buy {code}`는 손패 카드 한 장을 제외 목록으로 이동하고 정의의 `skillPoints`를 사용하고 보유 레벨을 1 올립니다. 버튼 기술은 타입 슬롯에 장착됩니다. `game.skill.equip {code}`는 보유 기술과 시작 기본 기술을 해당 슬롯에 장착합니다. 구매와 장착은 서버가 게임 진행 상태, 플레이어 생존 여부, 사용 조건을 검증합니다. 비행 중인 돌의 표시 좌표는 `stones`로 전송됩니다.
 
 `game.skill.reroll`은 빈 손패에서 무료로 드로우하고, 손패가 있으면 무료 리롤 1회를 우선 사용하거나 1 SP를 사용합니다. 서버는 이전 손패를 묘지로 옮기고, 덱이 손패최대수보다 적으면 묘지를 덱에 합친 뒤 남은 카드에서 무작위로 뽑습니다. 구매창은 갱신된 서버 손패를 표시합니다.
+
+## 비플레이어 개체 변경 전송
+
+WebSocket URL에 objects=delta1을 지정한 클라이언트는 진행 중 game.state의 objects 대신 objectChanges를 받을 수 있다. room.state 또는 objects가 포함된 game.state는 전체 기준 상태다. 이전 기준을 받지 않은 연결은 전체 game.state를 먼저 받는다.
+
+- players는 전체 플레이어 상태를 유지한다. 변경 전송에서 objects의 플레이어 복사본은 생략하며 화면에서 players를 월드 목록에 합친다.
+- 몬스터, NPC, 사물의 added는 개체 전체 자료, updated는 ID와 fields 및 status의 변경, removed는 제거 ID다. fields와 status는 각각 set과 unset을 포함하고 변경이 없으면 null이다. 위협 목록 등의 중첩 자료는 바뀔 때 필드 단위로 교체한다.
+- 아이템은 기존대로 전체 초기 목록과 itemChanges를 사용한다. 획득 비행 시작·취소도 포함한다.
+- 변경분은 WebSocket 순서대로 적용하며, 재접속과 전체 방 상태 수신 때 기준을 교체한다. 형식을 요청하지 않은 연결에는 기존 전체 상태를 전송한다.
