@@ -102,6 +102,8 @@ test('local test login accepts only seeded accounts and uses the saved nickname 
   assert.equal((await login('33dot',{'X-Forwarded-For':'192.0.2.10'})).status,404);
   assert.equal((await login('33dot',{Origin:'https://other.test'})).status,403);
   assert.equal((await login('unknown')).status,401);
+  assert.equal((await login('abc')).status,400);
+  assert.equal((await login('abcd')).status,401);
   assert.equal((await login('33dot!')).status,400);
   assert.equal((await request('/api/register',{method:'POST'})).status,404);
   const /** first: 첫 회원 로그인 응답; second: 두 번째 회원 로그인 응답. */ first=await login('33DOT'),second=await login('noru8294');

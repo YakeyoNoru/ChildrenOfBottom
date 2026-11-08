@@ -68,7 +68,7 @@ export /** createAuthService: 제공자 로그인·앱 세션·계정 설정 API
           let /** data: 테스트 로그인 아이디만 담는 요청 본문. */ data;
           try{data=JSON.parse(await body(req));}catch{return error(res,400,'INVALID_LOGIN'),true;}
           // 공통 비밀번호 1을 사용하는 동안에는 입력 아이디만 검사하고 비밀번호 필드를 받지 않는다.
-          if(!data||Object.keys(data).length!==1||typeof data.id!=='string'||!/^[a-z0-9@.]{5,20}$/i.test(data.id))return error(res,400,'INVALID_LOGIN'),true;
+          if(!data||Object.keys(data).length!==1||typeof data.id!=='string'||!/^[a-z0-9@.]{4,20}$/i.test(data.id))return error(res,400,'INVALID_LOGIN'),true;
           const /** account: 고정 등록 목록에서 조회한 테스트 계정. */ account=testAccounts.get(data.id.toLowerCase());
           if(!account)return error(res,401,'INVALID_LOGIN'),true;
           sessions.delete(session(req,'web')?.token);
