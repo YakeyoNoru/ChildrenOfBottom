@@ -41,7 +41,8 @@ test('players can buy a skill card through the game socket and equip the startin
 test('PvP final blow synchronizes killer rewards and preserves the victim result points',/** 실제 기술 요청부터 처치 보상·사망 점수화면·최신 상태 전송까지 검증한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
  const /** a: 처치자 연결; b: 피해자 연결; rooms: 서버 방 목록; code: 방 번호. */ {a,b,rooms,code}=await startedPair(t);
  const /** room: 검증할 방; killer: 처치자; victim: 레벨 3 피해자. */ room=rooms.get(code),killer=room.players.get(a.id),victim=room.players.get(b.id);
- room.objects.clear();room.items.clear();killer.status.attack=100;victim.status.level=3;victim.status.competitionPoints=101;victim.x=killer.x+30;victim.y=killer.y;killer.facing=0;
+ room.objects.clear();room.items.clear();killer.status.attack=100;victim.status.level=3;victim.status.competitionPoints=101;victim.x=killer.x+30;victim.y=killer.y;killer.facing=0;room.targetsAt=0;
+ await waitFor(/** 처치 요청 전에 서버가 피해자를 대상으로 선택했는지 확인한다. */ ()=>killer.status.nearestEnemyId===victim.id);
  a.ws.send(JSON.stringify({v:1,type:'game.cast',slot:'A'}));
  const /** result: 피해자가 받은 서버 확정 결과. */ result=(await b.next('game.result')).result;
  assert.equal(result.reason,'DEATH');assert.equal(result.competitionPoints,101);
@@ -53,7 +54,7 @@ test('PvP final blow synchronizes killer rewards and preserves the victim result
 
 test('timed exit NPCs use shared Y/N confirmation and disappear atomically for one player',/** 실제 6분·8분 생성과 취소·동시 확인·한 명만 탈출 처리를 검증한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
  let /** clock: 생성 경계를 진행할 검증 시각(ms). */ clock=Date.now();
- const /** a: 첫 사용자; b: 동시 사용자; rooms: 서버 방 목록; code: 게임 번호. */ {a,b,rooms,code}=await startedPair(t,{roomClock:/** 검증 시각을 반환한다. */ ()=>clock});
+ const /** a: 첫 사용자; b: 동시 사용자; rooms: 서버 방 목록; code: 게임 번호. */ {a,b,rooms,code}=await startedPair(t,{compactObjects:true,roomClock:/** 검증 시각을 반환한다. */ ()=>clock});
  const /** room: 진행 중 게임; safeTile: 독기 영향을 받지 않을 높이 4 타일. */ room=rooms.get(code),safeTile=room.map.tiles.find(/** 높이 4 지형을 찾는다. */ (/** tile: 지도 타일. */ tile)=>tile.height===4);
  room.objects.clear();room.items.clear();
  for(const /** player: 시간 진행 중 안전한 곳에 배치할 생존자. */ player of room.players.values())Object.assign(player,globalThis.PitMapRules.center(safeTile,room.map));
@@ -100,7 +101,9 @@ test('guest resumes the same stopped and damageable character without replaying 
 
 test('reconnect tokens reject guesses, expire and are revoked by explicit leave',/** 다른 토큰·시간 만료·직접 나가기 이후 복귀 거부를 검증한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
  let /** clock: 복귀 마감을 검사할 서버 시각(ms). */ clock=Date.now();
- const /** a: 기존 연결; client: 연결 생성기; rooms: 방 목록; code: 대상 방 번호. */ {a,client,rooms,code}=await startedPair(t,{roomClock:/** 검증 시각을 반환한다. */ ()=>clock});
+ const /** a: 기존 연결; client: 연결 생성기; rooms: 방 목록; code: 대상 방 번호. */ {a,client,rooms,code}=await startedPair(t,{compactObjects:true,roomClock:/** 검증 시각을 반환한다. */ ()=>clock});
+ // 토큰 검증에 필요하지 않은 무작위 개체를 제거한다.
+ rooms.get(code).objects.clear();
  const /** token: 기존 캐릭터 전용 권한; other: 무관한 연결. */ {token}=await a.next('session.ready'),other=await client();
  assert.equal((await other.command('session.resume',{token:'0'.repeat(64)},'session.rejected')).type,'session.rejected');
  await a.command('room.leave');
@@ -150,16 +153,51 @@ test('resume replaces a half-open connection exactly once without removing its c
   const /** url: 해석하거나 접속할 URL. */ url = `ws://127.0.0.1:${game.server.address().port}/ws`;
   t.after(/** 현재 비동기 작업의 완료 또는 후속 처리를 수행한다. */ () => game.close());
   /** client: 실제 클라이언트 코드를 API 대역에서 실행하거나 검증용 접속자를 생성한다. */ async function client() {
-    const /** ws: 현재 처리 중인 WebSocket 연결. */ ws = new WebSocket(url), /** inbox: 아직 소비하지 않은 수신 메시지 목록. */ inbox = [], /** waiting: 특정 메시지를 기다리는 대기자 목록. */ waiting = [];
-    ws.on('message', /** raw: 수신한 원본 메시지. */ /** message 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ raw => { const /** m: 수신 메시지 또는 문자열 패턴 일치 결과. */ m = JSON.parse(raw); const /** index: 찾은 항목의 목록 위치. */ index = waiting.findIndex(/** w: 화면 너비 또는 메시지 대기자. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ w => w.type === m.type); if (index >= 0) waiting.splice(index, 1)[0].resolve(m); else inbox.push(m); });
-    const /** next: 다음에 저장하거나 처리할 데이터. */ next = /** type: 처리하거나 기다릴 메시지 또는 이벤트 유형. */ /** next: 지정한 서버 메시지가 올 때까지 기다리되 제한 시간을 넘으면 실패한다. */ type => {
-      const /** index: 찾은 항목의 목록 위치. */ index = inbox.findIndex(/** m: 수신 메시지 또는 문자열 패턴 일치 결과. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ m => m.type === type);
+    const /** ws: 현재 처리 중인 WebSocket 연결. */ ws = new WebSocket(options?.compactObjects ? url + '?objects=delta1' : url), /** inbox: 아직 소비하지 않은 수신 메시지 목록. */ inbox = [], /** waiting: 특정 메시지를 기다리는 대기자 목록. */ waiting = [];
+    /** peerPort: 서버의 연결 로그와 대조할 테스트 소켓 포트. */
+    let peerPort;
+    ws.on('open', /** 연결 직후 진단용 포트를 보관한다. */ () => { peerPort = ws._socket.localPort; });
+    ws.on('message', /** 수신 메시지를 일치하는 대기자에게 전달한다. */ (/** raw: 메시지 원문. */ raw) => {
+      const /** message: 서버가 보낸 응답 또는 이벤트. */ message = JSON.parse(raw);
+      const /** index: 메시지를 받을 대기자의 위치. */ index = waiting.findIndex(/** 수신 조건을 검사한다. */ (/** waiter: 응답 대기자. */ waiter) => waiter.matches(message));
+      if (index >= 0) waiting.splice(index, 1)[0].finish(null, message);
+      else inbox.push(message);
+    });
+    ws.on('close', /** 연결이 닫히면 남은 대기를 즉시 실패시킨다. */ (/** code: WebSocket 종료 코드. */ code) => {
+      for (const /** waiter: 응답을 받을 수 없는 대기자. */ waiter of waiting.splice(0)) {
+        waiter.finish(new Error('WebSocket closed (' + code + ') waiting for ' + waiter.label + ' [peerPort=' + peerPort + ']'));
+      }
+    });
+    /** 지정한 이벤트와 선택적인 요청 ID가 일치하는 응답을 기다린다. */
+    function next(/** type: 기대하는 이벤트 종류. */ type, /** requestId: 매칭할 요청 ID. */ requestId, /** label: 실패 로그에 표시할 대기 단계. */ label = type) {
+      /** 이벤트 종류와 요청 ID를 검사한다. */
+      const matches = (/** message: 검사할 서버 메시지. */ message) => message.type === type && (requestId === undefined || message.requestId === requestId);
+      const /** index: 이미 수신한 일치 메시지의 위치. */ index = inbox.findIndex(matches);
       if (index >= 0) return Promise.resolve(inbox.splice(index, 1)[0]);
-      return new Promise(/** 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ (/** resolve: 비동기 처리를 성공으로 완료하는 함수. */ resolve, /** reject: 비동기 처리를 실패로 완료하는 함수. */ reject) => { const /** waiter: 메시지 수신 시 완료할 비동기 대기자. */ waiter = { type, /** resolve: 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ resolve: /** m: 수신 메시지 또는 문자열 패턴 일치 결과. */ m => { clearTimeout(timer); resolve(m); } }; const /** timer: 메시지 대기 제한 시간 타이머. */ timer = setTimeout(/** 예약 시간이 지나면 대기·재접속·실패 처리를 실행한다. */ () => { waiting.splice(waiting.indexOf(waiter), 1); reject(new Error(`Timeout: ${type}`)); }, 2000); waiting.push(waiter); });
-    };
+      if (ws.readyState === WebSocket.CLOSED) return Promise.reject(new Error('WebSocket already closed waiting for ' + label + ' [peerPort=' + peerPort + ']'));
+      return new Promise(/** 응답 수신과 제한 시간을 연결한다. */ (/** resolve: 일치 메시지를 전달한다. */ resolve, /** reject: 대기 실패를 전달한다. */ reject) => {
+        const /** waiter: 수신 또는 종료 시 완료할 대기자. */ waiter = {
+          label,
+          matches,
+          /** 대기를 끝내고 제한 시간 타이머를 정리한다. */
+          finish(/** error: 종료나 시간 초과 오류. */ error, /** message: 수신한 메시지. */ message) {
+            clearTimeout(timer);
+            if (error) reject(error);
+            else resolve(message);
+          },
+        };
+        const /** timer: 응답을 기다리는 2000밀리초 타이머. */ timer = setTimeout(/** 만료한 대기자만 제거한다. */ () => {
+          waiting.splice(waiting.indexOf(waiter), 1);
+          waiter.finish(new Error('Timeout: ' + label + ' [peerPort=' + peerPort + ']'));
+        }, 2000);
+        waiting.push(waiter);
+      });
+    }
+
     const /** welcome: 연결 직후 서버의 식별자 발급 메시지. */ welcome = await next('welcome');
     let /** seq: 테스트 요청 식별자의 증가 번호. */ seq = 0;
-    return { ws, next, id: welcome.playerId, /** command: 식별자를 붙인 테스트 명령을 보내고 지정한 응답을 기다린다. */ async command(/** type: 처리하거나 기다릴 메시지 또는 이벤트 유형. */ type, /** data: 전달하거나 해석한 데이터. */ data = {}, /** event: 현재 처리하는 사용자 입력 또는 연결 이벤트. */ event = 'ack') { const /** requestId: 요청과 응답을 대응시키는 식별자. */ requestId = String(++seq); ws.send(JSON.stringify({ v: 1, type, requestId, ...data })); return next(event); } };
+    return { ws, next, id: welcome.playerId, /** command: 식별자를 붙인 테스트 명령을 보내고 지정한 응답을 기다린다. */ async command(/** type: 처리하거나 기다릴 메시지 또는 이벤트 유형. */ type, /** data: 전달하거나 해석한 데이터. */ data = {}, /** event: 현재 처리하는 사용자 입력 또는 연결 이벤트. */ event = 'ack') { const /** requestId: 요청과 응답을 대응시키는 식별자. */ requestId = String(++seq); ws.send(JSON.stringify({ v: 1, type, requestId, ...data })); const /** echoedId: 요청 ID를 반환하는 응답에만 적용할 매칭 값. */ echoedId = ['ack','error','room.list'].includes(event) ? requestId : undefined;
+      return next(event, echoedId, type + ' #' + requestId + ' → ' + event); } };
   }
   return { ...game, client, url };
 }
@@ -346,6 +384,8 @@ test('world snapshots share player/NPC/enemy stats; stun/death and speed use ser
   const /** a: 첫 번째 검증용 값·개체·접속 결과; b: 두 번째 검증용 값·개체·접속 결과; rooms: 접속코드별 방 상태를 보관하는 맵; code: 개체·기술·방 또는 오류를 식별하는 코드. */ {a,b,rooms,code}=await startedPair(t),/** room: 현재 처리하는 방의 상태. */ room=rooms.get(code),/** p: 검증 기준이 되는 개체 또는 표시 위치. */ p=room.players.get(b.id);
   const /** npc: 검증용 우호 NPC 개체. */ npc=createWorldObject({objectType:'npc',classificationCode:'NPC001',name:'주민',x:p.x+20,y:p.y,maxSkillResource:5,currentSkillResource:2});
   const /** enemy: 선택한 적대 개체 또는 해당 대상까지의 제곱 거리. */ enemy=createWorldObject({objectType:'enemy',classificationCode:'ENEMY001',name:'몬스터',x:p.x+50,y:p.y});
+  // 제거한 개체의 기존 대상 참조를 다음 틱에서 다시 계산한다.
+  room.objects.clear();room.targetsAt=0;
   room.objects.set(npc.id,npc);room.objects.set(enemy.id,enemy);
   let /** state: 현재 상태 스냅샷. */ state;do{state=await b.next('game.state');}while(!state.room.objects.some(/** object: 새 NPC가 포함된 상태인지 확인한다. */ object=>object.id===npc.id)||!state.room.objects.some(/** object: 새 적이 포함된 상태인지 확인한다. */ object=>object.id===enemy.id)||state.room.objects.length!==room.objects.size+room.players.size||!state.room.players.find(/** 대상 갱신이 끝난 본인 상태를 확인한다. */ (/** player: 수신 플레이어. */ player)=>player.id===b.id).status.nearestEnemyId);
   assert.equal(state.room.players.find(/** x: 검증 좌표·비교 항목 또는 위치 조회 함수. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ x=>x.id===b.id).status.moveSpeed,2);
@@ -395,11 +435,14 @@ test('per-player targeting options are validated and propagated on the 100 ms ti
 
 test('game.cast resolves server slot and selected target without trusting supplied damage or caster',/** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ async /** t: 테스트 정리·검증 문맥 또는 프레임 시각. */ t=>{
  const /** createWorldObject: 공통 스테이터스와 위치를 가진 NPC·적·검증용 플레이어 개체를 만든다.. */ {createWorldObject}=await import('../game/status.js');
- const /** a: 첫 번째 검증용 값·개체·접속 결과; b: 두 번째 검증용 값·개체·접속 결과; rooms: 접속코드별 방 상태를 보관하는 맵; code: 개체·기술·방 또는 오류를 식별하는 코드. */ {a,b,rooms,code}=await startedPair(t),/** room: 현재 처리하는 방의 상태. */ room=rooms.get(code),/** p: 검증 기준이 되는 개체 또는 표시 위치. */ p=room.players.get(a.id);
+ const /** a: 첫 번째 검증용 값·개체·접속 결과; b: 두 번째 검증용 값·개체·접속 결과; rooms: 접속코드별 방 상태를 보관하는 맵; code: 개체·기술·방 또는 오류를 식별하는 코드. */ {a,b,rooms,code}=await startedPair(t,{compactObjects:true}),/** room: 현재 처리하는 방의 상태. */ room=rooms.get(code),/** p: 검증 기준이 되는 개체 또는 표시 위치. */ p=room.players.get(a.id);
+ // 무작위 생성 개체와 상대 플레이어의 거리가 대상 선택에 영향을 주지 않도록 한다.
+ room.objects.clear();room.targetsAt=0;room.players.get(b.id).x=p.x+300;
  const /** enemy: 선택한 적대 개체 또는 해당 대상까지의 제곱 거리. */ enemy=createWorldObject({objectType:'enemy',classificationCode:'e',x:p.x+40,y:p.y,maxHealth:30,currentHealth:30,healthRegen:0});room.objects.set(enemy.id,enemy);
- let /** state: 현재 상태 스냅샷. */ state;do{state=await a.next('game.state');}while(state.room.players.find(/** x: 검증 좌표·비교 항목 또는 위치 조회 함수. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ x=>x.id===a.id).status.nearestEnemyId!==enemy.id);
+ let /** state: 현재 상태 스냅샷. */ state;do{state=await a.next('game.state',undefined,'기술 사용 전 대상 선택');}while(state.room.players.find(/** x: 검증 좌표·비교 항목 또는 위치 조회 함수. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ x=>x.id===a.id).status.nearestEnemyId!==enemy.id);
  a.ws.send(JSON.stringify({v:1,type:'game.cast',slot:'A',damage:9999,casterId:b.id}));
- do{state=await a.next('game.state');}while(!state.room.skillEffects.length);
+ do{state=await a.next('game.state',undefined,'기술 사용 후 효과 수신');}while(!state.room.skillEffects.length);
+ assert.ok(state.room.objectChanges);
  assert.equal(enemy.status.currentHealth,24);assert.equal(state.room.skillEffects[0].casterId,a.id);assert.equal(state.room.skillEffects[0].length,72);
  assert.equal(state.room.players.find(/** x: 검증 좌표·비교 항목 또는 위치 조회 함수. */ /** 현재 항목이 조회·검증 조건을 만족하는지 판정한다. */ x=>x.id===a.id).status.hitboxDiameter,24);
   assert.equal(state.room.skillEffects[0].results[0].targetId,enemy.id);
@@ -441,7 +484,7 @@ test('roll moves without further inputs, rejects casts and ends after 72 units',
 
 test('room countdown starts at creation and sends all five players to results at zero',/** 10분·1분 경계와 모든 참가자 퇴장·소켓 재사용을 검증한다. */ async (/** t: 테스트 정리 문맥. */ t)=>{
  let /** clock: 실제 11분을 기다리지 않고 진행할 서버 방 시각. */ clock=0;
- const /** client: 연결 생성 함수; rooms: 실제 방 목록. */ {client,rooms}=await setup(t,{/** 테스트 시각을 반환한다. */ roomClock:()=>clock});
+ const /** client: 연결 생성 함수; rooms: 실제 방 목록. */ {client,rooms}=await setup(t,{compactObjects:true,/** 테스트 시각을 반환한다. */ roomClock:()=>clock});
  const /** clients: 방에 참가할 5개 연결. */ clients=await Promise.all(Array.from({length:5},client));
  await clients[0].command('room.create',{name:'방장'});
  const /** code: 만료를 검증할 방 코드. */ code=(await clients[0].next('room.state')).room.code;

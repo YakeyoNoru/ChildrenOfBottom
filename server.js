@@ -43,9 +43,21 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
     } catch { res.writeHead(500); res.end('Server error'); }
   });
   const /** wss: 게임 연결을 관리하는 WebSocket 서버. */ wss = new WebSocketServer({ server, path: '/ws', maxPayload: 4096 });
+  // 연결별 식별자는 재접속으로 참가자 ID가 바뀌어도 유지한다. 사용자 데이터와 원문 오류는 기록하지 않는다.
+  function logSocket(/** ws: 종료를 진단할 소켓. */ ws, /** event: 기록할 연결 사건. */ event, /** details: 허용한 숫자·분류 필드. */ details = {}) {
+    console.warn(JSON.stringify({event, at: new Date().toISOString(), connectionId: ws.diagnosticId, peerPort: ws.diagnosticPeerPort, ...details}));
+  }
+
+  // 서버가 직접 종료하는 경로는 실제 종료 코드와 대조할 수 있도록 먼저 원인을 기록한다.
+  function terminateSocket(/** ws: 종료할 소켓. */ ws, /** cause: 서버가 분류한 종료 원인. */ cause, /** details: 원인별 진단 필드. */ details = {}) {
+    ws.disconnectCause ??= cause;
+    logSocket(ws, 'ws_terminate', {cause, bufferedBytes: ws.bufferedAmount, ...details});
+    ws.terminate();
+  }
+
   const /** send: 버전과 메시지 유형을 붙여 송신하는 함수. */ send = /** send: 메시지 종류와 프로토콜 버전을 붙여 현재 연결로 전송한다. */ (/** ws: 현재 처리 중인 WebSocket 연결. */ ws, /** type: 처리하거나 기다릴 메시지 또는 이벤트 유형. */ type, /** data: 전달하거나 해석한 데이터. */ data = {}) => {
     if (ws.readyState === WebSocket.OPEN) {
-      if (ws.bufferedAmount > 65536) return ws.terminate();
+      if (ws.bufferedAmount > 65536) return terminateSocket(ws, 'send_backpressure', {messageType: type, limitBytes: 65536});
       ws.send(JSON.stringify({ v: 1, type, ...data }));
     }
   };
@@ -130,7 +142,7 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
     previous.superseded=true;previous.roomCode=null;previous.matchResult=null;previous.pendingInteraction=null;
     session.ws=ws;session.expiresAt=null;
     if(player){player.ws=ws;player.disconnectedUntil=null;stopDisconnectedPlayer(player);}
-    if(previous.readyState===WebSocket.OPEN)previous.close(4001,'Session resumed elsewhere');
+    if(previous.readyState===WebSocket.OPEN){previous.disconnectCause='session_replaced';previous.close(4001,'Session resumed elsewhere');}
     send(ws,'session.resumed',{playerId:ws.id});
     if(player)broadcast(room);
     else send(ws,'game.result',{result:{id:ws.matchResult.id,competitionPoints:ws.matchResult.competitionPoints,reason:ws.matchResult.reason}});
@@ -188,19 +200,35 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
     if(!effect.kind){room.skillEffects??=[];room.skillEffects.push(effect);}
   }
   wss.on('connection', /** connection 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ (/** ws: 현재 처리 중인 WebSocket 연결. */ ws, /** req: 수신한 HTTP 요청. */ req) => {
+    /** diagnosticId: 계정·세션 토큰과 무관한 이 소켓의 로그 식별자. */
+    ws.diagnosticId = randomUUID();
+    /** diagnosticPeerPort: 서버와 테스트 클라이언트 로그를 대조할 TCP 포트. */
+    ws.diagnosticPeerPort = req.socket.remotePort;
+    /** connectedAt: 연결이 열린 서버 시각(밀리초). */
+    ws.connectedAt = Date.now();
+    ws.on('error', /** 전송 또는 프로토콜 오류를 허용된 오류 코드로 기록한다. */ (/** error: 소켓 오류 객체. */ error) => {
+      const /** code: 메시지 본문을 포함하지 않는 알려진 시스템·WebSocket 오류 코드. */ code = /^(?:WS_ERR_[A-Z_]+|E[A-Z]+)$/.test(error.code ?? '') ? error.code : 'UNKNOWN';
+      ws.disconnectCause ??= 'socket_error';
+      logSocket(ws, 'ws_error', {code});
+    });
+    ws.on('close', /** 종료를 기록하고 진행 중 캐릭터의 재접속 상태를 정리한다. */ (/** code: WebSocket 종료 코드. */ code) => {
+      logSocket(ws, 'ws_close', {
+        cause: ws.disconnectCause ?? (code === 1006 ? 'transport_lost' : 'peer_close'),
+        code, ageMs: Date.now() - ws.connectedAt,
+      });
+      if (ws.id) disconnect(ws);
+    });
     const /** allowed: 서버에서 허용하는 브라우저 출처. */ allowed = process.env.ALLOWED_ORIGIN;
-    if (req.headers.origin && req.headers.origin !== (allowed || `http://${req.headers.host}`) && req.headers.origin !== (!allowed ? `https://${req.headers.host}` : allowed)) { ws.close(1008, 'Origin rejected'); return; }
+    if (req.headers.origin && req.headers.origin !== (allowed || `http://${req.headers.host}`) && req.headers.origin !== (!allowed ? `https://${req.headers.host}` : allowed)) { ws.disconnectCause='origin_rejected'; ws.close(1008, 'Origin rejected'); return; }
     /** compactObjects: 비플레이어 변경 전송을 명시적으로 지원하는 클라이언트인지 표시한다. */
     ws.compactObjects = new URL(req.url,'http://local').searchParams.get('objects') === 'delta1';
     const /** mode: 웹 게스트와 APK 계정을 구분하는 접속 모드. */ mode = new URL(req.url,'http://local').searchParams.get('client') === 'app' ? 'app' : 'web';
     ws.account = auth.identity(req,mode);
-    if (mode === 'app' && !ws.account) { ws.close(1008,'App login required'); return; }
+    if (mode === 'app' && !ws.account) { ws.disconnectCause='app_login_required'; ws.close(1008,'App login required'); return; }
     ws.id = randomUUID(); ws.alive = true; ws.windowStart = Date.now(); ws.count = 0;
     /** clientMode: 복귀 권한이 발급된 웹/APK 접속 구분. */ ws.clientMode=mode;
     send(ws, 'welcome', { playerId: ws.id });
     ws.on('pong', /** pong 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ () => { ws.alive = true; });
-    ws.on('error', /** error 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ () => {});
-    ws.on('close', /** 일시적인 끊김이면 캐릭터를 유지하고 복귀를 기다린다. */ () => disconnect(ws));
     ws.on('message', /** message 이벤트가 발생하면 해당 상태와 입력을 처리한다. */ (/** raw: 수신한 원본 메시지. */ raw, /** binary: 바이너리 프레임 수신 여부. */ binary) => {
       if(ws.superseded)return;
       const /** error: 오류 정보 또는 오류 응답 처리기. */ error = /** error: 요청 실패 내용을 오류 응답으로 전달한다. */ (/** code: 개체·기술·방 또는 오류를 식별하는 코드. */ code, /** message: 사용자나 연결에 전달할 안내 내용. */ message, /** requestId: 요청과 응답을 대응시키는 식별자. */ requestId) => send(ws, 'error', { code, message, requestId });
@@ -428,9 +456,9 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
     }
   }, 50);
   simulation.unref();
-  const /** heartbeat: 무응답 연결을 검사하는 반복 타이머. */ heartbeat = setInterval(/** 등록한 주기에 맞춰 상태 갱신이나 정리 작업을 반복한다. */ () => { for (const /** ws: 현재 처리 중인 WebSocket 연결. */ ws of wss.clients) { if (!ws.alive) ws.terminate(); else { ws.alive = false; ws.ping(); } } }, heartbeatMs);
+  const /** heartbeat: 무응답 연결을 검사하는 반복 타이머. */ heartbeat = setInterval(/** 등록한 주기에 맞춰 상태 갱신이나 정리 작업을 반복한다. */ () => { for (const /** ws: 현재 처리 중인 WebSocket 연결. */ ws of wss.clients) { if (!ws.alive) terminateSocket(ws, 'pong_timeout', {heartbeatMs}); else { ws.alive = false; ws.ping(); } } }, heartbeatMs);
   heartbeat.unref();
-  return { server, rooms, /** close: 반복 작업이나 연결을 정리하여 사용 중인 자원을 해제한다. */ close: async () => { clearInterval(heartbeat); clearInterval(simulation); auth.close(); for (const /** ws: 현재 처리 중인 WebSocket 연결. */ ws of wss.clients) ws.terminate(); await new Promise(/** resolve: 비동기 처리를 성공으로 완료하는 함수. */ /** 등록된 콜백에서 현재 상태를 확인하고 후속 작업을 수행한다. */ resolve => wss.close(resolve)); await new Promise(/** resolve: 비동기 처리를 성공으로 완료하는 함수. */ /** 등록된 콜백에서 현재 상태를 확인하고 후속 작업을 수행한다. */ resolve => server.close(resolve)); } };
+  return { server, rooms, /** close: 반복 작업이나 연결을 정리하여 사용 중인 자원을 해제한다. */ close: async () => { clearInterval(heartbeat); clearInterval(simulation); auth.close(); for (const /** ws: 현재 처리 중인 WebSocket 연결. */ ws of wss.clients) terminateSocket(ws, 'server_shutdown'); await new Promise(/** resolve: 비동기 처리를 성공으로 완료하는 함수. */ /** 등록된 콜백에서 현재 상태를 확인하고 후속 작업을 수행한다. */ resolve => wss.close(resolve)); await new Promise(/** resolve: 비동기 처리를 성공으로 완료하는 함수. */ /** 등록된 콜백에서 현재 상태를 확인하고 후속 작업을 수행한다. */ resolve => server.close(resolve)); } };
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const /** game: 서버 인스턴스와 방 관리 인터페이스. */ game = createGameServer();
