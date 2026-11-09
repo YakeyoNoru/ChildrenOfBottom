@@ -1,3 +1,4 @@
+import { /** isIP: 프록시에서 전달한 주소가 실제 IP 형식인지 검사한다. */ isIP } from 'node:net';
 import { /** randomBytes: 방 코드와 인증 증명에 사용할 암호학적 난수를 생성한다. */ randomBytes, /** createHash: 인증 증명의 SHA-256 해시 계산기를 생성한다. */ createHash, /** timingSafeEqual: 인증 문자열을 타이밍 공격에 강한 방식으로 비교한다. */ timingSafeEqual } from 'node:crypto';
 import { /** createAccountStore: 계정 파일을 읽고 조회·생성·설정 저장 인터페이스를 제공한다. */ createAccountStore, /** defaultSettings: 새 계정에 사용할 기본 설정 생성 함수. */ defaultSettings, /** validateSettings: 설정값이 허용 범위에 있는지 검사하고 저장용 값만 반환한다. */ validateSettings } from './accounts.js';
 const /** random: 인증용 난수 문자열 생성 함수. */ random = /** random: 인증 상태·토큰·코드에 사용할 예측하기 어려운 난수를 만든다. */ () => randomBytes(32).toString('base64url');
@@ -57,8 +58,22 @@ export /** createAuthService: 제공자 로그인·앱 세션·계정 설정 API
     if(req.headers.origin!==base || !equal(req.headers['x-csrf-token'],s.csrf)){error(res,403,'FORBIDDEN');return null;}
     return s;
   }
+  const /** loginClock: 실패 횟수와 잠금 만료를 확인할 시계(밀리초). */ loginClock=options.loginClock??Date.now;
+  const /** loginAttempts: IP별 연속 실패 수와 만료 시각을 보관한다. */ loginAttempts=new Map();
+  /** 운영 프록시의 직접 연결에서만 전달된 접속 IP를 사용한다. */
+  function loginAddress(/** req: 소켓 주소와 프록시 헤더를 검사할 요청. */ req) {
+    const /** peer: 서버에 직접 연결된 주소. */ peer=req.socket.remoteAddress;
+    const /** forwarded: Caddy가 마지막에 붙인 접속 주소. */ forwarded=req.headers['x-forwarded-for']?.split(',').at(-1)?.trim();
+    return publicMemberOrigin&&memberOrigin(req)===publicMemberOrigin&&['127.0.0.1','::1','::ffff:127.0.0.1'].includes(peer)&&isIP(forwarded??'')?forwarded:peer;
+  }
+  /** 잠금 응답에 남은 시간을 초 단위로 안내한다. */
+  function rejectLocked(/** res: HTTP 잠금 응답. */ res, /** remainingMs: 잠금 해제까지 남은 밀리초. */ remainingMs) {
+    res.setHeader('Retry-After',String(Math.ceil(remainingMs/1000)));
+    error(res,429,'LOGIN_LOCKED');
+  }
   const /** cleanup: 만료된 인증 데이터를 제거하는 주기 타이머. */ cleanup=setInterval(/** 등록한 주기에 맞춰 상태 갱신이나 정리 작업을 반복한다. */ ()=>{
     const /** now: 현재 처리 시각(밀리초). */ now=Date.now();for(const /** map: 정리할 인증 데이터 맵. */ map of [states,grants,sessions])for(const /** key: 현재 항목의 식별 키; value: 검사하거나 변환할 현재 값. */ [key,value]of map)if(value.expires<now)map.delete(key);
+    for(const /** address: 접속 IP; entry: 해당 IP의 실패 기록. */ [address,entry] of loginAttempts)if(entry.expiresAt<=loginClock())loginAttempts.delete(address);
   },60000);cleanup.unref();
   return {
     allowsTestLogin,
@@ -71,12 +86,23 @@ export /** createAuthService: 제공자 로그인·앱 세션·계정 설정 API
         if(path==='/api/test-login'&&req.method==='POST'){
           if(!allowsTestLogin(req))return error(res,404,'NOT_FOUND'),true;
           if(req.headers.origin!==memberOrigin(req))return error(res,403,'FORBIDDEN'),true;
-          let /** data: 테스트 로그인 아이디만 담는 요청 본문. */ data;
-          try{data=JSON.parse(await body(req));}catch{return error(res,400,'INVALID_LOGIN'),true;}
-          // 공통 비밀번호 1을 사용하는 동안에는 입력 아이디만 검사하고 비밀번호 필드를 받지 않는다.
-          if(!data||Object.keys(data).length!==1||typeof data.id!=='string'||!/^[a-z0-9@.]{4,20}$/i.test(data.id))return error(res,400,'INVALID_LOGIN'),true;
-          const /** account: 고정 등록 목록에서 조회한 테스트 계정. */ account=testAccounts.get(data.id.toLowerCase());
-          if(!account)return error(res,401,'INVALID_LOGIN'),true;
+          let /** data: 아이디 입력을 담은 요청 본문. */ data;
+          try{data=JSON.parse(await body(req));}catch{data=null;}
+          const /** address: 연속 실패를 묶을 접속 IP. */ address=loginAddress(req);
+          const /** now: 본문 수신을 마친 시각(밀리초). */ now=loginClock();
+          const /** previous: 만료 전인 경우에만 적용할 직전 실패 기록. */ previous=loginAttempts.get(address);
+          if(previous?.locked&&previous.expiresAt>now){rejectLocked(res,previous.expiresAt-now);return true;}
+          const /** valid: 비밀번호 없이 허용된 형식의 아이디만 제출했는지 나타낸다. */ valid=data&&Object.keys(data).length===1&&typeof data.id==='string'&&/^[a-z0-9@.]{4,20}$/i.test(data.id);
+          const /** account: 사전 등록 목록과 일치한 회원. */ account=valid?testAccounts.get(data.id.toLowerCase()):null;
+          if(!account){
+            const /** failures: 성공이나 만료 없이 이어진 로그인 실패 수. */ failures=(previous?.expiresAt>now?previous.failures:0)+1;
+            const /** locked: 세 번째 실패부터 적용할 잠금 여부. */ locked=failures>=3;
+            loginAttempts.set(address,{failures,locked,expiresAt:now+(locked?300000:1800000)});
+            if(locked)rejectLocked(res,300000);
+            else error(res,valid?401:400,'INVALID_LOGIN');
+            return true;
+          }
+          loginAttempts.delete(address);
           sessions.delete(session(req,'web')?.token);
           const /** token: 계정 ID에 연결할 테스트 세션 난수. */ token=random();
           sessions.set(token,{mode:'web',accountId:account.id,csrf:random(),expires:Date.now()+1800000});

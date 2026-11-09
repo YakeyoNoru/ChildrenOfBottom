@@ -9,7 +9,7 @@ import /** WebSocket: 클라이언트 연결 생성 또는 WebSocket 연결 상�
 import { /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증을 제공하는 서버를 생성한다. */ createGameServer } from '../server.js';
 import { /** createAccountStore: 계정 파일을 읽고 조회·생성·설정 저장 인터페이스를 제공한다. */ createAccountStore } from '../auth/accounts.js';
 
-/** setup: 테스트 서버와 정리 작업을 준비해 검증용 인터페이스를 반환한다. */ async function setup(/** t: 테스트 정리·검증 문맥 또는 프레임 시각. */ t, /** configured: 인증 제공자 설정을 테스트에서 활성화할지 여부. */ configured=true, /** testLoginEnabled: 로컬 테스트 로그인을 켤지 여부. */ testLoginEnabled=false, /** baseUrl: 운영 호스트를 재현할 기준 주소. */ baseUrl='https://game.test') {
+/** setup: 테스트 서버와 정리 작업을 준비해 검증용 인터페이스를 반환한다. */ async function setup(/** t: 테스트 정리·검증 문맥 또는 프레임 시각. */ t, /** configured: 인증 제공자 설정을 테스트에서 활성화할지 여부. */ configured=true, /** testLoginEnabled: 로컬 테스트 로그인을 켤지 여부. */ testLoginEnabled=false, /** baseUrl: 운영 호스트를 재현할 기준 주소. */ baseUrl='https://game.test', /** loginClock: 잠금 시간을 앞당겨 확인하는 밀리초 시계. */ loginClock=Date.now) {
   const /** dir: 테스트가 사용하는 임시 저장 폴더. */ dir=await mkdtemp(join(tmpdir(),'subtrpg-auth-')),/** file: 읽거나 저장할 파일 경로. */ file=join(dir,'accounts.json');
   let /** calls: 대체 인증 API 호출 기록. */ calls=[];
   const /** mockFetch: 실제 제공자 통신을 대신하는 테스트 응답 함수. */ mockFetch=/** mockFetch: 실제 인증 제공자 대신 고정 응답을 반환하고 호출을 기록한다. */ async(/** url: 해석하거나 접속할 URL. */ url,/** options: 기본값을 재정의하는 생성·요청 옵션. */ options)=>{
@@ -18,7 +18,7 @@ import { /** createAccountStore: 계정 파일을 읽고 조회·생성·설정 
     if(url.includes('googleapis.com'))return new Response(JSON.stringify({sub:'google-subject',name:'구글유저'}));
     return new Response(JSON.stringify({id:12345,kakao_account:{profile:{nickname:'카카오유저'}}}));
   };
-  const /** game: 서버 인스턴스와 방 관리 인터페이스. */ game=createGameServer({auth:{baseUrl,accountsFile:file,testLoginEnabled,testAccountsFile:join(dir,'test-accounts.json'),providers:configured?{google:{clientId:'google-id',clientSecret:'secret'},kakao:{clientId:'kakao-id',clientSecret:'secret'}}:{},fetch:mockFetch}});
+  const /** game: 서버 인스턴스와 방 관리 인터페이스. */ game=createGameServer({auth:{baseUrl,loginClock,accountsFile:file,testLoginEnabled,testAccountsFile:join(dir,'test-accounts.json'),providers:configured?{google:{clientId:'google-id',clientSecret:'secret'},kakao:{clientId:'kakao-id',clientSecret:'secret'}}:{},fetch:mockFetch}});
   await new Promise(/** r: 비동기 완료 콜백. */ /** 테스트 대역이나 검증에 필요한 현재 작업을 수행한다. */ r=>game.server.listen(0,'127.0.0.1',r));const /** base: 계정 서버 또는 테스트 서버의 기준 주소. */ base='http://127.0.0.1:'+game.server.address().port;
   t.after(/** 현재 비동기 작업의 완료 또는 후속 처리를 수행한다. */ async()=>{await game.close();await rm(dir,{recursive:true,force:true});});
   const /** request: 테스트 서버로 HTTP 요청을 보내는 함수. */ request=/** request: 테스트 서버로 요청을 보내고 자동 리디렉션 없이 응답을 받는다. */ (/** path: 요청 또는 파일의 경로. */ path,/** options: 기본값을 재정의하는 생성·요청 옵션. */ options={})=>fetch(base+path,{redirect:'manual',...options});
@@ -104,6 +104,7 @@ test('local test login accepts only seeded accounts and uses the saved nickname 
   assert.equal((await login('33dot',{Origin:'https://other.test'})).status,403);
   assert.equal((await login('unknown')).status,401);
   assert.equal((await login('abc')).status,400);
+  assert.equal((await login('33dot')).status,200);
   assert.equal((await login('abcd')).status,401);
   assert.equal((await login('33dot!')).status,400);
   assert.equal((await request('/api/register',{method:'POST'})).status,404);
@@ -129,7 +130,8 @@ test('local test login accepts only seeded accounts and uses the saved nickname 
 
 test('public member login allows only the two registered IDs over the configured origin', /** 운영 회원 로그인과 쿠키 정책을 검증한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
   const /** origin: 운영 회원 로그인의 HTTPS 출처. */ origin='https://childrenofbottoms.duckdns.org';
-  const /** base: 격리 서버의 실제 접속 주소. */ {base}=await setup(t,false,false,origin);
+  let /** now: 로그인 잠금 경계를 재현할 시각(밀리초). */ now=0;
+  const /** base: 격리 서버의 실제 접속 주소. */ {base}=await setup(t,false,false,origin,/** 현재 테스트 시각을 읽는다. */ ()=>now);
   /** 운영 호스트 헤더를 보존하면서 격리 서버로 요청을 보낸다. */
   function request(/** path: 테스트할 API 경로. */ path, /** options: HTTP 메서드·헤더·본문. */ options) {
     return new Promise(/** HTTP 응답을 테스트용 Response로 변환한다. */ (/** resolve: 결과를 전달한다. */ resolve, /** reject: 네트워크 오류를 전달한다. */ reject)=>{
@@ -154,4 +156,19 @@ test('public member login allows only the two registered IDs over the configured
   }
   assert.equal((await request('/api/test-login',{method:'POST',headers,body:'{"id":"unknown"}'})).status,401);
   assert.equal((await request('/api/test-login',{method:'POST',headers:{...headers,Origin:'https://other.test'},body:'{"id":"33dot"}'})).status,403);
+  /** Caddy가 전달한 주소별로 로그인 시도를 보낸다. */
+  const attempt=(/** id: 시도할 회원 아이디. */ id, /** ip: 프록시가 확인한 접속 주소. */ ip='192.0.2.1')=>request('/api/test-login',{method:'POST',headers:{...headers,'X-Forwarded-For':ip},body:JSON.stringify({id})});
+  assert.equal((await attempt('unknown')).status,401);
+  assert.equal((await attempt('unknown')).status,401);
+  assert.equal((await attempt('33dot')).status,200);
+  assert.equal((await attempt('unknown')).status,401);
+  assert.equal((await attempt('unknown')).status,401);
+  const /** locked: 세 번째 실패에서 받은 잠금 응답. */ locked=await attempt('unknown');
+  assert.equal(locked.status,429);
+  assert.equal(locked.headers.get('retry-after'),'300');
+  assert.equal((await attempt('noru8294','192.0.2.2')).status,200);
+  now=299999;
+  assert.equal((await attempt('33dot')).status,429);
+  now=300000;
+  assert.equal((await attempt('33dot')).status,200);
 });

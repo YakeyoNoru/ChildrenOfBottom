@@ -83,6 +83,10 @@ async function initializeTestLogin() {
       const /** id: 로그인할 테스트 계정 아이디. */ id=document.getElementById('test-login-id').value;
       const /** response: 테스트 세션 발급 결과. */ response=await fetch('/api/test-login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
       if(response.ok)location.replace('/');
+      else if(response.status===429) {
+        const /** seconds: 서버가 안내한 잠금 해제까지 남은 초. */ seconds=Number(response.headers.get('Retry-After'))||300;
+        feedback.textContent='로그인 시도가 잠겼습니다. 약 '+Math.ceil(seconds/60)+'분 뒤 다시 시도해 주세요.';
+      }
       else feedback.textContent='등록된 아이디를 확인해 주세요.';
     }catch{feedback.textContent='계정 서버에 연결할 수 없습니다.';}
     finally{for(const /** button: 요청이 끝나 다시 사용할 조작 버튼. */ button of buttons)button.disabled=false;}
