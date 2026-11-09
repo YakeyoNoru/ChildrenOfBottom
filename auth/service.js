@@ -18,16 +18,22 @@ export /** createAuthService: 제공자 로그인·앱 세션·계정 설정 API
   if (base && new URL(base).origin !== base) throw Error('PUBLIC_BASE_URL must be an origin without trailing slash');
   const /** store: 게임 계정 조회와 저장 인터페이스. */ store = options.store ?? createAccountStore(options.accountsFile ?? process.env.ACCOUNTS_FILE ?? '.data/accounts.json');
   const /** testLoginEnabled: 로컬 테스트 서버에서만 임시 계정 로그인을 켜는 설정. */ testLoginEnabled=options.testLoginEnabled??(process.env.TEST_ACCOUNT_LOGIN==='1');
-  const /** testStore: 실제 계정과 분리해 테스트 계정을 저장하는 인터페이스. */ testStore=testLoginEnabled?createAccountStore(options.testAccountsFile??'.data/test-accounts.json'):null;
+  const /** publicMemberOrigin: 사전 등록 회원 로그인을 제공하는 운영 HTTPS 주소. */ publicMemberOrigin=base==='https://childrenofbottoms.duckdns.org'?base:null;
+  const /** testStore: 실제 계정과 분리해 테스트 계정을 저장하는 인터페이스. */ testStore=(testLoginEnabled||publicMemberOrigin)?createAccountStore(options.testAccountsFile??'.data/test-accounts.json'):null;
   const /** testAccounts: 가입을 열기 전 서버가 등록하는 두 테스트 계정. */ testAccounts=new Map([
     ['33dot',testStore?.upsert('test','33dot','33')],
     ['noru8294',testStore?.upsert('test','noru8294','노루')],
   ]);
-  /** 로컬 주소로 직접 연결한 요청만 테스트 로그인과 테스트 세션을 사용한다. */
+  /** 운영 도메인 또는 직접 연결한 로컬 테스트 주소에서 사전 등록 회원을 허용한다. */
   function allowsTestLogin(/** req: 주소와 호스트를 검사할 요청. */ req) {
-    return !!testStore&&['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress)&&
+    if(publicMemberOrigin&&req.headers.host===new URL(publicMemberOrigin).host)return true;
+    return testLoginEnabled&&!!testStore&&['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress)&&
       /^(?:localhost|127\.0\.0\.1|\[::1\])(?::[0-9]+)?$/i.test(req.headers.host??'')&&
       !Object.keys(req.headers).some(/** 프록시가 덧붙인 전달 헤더를 찾는다. */ (/** name: 수신 헤더 이름. */ name)=>name==='forwarded'||name.startsWith('x-forwarded-'));
+  }
+  /** 회원 로그인 요청을 보낸 페이지의 허용 출처를 반환한다. */
+  function memberOrigin(/** req: 호스트가 포함된 로그인 또는 로그아웃 요청. */ req) {
+    return publicMemberOrigin&&req.headers.host===new URL(publicMemberOrigin).host?publicMemberOrigin:'http://'+req.headers.host;
   }
   const /** fetcher: 외부 인증 API를 호출하는 함수. */ fetcher = options.fetch ?? fetch;
   const /** credentials: 인증 제공자별 서버 전용 자격 설정. */ credentials = options.providers ?? {
@@ -64,7 +70,7 @@ export /** createAuthService: 제공자 로그인·앱 세션·계정 설정 API
       try {
         if(path==='/api/test-login'&&req.method==='POST'){
           if(!allowsTestLogin(req))return error(res,404,'NOT_FOUND'),true;
-          if(req.headers.origin!=='http://'+req.headers.host)return error(res,403,'FORBIDDEN'),true;
+          if(req.headers.origin!==memberOrigin(req))return error(res,403,'FORBIDDEN'),true;
           let /** data: 테스트 로그인 아이디만 담는 요청 본문. */ data;
           try{data=JSON.parse(await body(req));}catch{return error(res,400,'INVALID_LOGIN'),true;}
           // 공통 비밀번호 1을 사용하는 동안에는 입력 아이디만 검사하고 비밀번호 필드를 받지 않는다.
@@ -74,14 +80,14 @@ export /** createAuthService: 제공자 로그인·앱 세션·계정 설정 API
           sessions.delete(session(req,'web')?.token);
           const /** token: 계정 ID에 연결할 테스트 세션 난수. */ token=random();
           sessions.set(token,{mode:'web',accountId:account.id,csrf:random(),expires:Date.now()+1800000});
-          res.setHeader('Set-Cookie',cookie('subtrpg_test',token,1800));
+          res.setHeader('Set-Cookie',cookie('subtrpg_test',token,1800)+(memberOrigin(req)===publicMemberOrigin?'; Secure':''));
           json(res,200,{account:accountView(account)});return true;
         }
         if(path==='/api/test-logout'&&req.method==='POST'){
           if(!allowsTestLogin(req))return error(res,404,'NOT_FOUND'),true;
           const /** s: 종료할 테스트 세션. */ s=session(req,'web');
-          if(req.headers.origin!=='http://'+req.headers.host||!s||!equal(req.headers['x-csrf-token'],s.csrf))return error(res,403,'FORBIDDEN'),true;
-          sessions.delete(s.token);res.setHeader('Set-Cookie',cookie('subtrpg_test','',0));json(res,200,{ok:true});return true;
+          if(req.headers.origin!==memberOrigin(req)||!s||!equal(req.headers['x-csrf-token'],s.csrf))return error(res,403,'FORBIDDEN'),true;
+          sessions.delete(s.token);res.setHeader('Set-Cookie',cookie('subtrpg_test','',0)+(memberOrigin(req)===publicMemberOrigin?'; Secure':''));json(res,200,{ok:true});return true;
         }
         if(path==='/api/session'&&req.method==='GET'){
           const /** mode: 요청이 사용하는 계정 세션 구분. */ mode=appRequest(req)?'app':'web';
