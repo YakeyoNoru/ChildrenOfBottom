@@ -129,7 +129,7 @@ test('local test login accepts only seeded accounts and uses the saved nickname 
 });
 
 test('public member login allows only the two registered IDs over the configured origin', /** 운영 회원 로그인과 쿠키 정책을 검증한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
-  const /** origin: 운영 회원 로그인의 HTTPS 출처. */ origin='https://childrenofbottoms.duckdns.org';
+  const /** origin: 운영 회원 로그인의 HTTPS 출처. */ origin='https://arena.childrenofbottoms.duckdns.org';
   let /** now: 로그인 잠금 경계를 재현할 시각(밀리초). */ now=0;
   const /** base: 격리 서버의 실제 접속 주소. */ {base}=await setup(t,false,false,origin,/** 현재 테스트 시각을 읽는다. */ ()=>now);
   /** 운영 호스트 헤더를 보존하면서 격리 서버로 요청을 보낸다. */
@@ -145,6 +145,9 @@ test('public member login allows only the two registered IDs over the configured
     });
   }
   const /** headers: 운영 호스트와 동일 출처 요청을 재현하는 헤더. */ headers={Host:new URL(origin).host,Origin:origin};
+  const /** redirect: 기존 북마크로 접속했을 때의 응답. */ redirect=await request('/?source=bookmark',{headers:{Host:'childrenofbottoms.duckdns.org'}});
+  assert.equal(redirect.status,302);
+  assert.equal(redirect.headers.get('location'),origin+'/?source=bookmark');
   assert.match(await (await request('/',{headers})).text(),/<body data-test-login>/);
   for(const /** id: 사전 등록한 두 회원 아이디. */ id of ['33dot','noru8294']){
     const /** response: 비밀번호 입력 없이 발급된 로그인 응답. */ response=await request('/api/test-login',{method:'POST',headers,body:JSON.stringify({id})});

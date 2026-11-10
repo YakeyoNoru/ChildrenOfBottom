@@ -31,6 +31,14 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
   const /** auth: 앱 로그인과 계정 API를 처리하는 인증 서비스. */ auth = createAuthService(authOptions);
   const /** files: 외부에 제공할 정적 파일 경로와 MIME 형식. */ files = { '/pit-map-rules.js': ['pit-map-rules.js','text/javascript'], '/interactions.js': ['interactions.js','text/javascript'], '/minimap.js': ['minimap.js','text/javascript'], '/item-view.js': ['item-view.js','text/javascript'], '/items.js': ['items.js','text/javascript'], '/map-renderer.js': ['map-renderer.js','text/javascript'], '/room-timer.js': ['room-timer.js', 'text/javascript'], '/movement.js': ['movement.js', 'text/javascript'], '/pit-map.html': ['pit-map.html', 'text/html'], '/motion.js': ['motion.js', 'text/javascript'], '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/viewport.js': ['viewport.js', 'text/javascript'], '/client-mode.js': ['client-mode.js', 'text/javascript'], '/app': ['index.html', 'text/html'], '/style.css': ['style.css', 'text/css'] };
   const /** server: 정적 파일과 WebSocket 연결을 제공하는 HTTP 서버. */ server = http.createServer(/** 현재 비동기 작업의 완료 또는 후속 처리를 수행한다. */ async (/** req: 수신한 HTTP 요청. */ req, /** res: HTTP 응답 작성 객체. */ res) => {
+    // 기존 북마크를 새 게임 주소로 이동한다. 운영 주소가 전환된 인스턴스에만 적용한다.
+    if ((authOptions.baseUrl ?? process.env.PUBLIC_BASE_URL) === 'https://arena.childrenofbottoms.duckdns.org'
+        && req.headers.host === 'childrenofbottoms.duckdns.org'
+        && ['GET', 'HEAD'].includes(req.method)) {
+      const /** target: 기존 경로와 쿼리를 유지할 새 게임 주소. */ target = new URL(req.url, 'https://arena.childrenofbottoms.duckdns.org');
+      res.writeHead(302, {Location: 'https://arena.childrenofbottoms.duckdns.org' + target.pathname + target.search, 'Cache-Control': 'no-store'});
+      return res.end();
+    }
     if (await auth.handle(req,res)) return;
     if (req.url === '/health') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end('{"ok":true,"protocolVersion":1}'); }
     const /** pathname: 화면 파일의 버전 쿼리를 제외하고 공개 목록과 대조할 요청 경로. */ pathname = new URL(req.url,'http://localhost').pathname;

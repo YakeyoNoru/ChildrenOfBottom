@@ -19,7 +19,7 @@ export /** createAuthService: 제공자 로그인·앱 세션·계정 설정 API
   if (base && new URL(base).origin !== base) throw Error('PUBLIC_BASE_URL must be an origin without trailing slash');
   const /** store: 게임 계정 조회와 저장 인터페이스. */ store = options.store ?? createAccountStore(options.accountsFile ?? process.env.ACCOUNTS_FILE ?? '.data/accounts.json');
   const /** testLoginEnabled: 로컬 테스트 서버에서만 임시 계정 로그인을 켜는 설정. */ testLoginEnabled=options.testLoginEnabled??(process.env.TEST_ACCOUNT_LOGIN==='1');
-  const /** publicMemberOrigin: 사전 등록 회원 로그인을 제공하는 운영 HTTPS 주소. */ publicMemberOrigin=base==='https://childrenofbottoms.duckdns.org'?base:null;
+  const /** publicMemberOrigin: 사전 등록 회원 로그인을 제공하는 운영 HTTPS 주소. */ publicMemberOrigin=base==='https://arena.childrenofbottoms.duckdns.org'?base:null;
   const /** testStore: 실제 계정과 분리해 테스트 계정을 저장하는 인터페이스. */ testStore=(testLoginEnabled||publicMemberOrigin)?createAccountStore(options.testAccountsFile??'.data/test-accounts.json'):null;
   const /** testAccounts: 가입을 열기 전 서버가 등록하는 두 테스트 계정. */ testAccounts=new Map([
     ['33dot',testStore?.upsert('test','33dot','33')],
