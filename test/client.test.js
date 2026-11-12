@@ -123,10 +123,12 @@ test('object HUD colors, left level, effective health ratio and conditional skil
     run(`draws=[];drawObjectHud(hud,${JSON.stringify({id,status:{objectType,level:3,currentHealth:5,maxHealth:10,bonusHealth:10,maxSkillResource:0,bonusSkillResource:0,currentSkillResource:0}})},100,100,'me')`);
     assert.equal(run('draws[1].color'),color);assert.equal(run('draws[1].w'),16);
     assert.equal(run('draws[2].text'),'Lv.3');assert.equal(run('draws[2].align'),'right');assert.ok(run('draws[2].x')<68);
-    assert.equal(run('draws.length'),objectType==='player'?6:3);
+    assert.equal(run('draws.length'),id==='me'?6:3);
   }
   run(`draws=[];drawObjectHud(hud,{id:'me',status:{objectType:'player',level:1,currentHealth:10,effective:{maxHealth:10,maxSkillResource:5},currentSkillResource:2.5}},100,100,'me')`);
   assert.equal(run('draws.at(-1).text'),'2.5 / 5');assert.ok(run('draws.at(-1).y')>100);
+  run(`draws=[];drawObjectHud(hud,{id:'other',status:{objectType:'player',level:3,currentHealth:10,effective:{maxHealth:20,maxSkillResource:5},currentSkillResource:2,activeEffects:[{code:'BAS0005'}]}},100,100,'me')`);
+  assert.equal(run('draws.length'),4);assert.equal(run('draws.at(-1).text'),'러닝크루');
 });
 
 test('web portrait resize shrinks fixed 19:10 frame, keeps input active and restores landscape',/** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ ()=>{

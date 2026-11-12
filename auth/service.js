@@ -129,6 +129,20 @@ export /** createAuthService: 제공자 로그인·앱 세션·계정 설정 API
           const /** s: 조회한 앱 세션. */ s=authorize(req,res);if(!s)return true;sessions.delete(s.token);
           res.setHeader('Set-Cookie',cookie('subtrpg_app','',0));json(res,200,{ok:true});return true;
         }
+        if(path==='/auth/unity-session'&&req.method==='POST'){
+          const /** data: Unity가 HTTPS 본문으로 보낸 인증 증명. */ data=new URLSearchParams(await body(req));
+          const /** verifier: 브라우저 URL에 공개하지 않은 Unity의 인증 난수. */ verifier=data.get('verifier')||'';
+          if(!/^[A-Za-z0-9_-]{43}$/.test(verifier))return error(res,400,'INVALID_APP_GRANT'),true;
+          const /** key: 해당 Unity 실행이 시작한 인증의 서버 저장 키. */ key='unity:'+hash(verifier);
+          const /** grant: 브라우저 인증이 끝났을 때만 생성되는 일회성 결과. */ grant=grants.get(key);
+          if(!grant||grant.expires<Date.now())return json(res,202,{pending:true}),true;
+          grants.delete(key);
+          if(!grant.accountId)return error(res,400,'LOGIN_CANCELLED'),true;
+          const /** token: Unity 게임 소켓에서 쓸 앱 로그인 쿠키 값. */ token=random();
+          sessions.set(token,{accountId:grant.accountId,csrf:random(),expires:Date.now()+30*86400000});
+          res.setHeader('Set-Cookie',cookie('subtrpg_app',token,30*86400));
+          json(res,200,{ok:true});return true;
+        }
         if(path==='/auth/app-session'&&req.method==='POST'){
           const /** data: 전달하거나 해석한 데이터. */ data=new URLSearchParams(await body(req));const /** grant: 앱 세션으로 교환할 일회성 로그인 증명. */ grant=grants.get(data.get('code'));
           if(!grant||grant.expires<Date.now()||!/^[A-Za-z0-9_-]{43,128}$/.test(data.get('verifier')||'')||!equal(hash(data.get('verifier')),grant.challenge))return error(res,400,'INVALID_APP_GRANT'),true;
@@ -144,9 +158,10 @@ export /** createAuthService: 제공자 로그인·앱 세션·계정 설정 API
         if(action==='start'&&req.method==='GET'){
           const /** challenge: 앱 인증 증명 검증용 해시. */ challenge=url.searchParams.get('challenge');
           if(!/^[A-Za-z0-9_-]{43}$/.test(challenge||''))return error(res,400,'OPEN_LOGIN_FROM_APK'),true;
+          const /** unity: 브라우저 복귀 대신 Unity가 HTTPS로 인증을 완료하는 Google 흐름인지 표시한다. */ unity=name==='google'&&url.searchParams.get('return')==='unity';
           if(states.size>=1000)return error(res,429,'TRY_LATER'),true;
           const /** state: 요청 위조를 막는 OAuth 상태 난수. */ state=random(),/** binding: 인증 시작 브라우저를 묶는 쿠키 난수. */ binding=random(),/** verifier: 인증 코드를 안전하게 교환하기 위한 원본 증명. */ verifier=random();
-          states.set(state,{provider:name,binding,challenge,verifier,expires:Date.now()+10*60000});
+          states.set(state,{provider:name,binding,challenge,verifier,unity,expires:Date.now()+10*60000});
           const /** target: 현재 처리할 대상 또는 이동할 URL. */ target=new URL(p.authorize);
           for(const /** k: 인증 URL에 추가할 매개변수 이름; v: 인증 URL에 추가할 매개변수 값. */ [k,v]of Object.entries({client_id:c.clientId,redirect_uri:redirectUri,response_type:'code',state,...(p.scope?{scope:p.scope}:{})}))target.searchParams.set(k,v);
           if(name==='google'){target.searchParams.set('code_challenge',hash(verifier));target.searchParams.set('code_challenge_method','S256');}
@@ -156,7 +171,10 @@ export /** createAuthService: 제공자 로그인·앱 세션·계정 설정 API
           const /** state: 요청 위조를 막는 OAuth 상태 난수. */ state=url.searchParams.get('state'), /** flow: 서버에 보관한 OAuth 진행 정보. */ flow=states.get(state);
           if(!flow||flow.provider!==name||flow.expires<Date.now()||!equal(flow.binding,cookies(req).oauth_binding))return error(res,400,'INVALID_OAUTH_STATE'),true;
           states.delete(state);
-          if(url.searchParams.has('error')||!url.searchParams.get('code'))return error(res,400,'LOGIN_CANCELLED'),true;
+          if(url.searchParams.has('error')||!url.searchParams.get('code')){
+            if(flow.unity)grants.set('unity:'+flow.challenge,{accountId:null,expires:Date.now()+60000});
+            return error(res,400,'LOGIN_CANCELLED'),true;
+          }
           const /** response: HTTP 요청에 대한 응답. */ response=await fetcher(p.token,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'authorization_code',client_id:c.clientId,client_secret:c.clientSecret,redirect_uri:redirectUri,code:url.searchParams.get('code'),...(name==='google'?{code_verifier:flow.verifier}:{})}),signal:AbortSignal.timeout(15000)});
           if(!response.ok)throw Error('PROVIDER_FAILED');
           const /** token: 세션 또는 인증 응답의 토큰. */ token=await response.json();if(!token.access_token)throw Error('PROVIDER_FAILED');
@@ -166,6 +184,12 @@ export /** createAuthService: 제공자 로그인·앱 세션·계정 설정 API
           if(!subject||!['string','number'].includes(typeof subject))throw Error('INVALID_IDENTITY');
           const /** displayName: 게임에서 표시할 계정 이름. */ displayName=name==='google'?user.name:user.kakao_account?.profile?.nickname;
           const /** account: 현재 처리하는 게임 계정. */ account=store.upsert(name,String(subject),displayName);
+          if(flow.unity){
+            grants.set('unity:'+flow.challenge,{accountId:account.id,expires:Date.now()+60000});
+            res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Set-Cookie':cookie('oauth_binding','',0)});
+            res.end('<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Children of Bottom</title><h1>Google 인증을 완료했습니다.</h1><p>게임으로 돌아가 계속 진행하세요.</p></html>');
+            return true;
+          }
           const /** code: 앱 복귀 시 교환할 일회성 코드. */ code=random();grants.set(code,{accountId:account.id,challenge:flow.challenge,expires:Date.now()+60000});
           res.writeHead(302,{Location:'subtrpg://auth/callback?code='+code,'Cache-Control':'no-store','Set-Cookie':cookie('oauth_binding','',0)});res.end();return true;
         }

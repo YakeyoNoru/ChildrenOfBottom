@@ -1,0 +1,9 @@
+<linker>
+  <assembly fullname="Assembly-CSharp">
+    <!-- IL2CPP에서 JSON 역직렬화기가 리플렉션으로 읽는 메시지와 설정 필드를 보존한다. -->
+    <type fullname="ChildrenOfBottom.PortProtocol/*" preserve="all" />
+    <type fullname="ChildrenOfBottom.PortConnection/Settings" preserve="all" />
+    <type fullname="ChildrenOfBottom.PortConnection/LoginAvailability" preserve="all" />
+    <type fullname="ChildrenOfBottom.PortConnection/Providers" preserve="all" />
+  </assembly>
+</linker>

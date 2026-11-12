@@ -8,6 +8,14 @@ globalThis.PoisonRules=Object.freeze({
     if(height===3&&minute>=7)return 10+(minute-6)*3;
     return 0;
   },
+  /** 서버 시각과 플레이어의 현재 층으로 독기 1회 차감량을 조회한다. */
+  playerDamage(/** room: 게임 시작 시각과 지도. */ room,/** player: 서버가 확정한 위치와 생존 상태. */ player,/** now: 서버 게임 시각(ms). */ now){
+    if(room.phase!=='started'||!room.map||!Number.isFinite(room.gameStartedAt)||player.status.objectType!=='player'||player.status.state!=='alive')return 0;
+    const /** elapsed: 실제 게임 시작 이후 경과 시간(ms). */ elapsed=now-room.gameStartedAt;
+    if(elapsed<180000)return 0;
+    const /** height: 현재 중심이 위치한 층. */ height=globalThis.PitMapRules.heightAt(room.map,player.x,player.y);
+    return this.damage(height,elapsed);
+  },
   /** 게임 시작에 고정한 3초 박자에서 현재 층의 생존 플레이어 체력을 한 번 차감한다. */
   tick(/** room: 게임 시작 시각·지도·참가자를 가진 서버 방. */ room,/** now: 서버 게임 시계(ms). */ now){
     if(room.phase!=='started'||!room.map||!Number.isFinite(room.gameStartedAt))return;
@@ -17,9 +25,7 @@ globalThis.PoisonRules=Object.freeze({
     room.poisonPulse=pulse;
     // 서버가 오래 멈췄다면 과거 위치를 알 수 없으므로 누락된 피해를 한꺼번에 소급하지 않는다.
     for(const /** player: 방 참가 플레이어. */ player of room.players.values()){
-      if(player.status.objectType!=='player'||player.status.state!=='alive')continue;
-      const /** height: 현재 중심이 위치한 층. */ height=globalThis.PitMapRules.heightAt(room.map,player.x,player.y);
-      const /** damage: 방어력과 무관한 이번 직접 차감량. */ damage=this.damage(height,elapsed);
+      const /** damage: 방어력과 무관한 이번 직접 차감량. */ damage=this.playerDamage(room,player,now);
       if(damage<=0)continue;
       // 독기도 실제 체력 피해이므로 자연 회복 대기를 초기화한다.
       player.status.lastDamageAt=now;player.status.healthRegenNextAt=now+5000;

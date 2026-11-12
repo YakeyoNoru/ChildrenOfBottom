@@ -63,12 +63,32 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
     ws.terminate();
   }
 
+  const /** stateQueueLimit: 주기 상태 전송을 잠시 중단하는 대기 바이트 수. */ stateQueueLimit = 64 * 1024;
+  const /** controlQueueLimit: 초기 전체 상태나 결과 등 필수 메시지 전송을 허용하는 최대 대기 바이트 수. */ controlQueueLimit = 1024 * 1024;
+  const /** stalledStateMs: 주기 상태 대기열이 내려가지 않는 연결을 종료하기까지의 시간(ms). */ stalledStateMs = 5000;
+
   const /** send: 버전과 메시지 유형을 붙여 송신하는 함수. */ send = /** send: 메시지 종류와 프로토콜 버전을 붙여 현재 연결로 전송한다. */ (/** ws: 현재 처리 중인 WebSocket 연결. */ ws, /** type: 처리하거나 기다릴 메시지 또는 이벤트 유형. */ type, /** data: 전달하거나 해석한 데이터. */ data = {}) => {
-    if (ws.readyState === WebSocket.OPEN) {
-      if (ws.bufferedAmount > 65536) return terminateSocket(ws, 'send_backpressure', {messageType: type, limitBytes: 65536});
-      ws.send(JSON.stringify({ v: 1, type, ...data }));
+    if (ws.readyState !== WebSocket.OPEN) return false;
+    if (ws.bufferedAmount > controlQueueLimit) {
+      terminateSocket(ws, 'send_backpressure', {messageType: type, limitBytes: controlQueueLimit});
+      return false;
     }
+    ws.send(JSON.stringify({ v: 1, type, ...data }));
+    return true;
   };
+  /** 느린 연결의 오래된 틱을 건너뛰고 다음 전송에서 전체 기준 상태를 다시 보낸다. */
+  function canSendGameState(/** ws: 틱을 받을 연결. */ ws, /** now: 경과 시간을 재는 단조 시각(ms). */ now) {
+    if (ws.readyState !== WebSocket.OPEN) return false;
+    if (ws.bufferedAmount <= stateQueueLimit) {
+      ws.stateBackpressureSince = undefined; // 이번 연결의 대기열이 다시 낮아져 적체 시간을 초기화한다.
+      return true;
+    }
+    ws.stateBackpressureSince ??= now; // 상태 전송을 건너뛰기 시작한 단조 시각(ms)이다.
+    ws.needsFullGameState = true; // 건너뛴 개체·아이템 변경분을 다음 전체 목록으로 복구한다.
+    if (now - ws.stateBackpressureSince >= stalledStateMs)
+      terminateSocket(ws, 'send_backpressure', {messageType:'game.state',limitBytes:stateQueueLimit,stalledMs:now-ws.stateBackpressureSince});
+    return false;
+  }
   const /** objectSnapshot: 개체를 전송용 상태로 복사하는 함수. */ objectSnapshot = /** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** objectSnapshot: 개체의 최종 수치를 계산하고 전송 가능한 상태만 복사한다. */ p => {
     updateSkillCooldowns(p);
     const /** effective: 추가 수치를 합산한 최종 스테이터스. */ effective = normalizeVitals(p.status);
@@ -81,26 +101,55 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
     // 대상 참조는 100밀리초 주기의 서버 시뮬레이션에서 갱신한다.
     /** room.snapshotSequence: 방별 상태 전송 순번. */ room.snapshotSequence=(room.snapshotSequence??0)+1;
     /** room.snapshotTime: 시계 역행 시에도 감소하지 않는 상태 생성 시각(ms). */ room.snapshotTime=Math.max(room.snapshotTime??0,Date.now());
+    const /** now: 방 타이머와 독기 노출을 함께 조회할 서버 게임 시각(ms). */ now=roomClock();
     return {
       snapshotSequence:room.snapshotSequence,serverTime:room.snapshotTime,
       ...(includeMap?{skillCatalog:skills}:{}),
       stones:(room.stones??[]).map(/** 화면 표시용 투사체 좌표만 전송한다. */ (/** stone: 비행 중인 돌. */ stone)=>({id:stone.id,x:stone.x,y:stone.y})),
-      ...(includeMap&&room.map?{map:room.map}:{}), mapId:room.map?.id??null, private:room.private??false,code: room.code, hostId: room.hostId, phase: room.phase, maxPlayers:MAX_PLAYERS, timer:globalThis.RoomTimerRules.snapshot(room,roomClock()),
-      players: [...room.players.values()].map(/** p: 현재 처리하는 플레이어 또는 검증 개체. */ /** 각 항목을 현재 계산에 필요한 값으로 변환한다. */ p => ({ ...objectSnapshot(p), ready: p.ready })),
+      ...(includeMap&&room.map?{map:room.map}:{}), mapId:room.map?.id??null, private:room.private??false,code: room.code, hostId: room.hostId, phase: room.phase, maxPlayers:MAX_PLAYERS, timer:globalThis.RoomTimerRules.snapshot(room,now),
+      players: [...room.players.values()].map(/** 플레이어 상태와 현재 위치의 독기 차감량을 전송한다. */ (/** p: 방 참가자. */ p) => ({ ...objectSnapshot(p), ready: p.ready, poisonDamage:globalThis.PoisonRules.playerDamage(room,p,now) })),
       objects: objects.map(objectSnapshot),
       ...(includeMap?{items:[...(room.items??new Map()).values()]}:{itemChanges:room.itemChanges}),
       skillEffects: (room.skillEffects ?? []).map(/** effect: 시전 위치·피해 결과·표시 만료 시각을 담은 기술 효과. */ /** 각 항목을 현재 계산에 필요한 값으로 변환한다. */ effect => skillSnapshot(effect)),
     };
   };
+  /** 화면에 표시할 상대 상태만 뽑으며 원본 스테이터스나 계정 식별자는 공개하지 않는다. */
+  function publicPlayers(/** room: 공개할 활성 효과를 확인할 방. */ room, /** state: 송신 전 공통 스냅샷. */ state) {
+    const /** views: 참가자 ID별 공개 레코드. */ views = new Map();
+    for (const /** player: 공통 스냅샷에 담긴 참가자. */ player of state.players) {
+      const /** source: 활성 스킬 종료 시각을 가진 서버 원본. */ source = room.players.get(player.id);
+      const /** activeEffects: 상대 화면에 공개하기로 한 현재 효과 목록. */ activeEffects = [];
+      if (source.sprintUntil > state.serverTime) activeEffects.push({code:'BAS0005',expiresAt:source.sprintUntil});
+      if (source.dashStrike) activeEffects.push({code:source.dashStrike.hit.code});
+      if (player.status.stunned) activeEffects.push({code:'stunned'});
+      views.set(player.id,{
+        id:player.id,name:player.name,x:player.x,y:player.y,facing:player.facing,action:player.action,
+        ready:player.ready,
+        status:{objectType:'player',state:player.status.state,level:player.status.level,
+          currentHealth:player.status.currentHealth,effective:{maxHealth:player.status.effective.maxHealth},activeEffects}
+      });
+    }
+    return views;
+  }
+  /** 수신자 본인에게만 전체 상태를 보내고 전체 개체 목록에서도 같은 공개 범위를 적용한다. */
+  function snapshotFor(/** state: 전송할 전체 또는 변경 스냅샷. */ state, /** views: 참가자 ID별 공개 레코드. */ views, /** ownId: 수신 참가자 식별자. */ ownId) {
+    /** project: 상대 플레이어 레코드만 공개 형식으로 바꾼다. */
+    const project = (/** entry: 현재 송신할 개체 레코드. */ entry) =>
+      entry.id === ownId ? entry : views.get(entry.id) ?? entry;
+    return {...state,players:state.players.map(project),objects:state.objects?.map(project)};
+  }
   const /** baselines: 방별로 직전에 보낸 비플레이어 비교 기준. */ baselines = new WeakMap();
   /** 전체 방 상태를 보내고 변경 전송의 기준을 새로 잡는다. */
   function broadcast(/** room: 전체 상태를 보낼 방. */ room) {
     const /** state: 방장 변경·입장·재접속 시 보내는 전체 상태. */ state = snapshot(room);
+    const /** views: 수신자별로 재사용하는 상대 공개 상태. */ views = publicPlayers(room,state);
     const /** baseline: 이 전체 상태를 받은 접속자의 변경 전송 기준. */ baseline = [...room.players.values()].some(/** 변경 전송 지원 여부를 확인한다. */ (/** player: 방 참가자. */ player) => player.ws.compactObjects) ? objectBaseline(state.objects) : null;
     baselines.set(room, baseline);
     for (const /** player: 전체 방 상태 수신자. */ player of room.players.values()) {
-      send(player.ws, 'room.state', {room: state});
-      player.ws.objectBaseline = baseline;
+      if (send(player.ws, 'room.state', {room: snapshotFor(state,views,player.id)})) {
+        player.ws.objectBaseline = baseline;
+        player.ws.needsFullGameState = false;
+      }
     }
   }
   /** 시간 만료 시 전원을 방에서 분리하고 방 데이터·효과를 정리한다. 소켓 연결 자체는 유지한다. */
@@ -327,13 +376,13 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
         const /** player: 리롤을 요청한 현재 참가자. */ player=room?.players.get(ws.id);
         if(room?.phase!=='started'||player?.status.state!==LifeState.ALIVE)return fail('INVALID_SKILL','게임 중에만 리롤할 수 있습니다.');
         if(!rerollSkills(player.status))return fail('INVALID_SKILL','리롤에 필요한 스킬포인트가 부족합니다.');
-        broadcast(room);
+        // 다음 50ms 게임 상태에 새 손패를 포함하고 이번 응답은 공통 ack 경로로 보낸다.
       } else if (m.type === 'game.skill.buy' || m.type === 'game.skill.equip') {
         const /** player: 현재 게임에서 기술을 구매하거나 장착할 참가자. */ player=room?.players.get(ws.id);
         if(room?.phase!=='started'||player?.status.state!==LifeState.ALIVE||typeof m.code!=='string')return fail('INVALID_SKILL','게임 중에만 기술을 구매하거나 장착할 수 있습니다.');
         const /** applied: 서버에서 구매 또는 장착을 승인했는지 여부. */ applied=m.type==='game.skill.buy'?buySkill(player,m.code,Date.now()):equipSkill(player,m.code);
         if(!applied)return fail('INVALID_SKILL','기술 카드, 포인트 또는 장착 조건을 확인해 주세요.');
-        broadcast(room);
+        // 변경된 기술과 포인트는 다음 정규 게임 상태에서 본인에게 전달한다.
       } else if (m.type === 'game.cast') {
         if (!room) return fail('NOT_IN_ROOM', '참여 중인 방이 없습니다.');
         if (room.phase !== 'started') return fail('GAME_NOT_STARTED', '게임 시작 후 사용할 수 있습니다.');
@@ -451,15 +500,27 @@ export /** createGameServer: 방·게임 시뮬레이션·정적 파일·인증�
       if(finished&&room.players.size)broadcast(room);
       tickExits(room,roomClock());
       room.itemChanges=globalThis.ItemRules.tick(room.items??new Map(),objects,now,gainExperience);
+      const /** sendAt: 연결별 송신 적체 시간을 확인하는 단조 시각(ms). */ sendAt = performance.now();
+      const /** recipients: 이번 틱을 받을 수 있는 참가자. */ recipients = [...room.players.values()].filter(
+        /** 대기열이 내려간 연결만 선택한다. */ (/** player: 상태 수신 후보. */ player) => canSendGameState(player.ws,sendAt));
+      if (!recipients.length) continue;
       const /** state: 현재 상태 스냅샷. */ state = snapshot(room,false);
+      const /** views: 전체·변경 전송에 공통으로 쓰는 상대 공개 상태. */ views = publicPlayers(room,state);
       const /** previous: 직전 상태를 받은 접속자를 식별하는 기준. */ previous = baselines.get(room);
       const /** compact: 변경 전송을 요청한 참가자가 있는지 나타낸다. */ compact = [...room.players.values()].some(/** 전송 형식을 확인한다. */ (/** player: 방 참가자. */ player) => player.ws.compactObjects);
       const /** current: 이번 틱 비플레이어 상태의 복사본. */ current = compact ? objectBaseline(state.objects) : null;
       const /** delta: 모든 변경 전송 참가자가 공유할 이번 틱의 변경분. */ delta = current && previous ? objectChanges(previous, current) : null;
       const /** reduced: 플레이어와 아이템은 기존 자료를 유지한 경량 상태. */ reduced = delta ? {...state, objects: undefined, objectChanges: delta} : null;
-      for (const /** player: 이번 틱 상태 수신자. */ player of room.players.values()) {
-        send(player.ws, 'game.state', {room: player.ws.compactObjects && previous === player.ws.objectBaseline && reduced ? reduced : state});
-        player.ws.objectBaseline = current;
+      let /** recovery: 건너뛴 틱의 아이템 변경까지 복구하는 전체 상태. */ recovery;
+      for (const /** player: 이번 틱 상태 수신자. */ player of recipients) {
+        if (player.ws.needsFullGameState)
+          recovery ??= {...state,itemChanges:undefined,items:[...(room.items?.values()??[])]};
+        const /** update: 이 접속자의 기준에 맞는 복구·변경·전체 상태. */ update = player.ws.needsFullGameState ? recovery :
+          player.ws.compactObjects && previous === player.ws.objectBaseline && reduced ? reduced : state;
+        if (send(player.ws, 'game.state', {room: snapshotFor(update,views,player.id)})) {
+          player.ws.objectBaseline = current;
+          player.ws.needsFullGameState = false;
+        }
       }
       baselines.set(room, current);
     }

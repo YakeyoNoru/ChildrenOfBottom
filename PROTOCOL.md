@@ -197,9 +197,17 @@ A/B/C의 재사용 대기는 시전자별 `skillCooldowns[slot]`에 다음 사�
 
 `game.skill.reroll`은 빈 손패에서 무료로 드로우하고, 손패가 있으면 무료 리롤 1회를 우선 사용하거나 1 SP를 사용합니다. 서버는 이전 손패를 묘지로 옮기고, 덱이 손패최대수보다 적으면 묘지를 덱에 합친 뒤 남은 카드에서 무작위로 뽑습니다. 구매창은 갱신된 서버 손패를 표시합니다.
 
+## 독기 표시
+
+`players[].poisonDamage`는 현재 서버 위치에서 독기 한 박자(3초)당 적용되는 체력 차감량이다. 적용되지 않으면 0이다. 표시용이며 클라이언트는 서버 스테이터스의 체력을 그대로 사용한다.
+
 ## 비플레이어 개체 변경 전송
 
 WebSocket URL에 objects=delta1을 지정한 클라이언트는 진행 중 game.state의 objects 대신 objectChanges를 받을 수 있다. room.state 또는 objects가 포함된 game.state는 전체 기준 상태다. 이전 기준을 받지 않은 연결은 전체 game.state를 먼저 받는다.
+
+연결의 송신 대기량이 64 KiB를 넘으면 주기 `game.state`를 건너뛴다. 대기열이 낮아지면 최신 전체 `objects`와 `items`를 담은 `game.state`로 다시 동기화한다. 이 동안에도 결과와 명령 응답 같은 필수 메시지는 보낼 수 있다. 틱 전송 적체가 5초간 지속되거나 필수 메시지 전송 시 대기량이 1 MiB를 넘으면 연결을 종료한다.
+
+서버는 수신자 본인에게 전체 플레이어 상태를 보내고, 다른 플레이어에게는 화면 표시용 개체 ID·이름·좌표·방향·행동·준비 여부와 생존 상태, 현재 체력, 최종 최대 체력(`status.effective.maxHealth`), 레벨, 공개 활성 효과(`status.activeEffects`)만 보낸다. 이 규칙은 `players`와 전체 `objects`에 모두 적용한다. 공개 활성 효과는 코드와 필요한 경우 서버 기준 만료 시각(ms)을 제공한다. 리롤·구매·장착 성공은 `ack`로 응답하고 바뀐 본인 기술 상태는 다음 `game.state`에 포함한다.
 
 - players는 전체 플레이어 상태를 유지한다. 변경 전송에서 objects의 플레이어 복사본은 생략하며 화면에서 players를 월드 목록에 합친다.
 - 몬스터, NPC, 사물의 added는 개체 전체 자료, updated는 ID와 fields 및 status의 변경, removed는 제거 ID다. fields와 status는 각각 set과 unset을 포함하고 변경이 없으면 null이다. 위협 목록 등의 중첩 자료는 바뀔 때 필드 단위로 교체한다.

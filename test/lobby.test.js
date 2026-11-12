@@ -10,7 +10,11 @@ async function waitFor(/** accept: 서버에 반영됐는지 검사할 조건. *
 }
 
 test('players can buy a skill card through the game socket and equip the starting skill again',/** 실제 서버 메시지로 구매·장착과 부족한 포인트 거절을 확인한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
- const /** a: 구매자 소켓; rooms: 방 목록; code: 검증할 방 번호. */ {a,rooms,code}=await startedPair(t);
+ const /** a: 구매자 소켓; b: 상대 수신자; rooms: 방 목록; code: 검증할 방 번호. */ {a,b,rooms,code}=await startedPair(t,{compactObjects:true});
+ let /** fullUpdates: 게임 시작 후 수신한 전체 방 스냅샷 수. */ fullUpdates=0;
+ a.ws.on('message',/** 리롤 중 전체 방 상태가 다시 전송되는지 기록한다. */ (/** raw: 서버 메시지 원문. */ raw)=>{
+  if(JSON.parse(raw).type==='room.state')fullUpdates++;
+ });
  const /** player: 구매 요청으로 변경할 서버 참가자. */ player=rooms.get(code).players.get(a.id);
  assert.equal(player.status.skillDeckCode.length,17);
  assert.equal(player.status.handSkillCode.length,3);
@@ -36,6 +40,20 @@ test('players can buy a skill card through the game socket and equip the startin
  assert.equal(player.status.skillPoints,0);
  await a.command('game.skill.equip',{code:'BAS0001'});
  assert.equal(player.status.skillA,'BAS0001');
+ let /** state: 구매·장착 결과가 반영된 수신 게임 스냅샷. */ state;
+ do{state=(await a.next('game.state')).room;}while(!state.players.some(/** 본인 기술 상태가 동기화됐는지 확인한다. */ (/** entry: 수신 참가자. */ entry)=>entry.id===a.id&&entry.status.ownedSkills?.BAS0004===1&&entry.status.skillA==='BAS0001'));
+ assert.equal(fullUpdates,0);
+ const /** expiresAt: 서버가 러닝크루 효과를 종료할 시각(ms). */ expiresAt=Date.now()+5000;
+ player.sprintUntil=expiresAt;
+ let /** opponent: 상대 연결의 변경 스냅샷에 담긴 구매자 공개 상태. */ opponent;
+ do{
+  state=(await b.next('game.state')).room;
+  opponent=state.players.find(/** 상대 화면에서 구매자의 상태를 찾는다. */ (/** entry: 수신 참가자. */ entry)=>entry.id===a.id).status;
+ }while(!opponent.activeEffects.length);
+ assert.ok(state.objectChanges);
+ assert.deepEqual(opponent.activeEffects,[{code:'BAS0005',expiresAt}]);
+ assert.equal(opponent.ownedSkills,undefined);
+ assert.equal(opponent.skillA,undefined);
 });
 
 test('PvP final blow synchronizes killer rewards and preserves the victim result points',/** 실제 기술 요청부터 처치 보상·사망 점수화면·최신 상태 전송까지 검증한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
@@ -50,6 +68,37 @@ test('PvP final blow synchronizes killer rewards and preserves the victim result
  let /** state: 처치 후 보상을 포함하는 최신 수신 상태. */ state;
  do{state=(await a.next('game.state')).room;}while(state.players.find(/** 처치자 수치를 찾는다. */ (/** player: 수신 참가자. */ player)=>player.id===a.id)?.status.competitionPoints!==50);
  assert.equal(state.players[0].status.currentExperience,70);assert.equal(state.players.length,1);
+});
+
+test('a queued world snapshot skips stale ticks and restores objects and items after draining',/** 첫 틱에 큰 상태가 대기 중인 상황을 재현하고 한 연결만 복구하는지 확인한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
+ const /** a: 송신 적체를 재현할 참가자; b: 정상 참가자; rooms: 서버 방 목록; code: 검증할 방 번호. */ {a,b,rooms,code}=await startedPair(t,{compactObjects:true});
+ const /** room: 실제 게임 방. */ room=rooms.get(code);
+ const /** ws: 느린 수신자를 담당하는 서버 소켓. */ ws=room.players.get(a.id).ws;
+ const /** itemId: 건너뛴 틱 동안 제거할 기존 아이템 ID. */ itemId=room.items.keys().next().value;
+ assert.ok(itemId);
+ Object.defineProperty(ws,'bufferedAmount',{configurable:true,value:327461});
+ try{
+  await waitFor(/** 서버가 적체 연결을 복구 대상으로 표시할 때까지 기다린다. */ ()=>ws.needsFullGameState===true);
+  const /** sequence: 적체 판정 이후 정상 연결이 넘어야 할 틱 순번. */ sequence=room.snapshotSequence;
+  const /** removed: 적체 중 비플레이어 목록에서 지울 개체 ID. */ removed=room.objects.keys().next().value;
+  assert.ok(removed);
+  room.objects.delete(removed);
+  room.items.delete(itemId);
+  let /** live: 정상 연결이 받은 최신 틱. */ live;
+  do{live=(await b.next('game.state')).room;}while(live.snapshotSequence<=sequence);
+  assert.ok(live.objectChanges);
+  assert.equal((await a.command('room.list',{},'room.list')).type,'room.list');
+  assert.equal(a.ws.readyState,WebSocket.OPEN);
+  delete ws.bufferedAmount;
+  let /** restored: 대기열이 비었을 때 받은 전체 복구 상태. */ restored;
+  do{restored=(await a.next('game.state')).room;}while(!restored.items);
+  assert.equal(restored.objectChanges,undefined);
+  assert.ok(restored.objects.every(/** 제거된 개체가 복구 상태에 없는지 확인한다. */ (/** entry: 복구한 개체. */ entry)=>entry.id!==removed));
+  assert.ok(restored.items.every(/** 제거된 아이템이 복구 상태에 없는지 확인한다. */ (/** entry: 복구한 아이템. */ entry)=>entry.id!==itemId));
+  assert.ok((await a.next('game.state')).room.objectChanges);
+ }finally{
+  delete ws.bufferedAmount;
+ }
 });
 
 test('timed exit NPCs use shared Y/N confirmation and disappear atomically for one player',/** 실제 6분·8분 생성과 취소·동시 확인·한 명만 탈출 처리를 검증한다. */ async (/** t: 서버 정리 문맥. */ t)=>{
@@ -223,7 +272,10 @@ test('five clients: capacity, authority, readiness, start and late join', /** �
     for(const /** index: 참가자 순번; player: 검증할 플레이어. */ [index,player] of state.room.players.entries()) {
       const /** tile: 순번에 대응하는 시작 지형. */ tile=state.room.map.tiles.find(/** 번호가 같은 타일을 찾는다. */ (/** item: 지형 타일. */ item)=>item.id===index+1);
       const /** center: 지정 타일의 시작 좌표. */ center=globalThis.PitMapRules.center(tile,state.room.map);
-      assert.equal(player.playerNumber,index+1);assert.equal(player.spawnTileId,index+1);assert.equal(player.x,center.x);assert.equal(player.y,center.y);
+      assert.equal(player.x,center.x);assert.equal(player.y,center.y);
+      if(player.id===p.id){
+        assert.equal(player.playerNumber,index+1);assert.equal(player.spawnTileId,index+1);
+      }
     }
   }
   const /** tick: 지도 전체를 반복 전송하지 않는 서버 틱 상태. */ tick=await a.next('game.state');
@@ -311,7 +363,7 @@ test('foreign browser origins and oversized payloads are rejected', /** 이 테�
   return {...game,a,b,code:room.code};
 }
 test('playing host leaves alone, successor can move, room disappears only after last departure', /** 방장 퇴장 5초 후 새 게임 상태와 후임자의 이동·방 삭제를 검증한다. */ async /** t: 테스트 정리·검증 문맥. */ t => {
-  const /** a: 퇴장할 방장; b: 남을 참가자; rooms: 서버 방 상태; code: 시험 중인 방 코드. */ {a,b,rooms,code} = await startedPair(t);
+  const /** a: 퇴장할 방장; b: 남을 참가자; rooms: 서버 방 상태; code: 시험 중인 방 코드. */ {a,b,rooms,code} = await startedPair(t,{compactObjects:true});
   /** nextLiveState: 과거 수신함 대신 등록 이후 도착한 게임 상태만 기다린다. accept는 원하는 상태 판정 함수다. */
   function nextLiveState(accept) {
     return new Promise(/** resolve: 조건을 만족한 상태 전달; reject: 제한 시간 초과 전달. */ (resolve,reject) => {
@@ -702,5 +754,10 @@ test('three actual monster kills synchronize level and experience to multiplayer
  let /** state: 관찰자가 받은 최신 방 스냅샷. */ state;
  do{state=(await b.next('game.state')).room;}while(state.players.find(/** 공격자 조회. */ (/** item: 참가자. */ item)=>item.id===a.id)?.status.level!==2);
  const /** status: 관찰자에게 전달한 실제 플레이어 수치. */ status=state.players.find(/** 본인 조회. */ (/** item: 참가자. */ item)=>item.id===a.id).status;
- assert.equal(status.currentExperience,10);assert.equal(status.requiredExperience,90);assert.equal(status.bonusAttack,2);assert.equal(status.skillPoints,2);assert.equal(status.effective.maxHealth,20);
+ assert.deepEqual(Object.keys(status).sort(),['activeEffects','currentHealth','effective','level','objectType','state']);
+ assert.equal(status.effective.maxHealth,20);
+ assert.deepEqual(state.objects.find(/** 전체 개체 목록에서도 공격자를 찾는다. */ (/** item: 수신 개체. */ item)=>item.id===a.id).status,status);
+ let /** owner: 공격자가 받은 최신 본인 상태. */ owner;
+ do{owner=(await a.next('game.state')).room.players.find(/** 수신자 본인 상태를 찾는다. */ (/** item: 수신 참가자. */ item)=>item.id===a.id).status;}while(owner.level!==2);
+ assert.equal(owner.currentExperience,10);assert.equal(owner.requiredExperience,90);assert.equal(owner.bonusAttack,2);assert.equal(owner.skillPoints,2);
 });

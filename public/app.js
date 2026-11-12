@@ -600,6 +600,7 @@ const /** canvas: 월드 화면을 그리는 캔버스 요소. */ canvas = $('wo
 /** drawObjectHud: 개체별 체력바·레벨·스킬자원을 공통 규칙으로 그린다. */ function drawObjectHud(/** context: 그리기 또는 테스트용 격리 실행 문맥. */ context, /** object: 현재 처리하는 월드 개체. */ object, /** x: 가로 좌표·이동 입력 또는 반복 비교 항목. */ x, /** y: 세로 좌표 또는 이동 입력. */ y, /** localId: 현재 접속자의 개체 식별자. */ localId) {
   const /** s: 시전 방향의 사인 값 또는 개체 스테이터스. */ s = object.status;
   if (!s) return;
+  const /** otherPlayer: 경험치와 스킬자원 대신 공개 효과만 표시할 상대 플레이어 여부. */ otherPlayer = s.objectType==='player' && object.id!==localId;
   const /** maxHealth: 추가체력을 합산한 최대체력. */ maxHealth = s.effective?.maxHealth ?? Math.max(0, s.maxHealth + s.bonusHealth);
   const /** maxResource: 추가 수치를 합산한 최대 스킬자원. */ maxResource = s.effective?.maxSkillResource ?? Math.max(0, s.maxSkillResource + s.bonusSkillResource);
   const /** ratio: 최대치에 대한 현재 수치의 비율. */ ratio = maxHealth > 0 ? Math.max(0, Math.min(1, s.currentHealth / maxHealth)) : 0;
@@ -610,6 +611,16 @@ const /** canvas: 월드 화면을 그리는 캔버스 요소. */ canvas = $('wo
   context.lineWidth = 1; context.strokeStyle = '#d9e5d766'; context.strokeRect(x-width/2, top, width, 9);
   context.font = 'bold 12px system-ui'; context.fillStyle = '#f1f6ed'; context.textAlign = 'right';
   context.fillText(`Lv.${s.level}`, x-width/2-5, top+9);
+  if (otherPlayer) {
+    const /** effects: 공개 효과 코드에서 변환한 현재 표시 이름 목록. */ effects = (s.activeEffects??[]).map(
+      /** 알려진 공개 효과만 화면에 표시한다. */ (/** effect: 서버가 공개한 효과. */ effect) =>
+        ({BAS0003:'돌진베기',BAS0005:'러닝크루',stunned:'기절'})[effect.code]).filter(Boolean);
+    if (effects.length) {
+      context.textAlign = 'left';
+      context.fillText(effects.join(' · '), x+width/2+5, top+9);
+    }
+    return;
+  }
   if(s.objectType==='player'){
     const /** required: 다음 레벨에 필요한 서버 경험치; current: 현재 레벨 누적 경험치; progress: 경험치 바의 0~1 비율; expTop: 자원 표시 아래 경험치 바 위치. */ required=s.requiredExperience??50,current=s.currentExperience??0,progress=required>0?Math.max(0,Math.min(1,current/required)):0,expTop=y+45;
     context.fillStyle='#5f6268';context.fillRect(x-width/2,expTop,width,10);

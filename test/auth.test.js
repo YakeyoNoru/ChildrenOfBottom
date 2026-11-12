@@ -69,6 +69,34 @@ test('OAuth state requires its browser binding and grant requires APK verifier',
   assert.equal((await request('/auth/app-session',{method:'POST',body:new URLSearchParams({code,verifier:'b'.repeat(43)})})).status,303);
   assert.equal((await request('/auth/callback/kakao?state='+state+'&code=real',{headers:{Cookie:start.headers.get('set-cookie').split(';')[0]}})).status,400);
 });
+test('Unity Google sign-up reuses the app account and requires a one-time proof', async (/** t: 서버 정리 문맥. */ t)=>{
+  // 기존 Android 계정과 동일한 Google 사용자를 반환하는 테스트 서버다.
+  const {request,signIn}=await setup(t);
+  const /** verifier: Unity만 가진 인증 난수. */ verifier='u'.repeat(43);
+  const /** challenge: 브라우저에서만 사용하는 공개 해시. */ challenge=createHash('sha256').update(verifier).digest('base64url');
+  /** poll: Unity의 인증 대기 또는 교환을 재현한다. */
+  const poll=(/** proof: 요청 본문으로 보낼 인증 난수. */ proof)=>
+    request('/auth/unity-session',{method:'POST',body:new URLSearchParams({verifier:proof})});
+  assert.equal((await poll(verifier)).status,202);
+  const /** start: Google 브라우저 인증 시작 응답. */ start=await request('/auth/start/google?return=unity&challenge='+challenge);
+  assert.equal(start.status,302);
+  const /** state: 서버가 브라우저 콜백을 연결할 OAuth 난수. */ state=new URL(start.headers.get('location')).searchParams.get('state');
+  const /** callback: 브라우저 인증을 완료하는 콜백 경로. */ callback='/auth/callback/google?state='+state+'&code=provider-code';
+  const /** binding: OAuth 시작 브라우저를 확인하는 쿠키. */ binding=start.headers.get('set-cookie').split(';')[0];
+  assert.equal((await request(callback)).status,400);
+  const /** completed: 정상 브라우저에서 인증을 끝낸 응답. */ completed=await request(callback,{headers:{Cookie:binding}});
+  assert.equal(completed.status,200);
+  assert.match(completed.headers.get('content-type'),/^text\/html/);
+  assert.equal((await poll('x'.repeat(43))).status,202);
+  const /** exchange: 인증 증명을 앱 세션으로 바꾼 응답. */ exchange=await poll(verifier);
+  assert.equal(exchange.status,200);
+  const /** cookie: Unity가 게임에 사용할 앱 세션 쿠키. */ cookie=exchange.headers.get('set-cookie').split(';')[0];
+  const /** unity: 첫 인증으로 생성한 게임 계정이 포함된 앱 세션. */ unity=await(await request('/api/session',{headers:{Cookie:cookie,'X-Client-Mode':'app'}})).json();
+  assert.equal(unity.account.provider,'google');
+  const /** legacy: 동일 Google 사용자로 기존 Android 앱에서 로그인한 세션. */ legacy=await signIn();
+  assert.equal(unity.account.id,legacy.session.account.id);
+  assert.equal((await poll(verifier)).status,202);
+});
 test('app WebSockets require login; web ignores app identity; logout revokes API session',/** 이 테스트 시나리오의 준비·실행·기대 결과 검증을 수행한다. */ async /** t: 테스트 정리·검증 문맥 또는 프레임 시각. */ t=>{
   const /** base: 계정 서버 또는 테스트 서버의 기준 주소; request: 테스트 서버로 HTTP 요청을 보내는 함수; signIn: 인증 흐름 전체를 실행하는 테스트 보조 함수. */ {base,request,signIn}=await setup(t);const /** cookie: 보안 속성을 포함한 쿠키 문자열 생성 함수; session: 검증할 앱 로그인 세션. */ {cookie,session}=await signIn();
   const /** denied: 접속 거부를 검증할 연결. */ denied=new WebSocket(base.replace('http:','ws:')+'/ws?client=app');
