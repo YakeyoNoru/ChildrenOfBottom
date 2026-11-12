@@ -69,6 +69,16 @@ namespace ChildrenOfBottom
             return background;
         }
 
+        // 메인과 로비의 Display 1을 채워 에디터에서도 메뉴를 가리는 카메라 안내가 나오지 않게 한다.
+        private static void CreateMenuCamera()
+        {
+            GameObject background = new("Menu Camera"); // 현재 메뉴 씬에서만 사용하는 배경 카메라다.
+            Camera camera = background.AddComponent<Camera>(); // 3D 오브젝트 없이 배경색만 그린다.
+            camera.cullingMask = 0;
+            camera.clearFlags = CameraClearFlags.SolidColor;
+            camera.backgroundColor = new Color(0.045f, 0.07f, 0.10f);
+        }
+
         // 연결 시도 전이나 복귀 불가 연결 종료 후 메인 화면을 연다.
         private async Task ShowMainAsync(string notice = "") // notice는 직전 인증 또는 서버 연결에서 온 안내다.
         {
@@ -86,6 +96,7 @@ namespace ChildrenOfBottom
         // 로그인과 회원가입을 동일한 Google 인증에 연결하고 게스트를 별도로 제공한다.
         private void CreateMainMenu()
         {
+            CreateMenuCamera();
             frontHud = new PortHud();
             AddBackdrop(frontHud);
             Vector2 middle = new(0.5f, 0.5f); // 메인 패널과 메뉴 요소를 가운데에 고정한다.
@@ -179,6 +190,7 @@ namespace ChildrenOfBottom
                 ReleaseSceneViews();
                 await SceneManager.LoadSceneAsync(LobbyScene);
                 lifetime.Token.ThrowIfCancellationRequested();
+                CreateMenuCamera();
                 frontHud = new PortHud();
                 AddBackdrop(frontHud);
                 lobby = new PortLobby(frontHud, EnterRoom, StartRoom, ReadyRoom, LeaveRoom, BrowseRooms, SetRoomPrivacy);
@@ -201,36 +213,40 @@ namespace ChildrenOfBottom
             await SceneManager.LoadSceneAsync(GameUiScene, LoadSceneMode.Additive);
             lifetime.Token.ThrowIfCancellationRequested();
 
+            worldMaterial = Resources.Load<Material>("WorldSurface");
+            if (worldMaterial == null)
+                throw new InvalidOperationException("월드 표시용 URP 재질을 불러오지 못했습니다.");
             GameObject player = GameObject.CreatePrimitive(PrimitiveType.Capsule); // 서버 피격 지름과 같은 폭의 본인 표시 모형이다.
             player.name = "ChildrenOfBottom Player";
             playerModel = player.transform;
             playerModel.localScale = new Vector3(0.24f, 0.38f, 0.24f);
-            Tint(player, new Color(1f, 0.77f, 0.20f));
+            Tint(player, worldMaterial, new Color(1f, 0.77f, 0.20f));
             sceneCamera = Camera.main;
             sceneCamera.orthographic = true;
-            sceneCamera.orthographicSize = 9f;
             sceneCamera.clearFlags = CameraClearFlags.SolidColor;
             sceneCamera.backgroundColor = new Color(0.045f, 0.07f, 0.10f);
-            world = new PortWorldView(WorldScale);
-            items = new PortItemView(WorldScale, player.GetComponent<Renderer>().sharedMaterial);
+            world = new PortWorldView(WorldScale, worldMaterial);
+            items = new PortItemView(WorldScale, worldMaterial);
 
             hud = new PortHud(Interact, ToggleSkills);
             SceneManager.MoveGameObjectToScene(hud.CanvasRoot.gameObject, SceneManager.GetSceneByName(GameUiScene));
             skillShop = new PortSkillShop(hud, RequestSkill);
             mapView = new PortMapView(hud, OpenMap);
             touchControls = new PortTouchControls(hud, CastTouchSkill);
-            options = new PortGameOptions(hud, OpenOptions, PromptLeave, SendPriority, SendTestOptions, touchControls.SetScale);
+            options = new PortGameOptions(hud, OpenOptions, PromptLeave, SendPriority, SendTestOptions, touchControls);
         }
 
         // 교체할 씬의 화면 자료와 메모리를 정리하고 연결은 현재 실행에 남긴다.
         private void ReleaseSceneViews()
         {
             playingOnServer = false;
+            resultShowing = false;
             ResetInput();
             frontHud?.Clear();
             hud?.Clear();
             mapView?.Dispose();
             items?.Clear();
+            touchControls?.Dispose();
             world?.Clear();
             frontHud = null;
             mainNotice = null;
@@ -246,7 +262,6 @@ namespace ChildrenOfBottom
             sceneCamera = null;
             terrain = null;
             playerModel = null;
-            localNameplate = null;
             localName = null;
             localWorldStatus = null;
             interactionTarget = null;

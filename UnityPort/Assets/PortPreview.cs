@@ -18,6 +18,9 @@ namespace ChildrenOfBottom
         // 캐릭터 중심 기준으로 기울어진 카메라의 상대 위치다. 단위는 미터다.
         private static readonly Vector3 CameraOffset = new(0f, 14f, -10f);
 
+        // 웹 화면과 동일한 가로 시야이며 플레이어 표시 지름 36의 19배(서버 월드 단위)다.
+        private const float CameraWorldWidth = 19f * 36f;
+
         // 로컬 또는 운영 출처와 선택적 회원 세션을 현재 실행 메모리에 보관한다.
         private PortConnection connectionSettings;
         private CookieContainer memberCookies;
@@ -38,6 +41,9 @@ namespace ChildrenOfBottom
 
         // 배경용 지도 또는 현재 서버 지도가 들어 있는 루트다.
         private GameObject terrain;
+
+        // 지형과 런타임 월드 모형에 공통으로 적용할 빌드 포함 URP 재질이다.
+        private Material worldMaterial;
 
         // 원격 개체와 서버 공격 범위를 그리는 화면 자료다.
         private PortWorldView world;
@@ -73,7 +79,6 @@ namespace ChildrenOfBottom
         private string localName;
         // 본인 모형 위 체력바에 사용하는 최신 서버 스테이터스다.
         private PortProtocol.EntityStatus localWorldStatus;
-        private TextMesh localNameplate;
 
         // 서버가 현재 로비 명령에 답할 때까지 중복 요청을 막는다.
         private bool lobbyPending;
@@ -95,6 +100,12 @@ namespace ChildrenOfBottom
 
         // 결과 확인과 퇴장에 사용할 서버의 확정 결과다.
         private PortProtocol.Result matchResult;
+        private const double ResultSeconds = 60d; // 결과 화면에서 로비로 자동 복귀하기까지의 시간(초)이다.
+        private double resultDeadline; // 현재 결과의 자동 퇴장 시각이며 시작 이후 실제 시간(초)이다.
+        private bool resultReady; // 서버에서 결과 확인을 기록해 퇴장할 수 있는 상태다.
+        private bool resultShowing; // 현재 대화창이 결과를 표시 중일 때만 초를 갱신한다.
+        private bool resultAutoLeaveSent; // 같은 연결에서 자동 퇴장을 중복 전송하지 않게 한다.
+        private int shownResultSeconds; // 화면에 이미 표시한 남은 초다.
 
         // 이동과 중복 송신하지 않도록 대기시키는 화면 명령 JSON이다.
         private string controlPacket;
@@ -161,7 +172,7 @@ namespace ChildrenOfBottom
                 deck.transform.SetPositionAndRotation((start + end) / 2f - Vector3.up * 0.24f,
                     Quaternion.LookRotation(end - start));
                 deck.transform.localScale = new Vector3(width, 0.24f, Vector3.Distance(start, end));
-                Tint(deck, new Color(0.43f, 0.39f, 0.31f));
+                Tint(deck, worldMaterial, new Color(0.43f, 0.39f, 0.31f));
             }
         }
 
@@ -205,18 +216,19 @@ namespace ChildrenOfBottom
             Mesh mesh = new() { vertices = vertices, triangles = triangles };
             mesh.RecalculateNormals();
             land.AddComponent<MeshFilter>().sharedMesh = mesh;
-            land.AddComponent<MeshRenderer>().sharedMaterial = playerModel.GetComponent<Renderer>().sharedMaterial;
-            Tint(land, TileColors[Mathf.Clamp(tile.height - 1, 0, TileColors.Length - 1)]);
+            land.AddComponent<MeshRenderer>();
+            Tint(land, worldMaterial, TileColors[Mathf.Clamp(tile.height - 1, 0, TileColors.Length - 1)]);
         }
 
         // URP와 기본 재질의 색상 키를 함께 설정한다.
-        internal static void Tint(GameObject target, Color color) // target은 색칠할 개체, color는 화면 표시 색이다.
+        internal static void Tint(GameObject target, Material material, Color color) // target은 월드 모형, material은 공통 URP 재질, color는 개체별 표시 색이다.
         {
             // 공유 재질을 복제하지 않고 개체별 색만 바꾸는 렌더링 속성이다.
             var properties = new MaterialPropertyBlock();
             properties.SetColor("_BaseColor", color);
-            properties.SetColor("_Color", color);
-            target.GetComponent<Renderer>().SetPropertyBlock(properties);
+            Renderer renderer = target.GetComponent<Renderer>(); // 공통 재질과 개체별 색을 적용할 모형 렌더러다.
+            renderer.sharedMaterial = material;
+            renderer.SetPropertyBlock(properties);
         }
 
         // 연결이 끊긴 진행 중 참가자는 서버가 허용한 시간 안에 같은 캐릭터로 돌아온다.
@@ -237,6 +249,7 @@ namespace ChildrenOfBottom
                         return;
 
                     playingOnServer = false;
+                    resultShowing = false;
                     socket = null;
                     items?.Reset();
                     skillShop?.Reset();
@@ -256,7 +269,7 @@ namespace ChildrenOfBottom
                     if (resumeToken == null || Time.realtimeSinceStartupAsDouble >= resumeDeadline ||
                         !(error is WebSocketException || error is GameSocketClosedException || error is OperationCanceledException))
                     {
-                        Debug.LogWarning($"게임 서버 연결이 끝났습니다. {error.Message}");
+                        Debug.LogWarning($"게임 서버 연결이 끝났습니다. {error}");
                         resumeToken = null;
                         SetLoading(false);
                         await ShowMainAsync("게임 서버에 연결하지 못했습니다. 연결을 확인해 주세요.");
@@ -293,7 +306,15 @@ namespace ChildrenOfBottom
             {
                 // 분할 WebSocket 프레임을 합쳐 읽은 서버 메시지다.
                 string json = await connection.ReceiveAsync(cancellationToken); // 읽기 전용 상태 목록에서도 쓸 서버 메시지 원문이다.
-                PortProtocol.Message message = PortProtocol.Read<PortProtocol.Message>(json);
+                PortProtocol.Message message; // 프로토콜 버전과 서버 이벤트를 검사할 메시지다.
+                try
+                {
+                    message = PortProtocol.Read<PortProtocol.Message>(json);
+                }
+                catch (Exception error) // 원본 메시지와 토큰을 로그에 노출하지 않고 파싱 단계만 기록한다.
+                {
+                    throw new InvalidDataException($"서버 메시지를 읽지 못했습니다 ({error.GetType().Name}).");
+                }
                 if (message.v != 1)
                     throw new InvalidDataException("지원하지 않는 게임 프로토콜입니다.");
 
@@ -355,6 +376,9 @@ namespace ChildrenOfBottom
                         break;
                     case "game.result":
                         playingOnServer = false;
+                        if (matchResult?.id != message.result.id)
+                            resultDeadline = Time.realtimeSinceStartupAsDouble + ResultSeconds;
+                        resultAutoLeaveSent = false;
                         matchResult = message.result;
                         confirmationId = null;
                         pendingCast = null;
@@ -363,7 +387,7 @@ namespace ChildrenOfBottom
                         skillShop.Reset();
                         mapView.Reset();
                         options.Reset();
-                        hud.EndMatch(matchResult.reason == "DEATH");
+                        hud.EndMatch();
                         ShowResult(false);
                         await sending;
                         await connection.SendAsync($"{{\"v\":1,\"type\":\"game.result.seen\",\"resultId\":\"{matchResult.id}\"}}", cancellationToken);
@@ -491,7 +515,7 @@ namespace ChildrenOfBottom
                 localWorldStatus = player.status;
                 mapView.Receive(room, player);
                 hud.UpdateStatus(player.status, room.timer.remainingMs, interactionTarget != null && CanControl(),
-                    player.poisonDamage, skillShop);
+                    player.poisonDamage);
                 if (!playingOnServer)
                 {
                     playerModel.position = serverPosition;
@@ -516,8 +540,10 @@ namespace ChildrenOfBottom
 
             if (hud == null)
                 return;
+            if (resultShowing && matchResult != null)
+                UpdateResultCountdown();
             touchControls.SetAvailable(playingOnServer, CanControl());
-            options.SetAvailable(playingOnServer && CanControl());
+            options.SetAvailable(playingOnServer);
             if (!playingOnServer)
                 return;
 
@@ -760,6 +786,8 @@ namespace ChildrenOfBottom
         // 서버가 확정한 사유와 경쟁 점수로 결과 화면을 연다.
         private void ShowResult(bool ready) // 서버가 결과 확인을 기록한 경우에만 퇴장할 수 있다.
         {
+            resultReady = ready;
+            resultShowing = true;
             // 서버의 종료 사유에 대응하는 화면 문구다.
             string reason = matchResult.reason switch
             {
@@ -770,12 +798,30 @@ namespace ChildrenOfBottom
             };
             hud.ShowDialog("게임 결과", $"{reason}\n경쟁 점수  {matchResult.competitionPoints}",
                 ready ? "나가기" : "서버 확인 중", ready ? LeaveResult : null);
+            shownResultSeconds = -1;
+            UpdateResultCountdown();
+        }
+
+        // 실제 경과 시간으로 남은 초를 갱신하고 서버가 승인한 뒤 자동 퇴장한다.
+        private void UpdateResultCountdown()
+        {
+            int seconds = (int)Math.Max(0d, Math.Ceiling(resultDeadline - Time.realtimeSinceStartupAsDouble)); // 결과 퇴장까지 화면에 표시할 초다.
+            if (shownResultSeconds != seconds)
+            {
+                shownResultSeconds = seconds;
+                hud.SetResultCountdown(seconds);
+            }
+            if (seconds == 0 && resultReady && !resultAutoLeaveSent && controlPacket == null)
+            {
+                resultAutoLeaveSent = true;
+                LeaveResult();
+            }
         }
 
         // 서버에서 확인한 결과 화면을 퇴장한다.
         private void LeaveResult()
         {
-            if (matchResult == null || controlPacket != null)
+            if (matchResult == null || !resultReady || controlPacket != null)
                 return;
             ShowResult(false);
             controlPacket = $"{{\"v\":1,\"type\":\"game.result.leave\",\"resultId\":\"{matchResult.id}\",\"requestId\":\"leave-result\"}}";
@@ -876,13 +922,13 @@ namespace ChildrenOfBottom
         {
             if (sceneCamera == null)
                 return;
+            sceneCamera.orthographicSize = CameraWorldWidth * WorldScale / (2f * sceneCamera.aspect);
             sceneCamera.transform.position = playerModel.position + CameraOffset;
             sceneCamera.transform.LookAt(playerModel.position);
             if (playingOnServer)
             {
                 world.Draw(Time.unscaledTimeAsDouble, sceneCamera, hud, options.ShowNames, playerModel.position);
-                localNameplate = PortWorldView.DrawName(playerModel, localNameplate, localName, sceneCamera, hud.SharedFont, options.ShowNames);
-                hud.DrawWorldHealth(playerModel, localWorldStatus, sceneCamera, true);
+                hud.DrawWorldHealth(playerModel, localWorldStatus, sceneCamera, true, options.ShowNames ? localName : null);
             }
             hud.FinishWorldHealth();
             items.Draw(sceneCamera, playerModel.position, playerId, localMotion.Sequence, world, Time.unscaledTimeAsDouble);

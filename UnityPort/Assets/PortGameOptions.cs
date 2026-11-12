@@ -64,29 +64,42 @@ namespace ChildrenOfBottom
             Action leave, // 본인만 방에서 나가기 전에 확인한다.
             Func<string, bool> sendPriority, // 공격 우선대상을 서버에 적용한다.
             Func<bool, bool, bool> sendTests, // 서버 테스트 옵션 두 값을 함께 전송한다.
-            Action<float> setScale) // 조이스틱 크기를 화면에 적용한다.
+            PortTouchControls touchControls) // 터치 표시 모드와 조이스틱 크기를 적용할 조작부다.
         {
             this.sendPriority = sendPriority;
             this.sendTests = sendTests;
-            this.setScale = setScale;
+            setScale = touchControls.SetScale;
             // 게임 HUD에 붙일 진입 버튼과 화면 라벨이다.
-            (UnityEngine.UI.Button menuButton, UnityEngine.UI.Text menuLabel) = hud.Button(hud.CanvasRoot, "Game Menu", Vector2.up,
-                new Vector2(18, -184), new Vector2(172, 36));
+            (UnityEngine.UI.Button menuButton, _) = hud.Button(hud.CanvasRoot, "Game Menu", Vector2.up,
+                new Vector2(18, -18), new Vector2(46, 40));
             openButton = menuButton;
-            menuLabel.text = "메뉴 [Esc]";
+            for (int line = -1; line <= 1; line++) // line은 메뉴 아이콘의 위·가운데·아래 선 순번이다.
+            {
+                RectTransform stroke = PortHud.Rect(menuButton.transform, "Menu icon line", Middle,
+                    new Vector2(0, line * 6f), new Vector2(19f, 2f)); // 아이콘의 가로선이며 크기와 간격은 기준 픽셀이다.
+                UnityEngine.UI.Image image = stroke.gameObject.AddComponent<UnityEngine.UI.Image>(); // 글꼴 지원에 의존하지 않는 아이콘 그림이다.
+                image.raycastTarget = false;
+            }
             openButton.onClick.AddListener(() => open()); // 게임 메뉴 버튼을 연다.
-            panel = PortHud.Panel(hud.CanvasRoot, "Game Options", Middle, Vector2.zero, new Vector2(480, 335));
+            panel = PortHud.Panel(hud.CanvasRoot, "Game Options", Middle, Vector2.zero, new Vector2(480, 379));
             panel.GetComponent<UnityEngine.UI.Image>().raycastTarget = true;
             hud.Label(panel, "Title", Top, new Vector2(0, -12), new Vector2(438, 36), 23).text = "게임 메뉴";
             (_, priorityText) = Row(hud, "Target Priority", -59, CyclePriority);
             (_, namesText) = Row(hud, "Show Names", -103, ToggleNames);
             (_, scaleText) = Row(hud, "Joystick Size", -147, CycleScale);
-            (mapHackButton, mapHackText) = Row(hud, "Map Hack", -191, () => ChangeTests(!mapHack, highSpeed)); // 맵핵만 반전한다.
-            (highSpeedButton, highSpeedText) = Row(hud, "High Speed", -235, () => ChangeTests(mapHack, !highSpeed)); // 고속화만 반전한다.
-            notice = hud.Label(panel, "Notice", Top, new Vector2(0, -274), new Vector2(438, 24), 14);
+            UnityEngine.UI.Text touchLabel = null; // 터치 조작 모드를 보여 주는 메뉴 라벨이다.
+            (_, touchLabel) = Row(hud, "Touch Controls Preference", -191, () => // 모드를 바꾸고 메뉴의 라벨을 갱신한다.
+            {
+                touchControls.CyclePreference();
+                touchLabel.text = touchControls.PreferenceLabel;
+            });
+            touchLabel.text = touchControls.PreferenceLabel;
+            (mapHackButton, mapHackText) = Row(hud, "Map Hack", -235, () => ChangeTests(!mapHack, highSpeed)); // 맵핵만 반전한다.
+            (highSpeedButton, highSpeedText) = Row(hud, "High Speed", -279, () => ChangeTests(mapHack, !highSpeed)); // 고속화만 반전한다.
+            notice = hud.Label(panel, "Notice", Top, new Vector2(0, -318), new Vector2(438, 24), 14);
             AddFooter(hud, panel, "상태", -147, ShowStatus);
             AddFooter(hud, panel, "계속하기", 0, Close);
-            AddFooter(hud, panel, "나가기", 147, leave);
+            AddFooter(hud, panel, "방 나가기", 147, leave);
 
             statusPanel = PortHud.Panel(hud.CanvasRoot, "Player Status", Middle, Vector2.zero, new Vector2(590, 450));
             statusPanel.GetComponent<UnityEngine.UI.Image>().raycastTarget = true;
@@ -309,6 +322,8 @@ namespace ChildrenOfBottom
             (UnityEngine.UI.Button button, UnityEngine.UI.Text label) = hud.Button(parent, title, new Vector2(0.5f, 0f),
                 new Vector2(x, 9), new Vector2(136, 34));
             label.text = title;
+            if (title == "방 나가기")
+                button.image.color = new Color(0.37f, 0.16f, 0.16f, 0.95f);
             button.onClick.AddListener(() => click()); // 메뉴 하단 버튼을 실행한다.
         }
     }

@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Runtime.Serialization;
-using System.Runtime.Serialization.Json;
-using System.Text;
+using Newtonsoft.Json;
 
 namespace ChildrenOfBottom
 {
@@ -25,10 +23,8 @@ namespace ChildrenOfBottom
         // 중첩 배열을 포함하는 서버의 JSON을 그대로 읽는다.
         internal static T Read<T>(string json) // 서버 메시지 또는 미리보기 맵 원본이다.
         {
-            // JSON 직렬화기가 읽을 UTF-8 데이터다.
-            using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
-            return (T)new DataContractJsonSerializer(typeof(T),
-                new DataContractJsonSerializerSettings { UseSimpleDictionaryFormat = true }).ReadObject(stream);
+            // Unity의 IL2CPP를 지원하는 JSON 패키지로 기존 DataMember 이름과 사전·중첩 배열을 읽는다.
+            return JsonConvert.DeserializeObject<T>(json);
         }
 
         // 서버가 전송하는 메시지 봉투다.

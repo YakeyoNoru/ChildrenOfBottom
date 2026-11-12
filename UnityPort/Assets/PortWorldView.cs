@@ -53,13 +53,17 @@ namespace ChildrenOfBottom
         // 서버 월드 단위를 Unity 미터로 바꾸는 배율이다.
         private readonly float scale;
 
+        // 런타임에 생성하는 개체와 기술 모형이 공유할 URP 재질이다.
+        private readonly Material material;
+
         // 체력바를 표시하는 플레이어 중심 기준 수평 반경이며 서버 월드 단위다.
         private const float HealthBarRange = 600f;
 
         // 월드 개체용 씬 루트와 좌표 변환을 준비한다.
-        internal PortWorldView(float scale) // 서버 월드 단위당 Unity 미터다.
+        internal PortWorldView(float scale, Material material) // scale은 서버 월드 단위당 Unity 미터, material은 월드 모형의 공통 재질이다.
         {
             this.scale = scale;
+            this.material = material;
         }
 
         // 전체 스냅샷 또는 서버 순서대로 수신한 개체 변경분을 적용한다.
@@ -297,10 +301,11 @@ namespace ChildrenOfBottom
                 Vector2 point = SampleActor(actor, renderAt); // Unity 좌표로 바꿀 서버 평면 표시 위치다.
                 Transform model = actor.Model.transform; // 위치와 이름, 체력바의 기준이 되는 화면 모형이다.
                 model.position = Position(point.x, point.y, 0.24f);
-                actor.Nameplate = DrawName(model, actor.Nameplate, actor.State.name, camera, hud.SharedFont, showNames);
+                bool isPlayer = actor.State.status.objectType == "player"; // 플레이어 이름은 레벨과 같은 Canvas에 그린다.
+                actor.Nameplate = DrawName(model, actor.Nameplate, actor.State.name, camera, hud.SharedFont, showNames && !isPlayer);
                 Vector3 offset = model.position - localPosition; // 본인과 개체의 표시 위치 차이이며 Unity 미터 단위다.
                 if (offset.x * offset.x + offset.z * offset.z <= range * range)
-                    hud.DrawWorldHealth(model, actor.State.status, camera, false);
+                    hud.DrawWorldHealth(model, actor.State.status, camera, false, showNames && isPlayer ? actor.State.name : null);
             }
         }
 
@@ -324,16 +329,18 @@ namespace ChildrenOfBottom
                 label.font = font;
                 label.GetComponent<MeshRenderer>().sharedMaterial = font.material;
                 label.fontSize = 40;
-                label.characterSize = 0.12f;
                 label.anchor = TextAnchor.MiddleCenter;
                 label.richText = false;
-                nameplate.transform.localPosition = new Vector3(0f, 0.55f / parent.localScale.y, 0f);
+                nameplate.transform.localPosition = new Vector3(0f, 0.65f / parent.localScale.y, 0f);
                 nameplate.transform.localScale = new Vector3(1f / parent.localScale.x, 1f / parent.localScale.y, 1f / parent.localScale.z);
             }
             if (!label.gameObject.activeSelf)
                 label.gameObject.SetActive(true);
             if (label.text != name)
                 label.text = name;
+            float characterSize = 0.12f * camera.orthographicSize / 9f; // 확대 전 기준에서 이름표의 화면상 글자 크기를 유지한다.
+            if (label.characterSize != characterSize)
+                label.characterSize = characterSize;
             label.transform.rotation = camera.transform.rotation;
             return label;
         }
@@ -431,7 +438,7 @@ namespace ChildrenOfBottom
             model.name = name;
             model.transform.SetParent(root);
             Object.Destroy(model.GetComponent<Collider>());
-            PortPreview.Tint(model, color);
+            PortPreview.Tint(model, material, color);
             return model;
         }
     }

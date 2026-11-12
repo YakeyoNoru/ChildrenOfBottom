@@ -57,7 +57,10 @@ namespace ChildrenOfBottom
         internal static PortConnection Load()
         {
             TextAsset resource = Resources.Load<TextAsset>("ConnectionSettings"); // 배포자가 지정할 선택적 설정 파일이다.
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_EDITOR
+            // 에디터도 Android 운영 주소를 기본값으로 사용한다. 별도 설정과 실행 인자가 우선한다.
+            resource ??= Resources.Load<TextAsset>("AndroidConnectionSettings");
+#elif UNITY_ANDROID
             // Android 기기에서는 같은 PC의 루프백 주소 대신 앱의 배포 서버 설정을 우선 읽는다.
             resource = Resources.Load<TextAsset>("AndroidConnectionSettings") ?? resource;
 #endif
