@@ -319,7 +319,7 @@ namespace ChildrenOfBottom
             [DataMember] internal int id; // 플레이어 입장 순번과 매칭하는 서버 지형 번호다.
             [DataMember] internal int q; // 육각 격자의 축 좌표다.
             [DataMember] internal int r; // 육각 격자의 다른 축 좌표다.
-            [DataMember] internal int height; // 서버 지형 단계이며 프리뷰에서는 타일 색을 결정한다.
+            [DataMember] internal int height; // 서버 지형 단계이며 Unity에서는 높이별 프리팹 선택에 사용한다.
         }
     }
 }

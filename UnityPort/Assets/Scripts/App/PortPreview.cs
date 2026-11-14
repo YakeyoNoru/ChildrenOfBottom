@@ -26,13 +26,6 @@ namespace ChildrenOfBottom
         private CookieContainer memberCookies;
         private bool startingConnection; // 진행 중인 인증이나 서버 세션의 중복 시작을 막는다.
 
-        // 높이 1부터 4까지 지도에 사용할 표시 색이다.
-        private static readonly Color[] TileColors =
-        {
-            new(0.17f, 0.46f, 0.29f), new(0.30f, 0.55f, 0.38f),
-            new(0.51f, 0.38f, 0.23f), new(0.50f, 0.30f, 0.40f)
-        };
-
         // 씬이 끝나면 서버 수신과 이동 전송을 중단하는 신호다.
         private readonly CancellationTokenSource lifetime = new();
 
@@ -42,8 +35,11 @@ namespace ChildrenOfBottom
         // 배경용 지도 또는 현재 서버 지도가 들어 있는 루트다.
         private GameObject terrain;
 
-        // 지형과 런타임 월드 모형에 공통으로 적용할 빌드 포함 URP 재질이다.
-        private Material worldMaterial;
+        // 게임 씬에서 사용하는 월드 외형 프리팹 모음이다.
+        private PortWorldPrefabs worldPrefabs;
+
+        // 서버 평면 위치에서 화면상의 지면 높이를 읽는 자료다.
+        private PortTerrainSurface terrainSurface;
 
         // 원격 개체와 서버 공격 범위를 그리는 화면 자료다.
         private PortWorldView world;
@@ -133,102 +129,43 @@ namespace ChildrenOfBottom
         // 다음 이동 스텝 직후 서버에 시전할 슬롯이며 대기 요청이 없으면 null이다.
         private string pendingCast;
 
-        // 서버의 전체 맵으로 지형을 교체하고 입장 순번 1의 타일에 카메라를 맞춘다.
-        private void BuildTerrain(PortProtocol.Map map) // 서버와 동일한 좌표를 가진 지도다.
+        // 서버의 전체 맵에서 높이별 타일과 접점이 맞는 다리를 생성한다.
+        private void BuildTerrain(PortProtocol.Map map) // map은 서버가 확정한 평면 지도다.
         {
             if (terrain != null)
                 Destroy(terrain);
             terrain = new GameObject("ChildrenOfBottom Pit Map");
-
-            // 다리를 이을 타일 중심 목록이며 단위는 Unity 미터다.
-            var centers = new Vector3[map.tiles.Length];
-            // 실제 육각형 외접 반지름이며 단위는 Unity 미터다.
-            float radius = map.tileRadius * map.landScale * WorldScale;
+            terrainSurface = new PortTerrainSurface(map, worldPrefabs, WorldScale);
+            world.UseTerrain(terrainSurface);
+            items.UseTerrain(terrainSurface);
 
             for (int index = 0; index < map.tiles.Length; index++) // index는 서버 타일 배열 순번이다.
             {
-                // 현재 육각형의 서버 축 좌표와 높이 단계다.
-                PortProtocol.Tile tile = map.tiles[index];
-                Vector2 center = map.Center(index); // 서버와 지도에서 함께 쓰는 타일 중심 좌표다.
-                centers[index] = new Vector3(center.x, 0f, -center.y) * WorldScale;
-                AddTile(centers[index], radius, tile);
-
+                PortProtocol.Tile tile = map.tiles[index]; // 표시할 서버 타일이다.
+                Vector3 center = terrainSurface.Centers[index]; // 타일 윗면 중심(미터)이다.
+                GameObject land = Instantiate(worldPrefabs.Tile(tile.height), terrain.transform); // 해당 높이의 타일 인스턴스다.
+                land.name = $"Tile {tile.id}";
+                land.transform.position = new Vector3(center.x, 0f, center.z);
+                land.transform.localScale = Vector3.Scale(land.transform.localScale, new Vector3(terrainSurface.Radius, 1f, terrainSurface.Radius));
                 if (tile.id == 1)
-                    playerModel.position = centers[index] + Vector3.up * 0.38f;
+                    playerModel.position = center + Vector3.up * 0.38f;
             }
 
-            foreach (int[] bridge in map.bridges) // bridge는 두 타일의 서버 배열 순번 쌍이다.
+            foreach (PortTerrainSurface.Ramp ramp in terrainSurface.Ramps) // ramp는 다리의 접점과 표시 폭이다.
             {
-                // 다리의 양 끝이며 단위는 Unity 미터다.
-                Vector3 start = centers[bridge[0]];
-                Vector3 end = centers[bridge[1]];
-                // 서버 통로 폭을 유지해 표시할 폭이며 단위는 Unity 미터다.
-                float width = (map.tiles[bridge[0]].height == map.tiles[bridge[1]].height
-                    ? map.bridgeWidth : map.heightBridgeWidth) * WorldScale;
-                // 지형보다 조금 낮게 깔아 바닥과 겹친 부분이 번쩍이지 않게 한다.
-                GameObject deck = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                GameObject deck = Instantiate(worldPrefabs.Bridge, terrain.transform); // 월드에 배치할 다리 프리팹이다.
                 deck.name = "Bridge";
-                deck.transform.SetParent(terrain.transform);
-                deck.transform.SetPositionAndRotation((start + end) / 2f - Vector3.up * 0.24f,
-                    Quaternion.LookRotation(end - start));
-                deck.transform.localScale = new Vector3(width, 0.24f, Vector3.Distance(start, end));
-                Tint(deck, worldMaterial, new Color(0.43f, 0.39f, 0.31f));
+                Vector3 longAxis = ramp.End - ramp.Start; // 경사를 포함한 다리 길이 벡터(미터)다.
+                if (longAxis.sqrMagnitude <= 0.000001f)
+                {
+                    Destroy(deck);
+                    continue;
+                }
+                Quaternion rotation = Quaternion.LookRotation(longAxis); // 다리 표면이 접점 사이를 잇는 회전이다.
+                Vector3 shift = rotation * Vector3.up * (deck.transform.localScale.y * 0.5f); // 중심 축에서 윗면까지의 오프셋(미터)이다.
+                deck.transform.SetPositionAndRotation((ramp.Start + ramp.End) / 2f - shift, rotation);
+                deck.transform.localScale = Vector3.Scale(deck.transform.localScale, new Vector3(ramp.Width, 1f, longAxis.magnitude));
             }
-        }
-
-        // 육각형 지형 표면과 낮은 측벽을 메시로 그린다.
-        private void AddTile(
-            Vector3 center, // Unity 미터로 변환한 지형 중심이다.
-            float radius, // Unity 미터로 변환한 육각형 외접 반지름이다.
-            PortProtocol.Tile tile) // 이름과 색을 결정하는 서버 타일이다.
-        {
-            // 육각형의 윗면 중심 하나와 테두리 위아래 각 여섯 꼭짓점이다.
-            var vertices = new Vector3[13];
-            // 윗면과 측벽을 그리는 삼각형 꼭짓점 순번이다.
-            var triangles = new int[54];
-            for (int side = 0; side < 6; side++) // side는 육각형의 변 순번이다.
-            {
-                // Unity XZ 평면에서 꼭짓점 방향을 정하는 각도다. 단위는 라디안이다.
-                float angle = side * Mathf.PI / 3f;
-                // 이 변의 현재 꼭짓점과 다음 꼭짓점 순번이다.
-                int current = side + 1;
-                int next = (side + 1) % 6 + 1;
-                vertices[current] = new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius);
-                vertices[current + 6] = vertices[current] - Vector3.up * 0.45f;
-                // 현재 변의 삼각형 순번 배열 시작 위치다.
-                int index = side * 9;
-                triangles[index] = 0;
-                triangles[index + 1] = next;
-                triangles[index + 2] = current;
-                triangles[index + 3] = current;
-                triangles[index + 4] = next;
-                triangles[index + 5] = next + 6;
-                triangles[index + 6] = current;
-                triangles[index + 7] = next + 6;
-                triangles[index + 8] = current + 6;
-            }
-
-            // 이 타일의 렌더링 메시와 위치를 담는다.
-            GameObject land = new($"Tile {tile.id}");
-            land.transform.SetParent(terrain.transform);
-            land.transform.position = center;
-            // 윗면과 측벽의 렌더링에 사용하는 정점 자료다.
-            Mesh mesh = new() { vertices = vertices, triangles = triangles };
-            mesh.RecalculateNormals();
-            land.AddComponent<MeshFilter>().sharedMesh = mesh;
-            land.AddComponent<MeshRenderer>();
-            Tint(land, worldMaterial, TileColors[Mathf.Clamp(tile.height - 1, 0, TileColors.Length - 1)]);
-        }
-
-        // URP와 기본 재질의 색상 키를 함께 설정한다.
-        internal static void Tint(GameObject target, Material material, Color color) // target은 월드 모형, material은 공통 URP 재질, color는 개체별 표시 색이다.
-        {
-            // 공유 재질을 복제하지 않고 개체별 색만 바꾸는 렌더링 속성이다.
-            var properties = new MaterialPropertyBlock();
-            properties.SetColor("_BaseColor", color);
-            Renderer renderer = target.GetComponent<Renderer>(); // 공통 재질과 개체별 색을 적용할 모형 렌더러다.
-            renderer.sharedMaterial = material;
-            renderer.SetPropertyBlock(properties);
         }
 
         // 연결이 끊긴 진행 중 참가자는 서버가 허용한 시간 안에 같은 캐릭터로 돌아온다.
@@ -500,9 +437,10 @@ namespace ChildrenOfBottom
                 if (player.id != playerId)
                     continue;
                 // 서버의 위치가 순간이동한 경우 화면도 즉시 옮겨 중간 경로를 탐색하지 않는다.
-                Vector3 nextPosition = new(player.x * WorldScale, 0.38f, -player.y * WorldScale);
+                Vector3 nextPosition = terrainSurface.Position(player.x, player.y, 0.38f); // 서버 위치에 대응하는 캐릭터 표시 좌표(미터)다.
                 const float teleportDistance = PortMapRaster.TeleportThreshold * WorldScale; // 순간이동 표시를 나누는 Unity 미터 거리다.
-                if (playingOnServer && (nextPosition - serverPosition).sqrMagnitude > teleportDistance * teleportDistance)
+                Vector2 planarChange = new(nextPosition.x - serverPosition.x, nextPosition.z - serverPosition.z); // 순간이동 검사에 쓰는 평면 차이(미터)다.
+                if (playingOnServer && planarChange.sqrMagnitude > teleportDistance * teleportDistance)
                     playerModel.position = nextPosition;
                 serverPosition = nextPosition;
                 localMotion.Receive(player, Time.unscaledTimeAsDouble);
@@ -551,9 +489,11 @@ namespace ChildrenOfBottom
             TrySendMovement();
             // 서버 확정 좌표와 분리된 예측 목표까지 화면 모형만 부드럽게 움직인다.
             Vector2 predicted = localMotion.Predicted;
-            Vector3 target = new(predicted.x * WorldScale, 0.38f, -predicted.y * WorldScale);
+            Vector3 target = new(predicted.x * WorldScale, 0f, -predicted.y * WorldScale); // 수평 보간 목표인 Unity XZ 위치(미터)다.
             float weight = 1f - Mathf.Exp(-25f * Mathf.Min(Time.unscaledDeltaTime, 0.05f));
-            playerModel.position = Vector3.Lerp(playerModel.position, target, weight);
+            Vector3 display = Vector3.Lerp(playerModel.position, target, weight); // 화면 모형의 수평 보간 위치(미터)다.
+            display.y = terrainSurface.HeightAt(new Vector2(display.x, display.z)) + 0.38f;
+            playerModel.position = display;
         }
 
         // 서버의 고정 스텝 시각과 상태가 허용하면 하나의 이동을 예측하고 전송한다.

@@ -40,10 +40,13 @@ namespace ChildrenOfBottom
         private readonly Matrix4x4[] outlines = new Matrix4x4[BatchSize];
         private readonly Matrix4x4[] centers = new Matrix4x4[BatchSize];
 
-        // 모든 환영조각을 그리는 원통 메시와 두 인스턴스 재질이다.
-        private readonly Mesh mesh;
-        private readonly Material outlineMaterial;
-        private readonly Material centerMaterial;
+        // 프리팹에서 읽은 테두리와 밝은 중심부의 일괄 렌더링 설정이다.
+        private readonly MeshFilter outline; // 바깥 테두리에 그릴 메시 제공자다.
+        private readonly MeshFilter center; // 밝은 중심부에 그릴 메시 제공자다.
+        private readonly Material outlineMaterial; // 바깥 테두리의 인스턴스 재질이다.
+        private readonly Material centerMaterial; // 밝은 중심부의 인스턴스 재질이다.
+        private readonly Matrix4x4 outlineLocal; // 프리팹 테두리의 기준 위치와 크기다.
+        private readonly Matrix4x4 centerLocal; // 프리팹 중심부의 기준 위치와 크기다.
 
         // 서버 월드 단위당 Unity 미터다.
         private readonly float scale;
@@ -53,17 +56,29 @@ namespace ChildrenOfBottom
         // 최근 서버에서 본인이 살아 있는 것으로 확인됐는지 나타낸다.
         private bool localAlive;
 
-        // 환영조각을 개별 게임 오브젝트 없이 렌더링할 자료를 준비한다.
-        internal PortItemView(float scale, Material template) // scale은 월드 단위당 미터, template은 씬에서 사용하는 기본 재질이다.
+        // 환영조각의 프리팹 외형을 기존 인스턴스 렌더링에 연결한다.
+        internal PortItemView(float scale, GameObject prefab) // scale은 월드 단위당 미터이며 prefab은 환영조각의 외형 원본이다.
         {
             this.scale = scale;
-            // 원형 표시용 Unity 기본 메시를 한 번 가져온다.
-            GameObject primitive = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            mesh = primitive.GetComponent<MeshFilter>().sharedMesh;
-            Object.Destroy(primitive);
-            outlineMaterial = new Material(template) { enableInstancing = true, color = new Color(0.05f, 0.05f, 0.05f) };
-            centerMaterial = new Material(template) { enableInstancing = true, color = Color.white };
+            outline = prefab.transform.Find("FragmentOutline").GetComponent<MeshFilter>();
+            center = prefab.transform.Find("FragmentCenter").GetComponent<MeshFilter>();
+            outlineMaterial = outline.GetComponent<MeshRenderer>().sharedMaterial;
+            centerMaterial = center.GetComponent<MeshRenderer>().sharedMaterial;
+            Matrix4x4 rootLocal = LocalMatrix(prefab.transform); // 프리팹 루트의 크기와 방향을 두 파트에 공통 적용한다.
+            outlineLocal = rootLocal * LocalMatrix(outline.transform);
+            centerLocal = rootLocal * LocalMatrix(center.transform);
         }
+
+        // 환영조각 루트 기준 외형의 위치, 방향과 크기를 일괄 렌더링 변환으로 읽는다.
+        private static Matrix4x4 LocalMatrix(Transform part) // part는 표시할 테두리 또는 중심부다.
+        {
+            return Matrix4x4.TRS(part.localPosition, part.localRotation, part.localScale);
+        }
+
+        private PortTerrainSurface terrain; // 조각이 놓일 현재 지형과 다리 윗면이다.
+
+        // 새 지도에서 환영조각이 따라갈 표면을 지정한다.
+        internal void UseTerrain(PortTerrainSurface surface) => terrain = surface; // surface는 현재 맵의 표시용 지형이다.
 
         // 전체 목록 또는 변경분을 서버 수신 순서대로 적용한다.
         internal void Apply(PortProtocol.Room room, double now) // room은 서버 상태, now는 로컬 수신 시각(초)이다.
@@ -192,7 +207,7 @@ namespace ChildrenOfBottom
                     continue;
 
                 // 아이템 바닥 위치와 비행 중 표시 위치다. 단위는 Unity 미터다.
-                Vector3 position = new(entry.Item.x * scale, 0.025f, -entry.Item.y * scale);
+                Vector3 position = terrain.Position(entry.Item.x, entry.Item.y, 0.025f);
                 if (entry.FlightStart >= 0 && entry.FlightTarget != null)
                 {
                     // 비행은 획득자의 렌더링 위치를 따라가며 판정 좌표를 변경하지 않는다.
@@ -205,9 +220,10 @@ namespace ChildrenOfBottom
                 if (viewport.z <= 0 || viewport.x < -0.01f || viewport.x > 1.01f || viewport.y < -0.01f || viewport.y > 1.01f)
                     continue;
 
-                // 지름 5 서버 월드 단위 안쪽에 흰색 중심을 놓는다.
-                outlines[count] = Matrix4x4.TRS(position, Quaternion.identity, new Vector3(5f * scale, 0.005f, 5f * scale));
-                centers[count] = Matrix4x4.TRS(position + Vector3.up * 0.005f, Quaternion.identity, new Vector3(3.6f * scale, 0.005f, 3.6f * scale));
+                // Unity 미터로 변환한 표시 위치에 프리팹의 두 외형을 함께 배치한다.
+                Matrix4x4 placement = Matrix4x4.Translate(position);
+                outlines[count] = placement * outlineLocal;
+                centers[count] = placement * centerLocal;
                 if (++count == BatchSize)
                 {
                     DrawBatch(camera, count);
@@ -224,8 +240,8 @@ namespace ChildrenOfBottom
         // 현재 변환 목록의 원 테두리와 중심을 한 번씩 그린다.
         private void DrawBatch(Camera camera, int count) // camera는 게임 카메라, count는 이번에 그릴 개수다.
         {
-            Graphics.DrawMeshInstanced(mesh, 0, outlineMaterial, outlines, count, null, ShadowCastingMode.Off, false, 0, camera);
-            Graphics.DrawMeshInstanced(mesh, 0, centerMaterial, centers, count, null, ShadowCastingMode.Off, false, 0, camera);
+            Graphics.DrawMeshInstanced(outline.sharedMesh, 0, outlineMaterial, outlines, count, null, ShadowCastingMode.Off, false, 0, camera);
+            Graphics.DrawMeshInstanced(center.sharedMesh, 0, centerMaterial, centers, count, null, ShadowCastingMode.Off, false, 0, camera);
         }
 
         // 방을 나가거나 연결이 끝났을 때 화면의 아이템 기록을 비운다.
@@ -234,13 +250,6 @@ namespace ChildrenOfBottom
             entries.Clear();
             roomCode = null;
             localAlive = false;
-        }
-
-        // 플레이 세션에서 생성한 화면 재질을 해제한다.
-        internal void Clear()
-        {
-            Object.Destroy(outlineMaterial);
-            Object.Destroy(centerMaterial);
         }
     }
 }

@@ -53,18 +53,23 @@ namespace ChildrenOfBottom
         // 서버 월드 단위를 Unity 미터로 바꾸는 배율이다.
         private readonly float scale;
 
-        // 런타임에 생성하는 개체와 기술 모형이 공유할 URP 재질이다.
-        private readonly Material material;
+        // 서버 개체 분류에 따라 생성할 월드 외형 모음이다.
+        private readonly PortWorldPrefabs prefabs;
 
         // 체력바를 표시하는 플레이어 중심 기준 수평 반경이며 서버 월드 단위다.
         private const float HealthBarRange = 600f;
 
         // 월드 개체용 씬 루트와 좌표 변환을 준비한다.
-        internal PortWorldView(float scale, Material material) // scale은 서버 월드 단위당 Unity 미터, material은 월드 모형의 공통 재질이다.
+        internal PortWorldView(float scale, PortWorldPrefabs prefabs) // scale은 서버 월드 단위당 Unity 미터, prefabs는 월드 외형 모음이다.
         {
             this.scale = scale;
-            this.material = material;
+            this.prefabs = prefabs;
         }
+
+        private PortTerrainSurface terrain; // 개체의 화면 높이를 계산하는 현재 지형이다.
+
+        // 새 지도에 맞춰 개체가 따라갈 지형 표면을 교체한다.
+        internal void UseTerrain(PortTerrainSurface surface) => terrain = surface; // surface는 현재 맵의 표시용 지형이다.
 
         // 전체 스냅샷 또는 서버 순서대로 수신한 개체 변경분을 적용한다.
         internal void Apply(
@@ -130,8 +135,7 @@ namespace ChildrenOfBottom
                     present.Add(stone.id);
                     if (!stones.TryGetValue(stone.id, out GameObject model)) // model은 현재 돌의 표시 모형이다.
                     {
-                        model = CreateModel("Stone Projectile", PrimitiveType.Sphere, new Color(0.06f, 0.05f, 0.08f));
-                        model.transform.localScale = Vector3.one * (14f * scale);
+                        model = Object.Instantiate(prefabs.Stone, root);
                         stones.Add(stone.id, model);
                     }
                     model.transform.position = Position(stone.x, stone.y, 0.24f);
@@ -208,30 +212,14 @@ namespace ChildrenOfBottom
             return targetId;
         }
 
-        // 개체 종류별 임시 모형을 만들거나 이미 있는 모형의 목표 상태를 갱신한다.
+        // 개체 종류별 프리팹을 생성하거나 이미 있는 모형의 목표 상태를 갱신한다.
         private void AddOrUpdate(PortProtocol.Entity state) // 해당 개체의 최신 전체 상태다.
         {
             present.Add(state.id);
             if (!actors.TryGetValue(state.id, out Actor actor)) // actor는 이번 상태를 표시하는 화면 개체다.
             {
-                // 사물은 상자로, NPC는 원기둥으로, 유닛은 캡슐로 구분한다.
-                PrimitiveType shape = state.status.objectType switch
-                {
-                    "prop" => PrimitiveType.Cube,
-                    "npc" => PrimitiveType.Cylinder,
-                    _ => PrimitiveType.Capsule
-                };
-                // 공격 가능한 사물, 몬스터, NPC, 다른 플레이어를 구분하는 표시 색이다.
-                Color color = state.status.objectType switch
-                {
-                    "prop" => new Color(0.42f, 0.85f, 1f),
-                    "enemy" => new Color(0.97f, 0.34f, 0.22f),
-                    "npc" => new Color(0.30f, 1f, 0.74f),
-                    _ => new Color(0.66f, 0.74f, 1f)
-                };
-                // 개체의 위치를 표현할 시각 전용 프리미티브다.
-                GameObject model = CreateModel(state.status.objectType, shape, color);
-                model.transform.localScale = new Vector3(24f * scale, shape == PrimitiveType.Cube ? 0.42f : 0.24f, 24f * scale);
+                // 개체의 서버 위치에 배치할 시각 전용 프리팹 인스턴스다.
+                GameObject model = Object.Instantiate(prefabs.Actor(state.status), root);
                 model.transform.position = Position(state.x, state.y, 0.24f);
                 actor = new Actor { Model = model };
                 actors.Add(state.id, actor);
@@ -267,11 +255,11 @@ namespace ChildrenOfBottom
                 // 서버 시전 각도를 Unity XZ 평면의 전방 벡터로 바꾼 값이다.
                 Vector3 forward = new(Mathf.Cos(effect.angle), 0f, -Mathf.Sin(effect.angle));
                 // 서버 사각형의 길이와 폭을 사용하는 주황색 바닥 표시다.
-                GameObject model = CreateModel("Basic Attack", PrimitiveType.Cube, new Color(1f, 0.46f, 0.09f));
+                GameObject model = Object.Instantiate(prefabs.BasicAttack, root);
                 model.transform.SetPositionAndRotation(
                     Position(effect.x, effect.y, 0.035f) + forward * (effect.length * scale / 2f),
                     Quaternion.LookRotation(forward));
-                model.transform.localScale = new Vector3(effect.width * scale, 0.025f, effect.length * scale);
+                model.transform.localScale = Vector3.Scale(model.transform.localScale, new Vector3(effect.width * scale, 1f, effect.length * scale));
                 effects.Add(effect.id, model);
             }
 
@@ -424,22 +412,8 @@ namespace ChildrenOfBottom
             float y, // 서버 아래쪽 양수 좌표이며 월드 단위다.
             float height) // 지면 위에 그릴 높이이며 Unity 미터다.
         {
-            return new Vector3(x * scale, height, -y * scale);
+            return terrain.Position(x, y, height);
         }
 
-        // 물리 판정 없이 렌더링하는 단색 모형을 준비한다.
-        private GameObject CreateModel(
-            string name, // Unity 계층에 표시할 모형 이름이다.
-            PrimitiveType shape, // 개체 종류를 구분하는 임시 모양이다.
-            Color color) // 화면에서 개체나 효과를 구분하는 색이다.
-        {
-            // 서버 판정과 별도로 배치할 화면 모형이다.
-            GameObject model = GameObject.CreatePrimitive(shape);
-            model.name = name;
-            model.transform.SetParent(root);
-            Object.Destroy(model.GetComponent<Collider>());
-            PortPreview.Tint(model, material, color);
-            return model;
-        }
     }
 }

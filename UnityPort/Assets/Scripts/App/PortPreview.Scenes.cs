@@ -184,20 +184,16 @@ namespace ChildrenOfBottom
             await SceneManager.LoadSceneAsync(GameUiScene, LoadSceneMode.Additive);
             lifetime.Token.ThrowIfCancellationRequested();
 
-            worldMaterial = Resources.Load<Material>("WorldSurface");
-            if (worldMaterial == null)
-                throw new InvalidOperationException("월드 표시용 URP 재질을 불러오지 못했습니다.");
-            GameObject player = GameObject.CreatePrimitive(PrimitiveType.Capsule); // 서버 피격 지름과 같은 폭의 본인 표시 모형이다.
+            worldPrefabs = new PortWorldPrefabs();
+            GameObject player = Instantiate(worldPrefabs.LocalPlayer); // 서버가 확정한 내 캐릭터 위치를 표시한다.
             player.name = "ChildrenOfBottom Player";
             playerModel = player.transform;
-            playerModel.localScale = new Vector3(0.24f, 0.38f, 0.24f);
-            Tint(player, worldMaterial, new Color(1f, 0.77f, 0.20f));
             sceneCamera = Camera.main;
             sceneCamera.orthographic = true;
             sceneCamera.clearFlags = CameraClearFlags.SolidColor;
             sceneCamera.backgroundColor = new Color(0.045f, 0.07f, 0.10f);
-            world = new PortWorldView(WorldScale, worldMaterial);
-            items = new PortItemView(WorldScale, worldMaterial);
+            world = new PortWorldView(WorldScale, worldPrefabs);
+            items = new PortItemView(WorldScale, worldPrefabs.Fragment);
 
             PortSceneUi gameUi = UnityEngine.Object.FindFirstObjectByType<PortSceneUi>(); // 추가 로드한 GameUI의 Canvas 참조다.
             hud = new PortHud(gameUi, Interact, ToggleSkills);
@@ -217,7 +213,6 @@ namespace ChildrenOfBottom
                 mainMenu.UnbindCallbacks();
             hud?.Clear();
             mapView?.Dispose();
-            items?.Clear();
             world?.Clear();
             mainMenu = null;
             lobby = null;
@@ -225,6 +220,8 @@ namespace ChildrenOfBottom
             mapView = null;
             items = null;
             world = null;
+            worldPrefabs = null;
+            terrainSurface = null;
             skillShop = null;
             touchControls = null;
             options = null;

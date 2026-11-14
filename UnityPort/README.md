@@ -33,3 +33,11 @@ Unity 6000.3.5f2에서 Main 씬을 열어 Console 컴파일 오류가 없는지,
 - 비활성 패널은 편집 중 잠시 활성화해 위치와 크기를 확인하고 원래 활성 상태로 돌린 뒤 저장한다. 위치·크기·앵커는 Inspector의 Rect Transform에서 수정한다.
 - 월드 체력바와 스킬 카드의 공통 배치는 Project 창에서 `Assets/WorldHealthBar.prefab`, `Assets/SkillCard.prefab`을 더블클릭해 수정한다. Play 중에는 게임 데이터에 따라 필요한 개수만큼 생성한다.
 - 기존 오브젝트를 교체했다면 Canvas의 Port Scene Ui 컴포넌트에 저장된 참조도 새 오브젝트로 갱신한다.
+
+## 월드 프리팹 편집
+
+Project 창의 `Assets/Resources/WorldPrefabs`에서 플레이어(`Players`), 몬스터(`Enemies`), NPC(`NPCs`), 사물(`Props`), 투사체와 공격 표시(`Effects`) 프리팹을 편집한다. `ExitNpc`와 `ReturnLantern`은 각각 `Npc`와 `Prop`의 변형이다. 서버 분류 코드와 프리팹 경로의 연결은 `Assets/Scripts/Gameplay/World/PortWorldPrefabs.cs`에 있다.
+
+- `Items/IllusionFragment`의 `FragmentOutline`과 `FragmentCenter`는 일괄 렌더링에 사용하는 두 메시다. 이 두 자식의 이름과 재질의 GPU Instancing 설정을 유지한다.
+- `Terrain/TerrainTileH1`~`TerrainTileH4`는 `TerrainHex` 메시를 공유하며 윗면 높이는 각각 4·3·2·1 Unity 미터다. 타일 위치는 서버 지도를 따르며, 다리의 수평 길이가 플레이어 지름을 넘지 않도록 3D 타일의 표시 가장자리를 조정한다. `Bridge`는 양쪽 표면에 맞춰 회전하고 서버 통로 폭을 유지한다. 미니맵, 전체맵, 이동 판정은 기존 서버 평면 좌표를 사용한다.
+- 프리팹 변경은 화면 외형에 적용된다. 생성 위치, 피격, 상호작용과 보상은 기존 서버 상태와 공통 판정을 따른다.
