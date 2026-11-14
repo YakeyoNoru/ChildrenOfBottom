@@ -89,6 +89,7 @@ namespace ChildrenOfBottom
             lifetime.Token.ThrowIfCancellationRequested();
             if (mainMenu == null)
             {
+                CreateMenuCamera(); // 메뉴 씬에서도 Display 1의 카메라 안내가 겹치지 않게 한다.
                 mainMenu = UnityEngine.Object.FindFirstObjectByType<PortMainMenuView>(FindObjectsInactive.Include);
                 if (mainMenu == null)
                     throw new InvalidOperationException("Main.unity에 PortMainMenuView가 없습니다.");
@@ -214,7 +215,8 @@ namespace ChildrenOfBottom
             playingOnServer = false;
             resultShowing = false;
             ResetInput();
-            mainMenu?.UnbindCallbacks();
+            if (mainMenu != null)
+                mainMenu.UnbindCallbacks();
             frontHud?.Clear();
             hud?.Clear();
             mapView?.Dispose();
