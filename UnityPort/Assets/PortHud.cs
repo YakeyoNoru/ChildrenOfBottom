@@ -14,7 +14,7 @@ namespace ChildrenOfBottom
         private static readonly Color TextColor = new(0.92f, 0.97f, 0.98f);
 
         // HUD와 대화창이 들어 있는 Canvas 루트다.
-        private readonly GameObject root = new("ChildrenOfBottom HUD", typeof(Canvas));
+        private readonly GameObject root;
 
         // 메뉴, HUD와 이름표가 공유하는 프로젝트 글꼴이다.
         private readonly Font font = Resources.Load<Font>("Mabinogi_Classic_OTF") ??
@@ -34,6 +34,7 @@ namespace ChildrenOfBottom
 
         // 다른 HUD 요소 아래에 개체 체력바를 그리는 전체 화면 레이어다.
         private readonly RectTransform worldHealthLayer;
+        private readonly RectTransform worldHealthTemplate; // 풀에 새 체력바가 필요할 때 복제하는 프리팹이다.
 
         // 화면에 나타나는 개체에 순서대로 재사용하는 체력바 배경과 채움 영역이다.
         private readonly List<(RectTransform Background, UnityEngine.UI.Image Fill, UnityEngine.UI.Text Level, UnityEngine.UI.Text Name, UnityEngine.UI.Text Detail)> worldHealthBars = new();
@@ -62,8 +63,9 @@ namespace ChildrenOfBottom
         private Action secondaryAction;
 
         // 플레이 상태와 결과 화면을 표시할 Canvas를 생성한다.
-        internal PortHud(Action interact = null, Action openSkills = null) // interact와 openSkills는 게임 UI를 만들 때만 전달하는 상호작용과 기술 창 동작이다.
+        internal PortHud()
         {
+            root = new GameObject("Loading Canvas", typeof(Canvas));
             root.GetComponent<Canvas>().renderMode = RenderMode.ScreenSpaceOverlay;
             // 화면 크기에 따라 HUD의 크기를 조절한다.
             var scaler = root.AddComponent<UnityEngine.UI.CanvasScaler>();
@@ -78,43 +80,31 @@ namespace ChildrenOfBottom
                 UnityEngine.Object.DontDestroyOnLoad(events);
                 events.GetComponent<InputSystemUIInputModule>().AssignDefaultActions();
             }
-            if (interact == null || openSkills == null)
-                return;
+        }
 
-            worldHealthLayer = Rect(root.transform, "World health bars", Vector2.zero, Vector2.zero, Vector2.zero);
-            worldHealthLayer.anchorMax = Vector2.one;
-
-            (experienceTrack, experienceText, experienceFill) = CreateExperienceBar();
-            RectTransform timerPanel = Panel(root.transform, "Timer panel", new Vector2(0.5f, 1f), new Vector2(-57, -18), new Vector2(85, 38)); // 상단 시간 배경이다.
-            timer = Label(timerPanel, "Room timer", Vector2.one * 0.5f, Vector2.zero, new Vector2(85, 38), 23);
-            timer.text = "--:--";
-            RectTransform scorePanel = Panel(root.transform, "Score panel", new Vector2(0.5f, 1f), new Vector2(49, -18), new Vector2(115, 38)); // 시간 옆의 경쟁 점수 배경이다.
-            score = Label(scorePanel, "Competition score", Vector2.one * 0.5f, Vector2.zero, new Vector2(115, 38), 17);
-
-            poison = Label(root.transform, "Poison exposure", new Vector2(0.5f, 1), new Vector2(0, -58), new Vector2(220, 28), 18);
-            poison.color = new Color(1f, 0.76f, 1f);
-            poison.gameObject.AddComponent<UnityEngine.UI.Outline>().effectColor = Color.black;
-            poison.gameObject.SetActive(false);
-
-            // 왼쪽 위 메뉴 바로 아래에서 기술 구매 창을 연다.
-            (UnityEngine.UI.Button skillButton, UnityEngine.UI.Text skillLabel) = Button(root.transform, "Skills", Vector2.up,
-                new Vector2(18, -64), new Vector2(46, 32)); // 기술 구매 버튼과 아이콘이다.
-            skillLabel.text = "$";
-            skillLabel.fontSize = 23;
-            skillButton.onClick.AddListener(() => openSkills()); // 기술 구매 창을 열거나 닫는다.
-
-            (interaction, _) = Button(root.transform, "Interaction", new Vector2(0.5f, 0), new Vector2(0, 24), new Vector2(186, 46));
-            interaction.GetComponentInChildren<UnityEngine.UI.Text>().text = "※ 상호작용 [F]";
-            interaction.onClick.AddListener(() => interact()); // 버튼으로 가까운 서버 개체를 사용한다.
-            interaction.gameObject.SetActive(false);
-
-            dialog = Panel(root.transform, "Game dialog", Vector2.one * 0.5f, Vector2.zero, new Vector2(374, 188));
-            dialog.GetComponent<UnityEngine.UI.Image>().raycastTarget = true;
-            dialogTitle = Label(dialog, "Title", new Vector2(0.5f, 1), new Vector2(0, -15), new Vector2(350, 36), 24);
-            dialogBody = Label(dialog, "Message", Vector2.one * 0.5f, new Vector2(0, 8), new Vector2(350, 46), 20);
-            (primary, primaryText) = Button(dialog, "Confirm", new Vector2(0.5f, 0), new Vector2(-74, 17), new Vector2(134, 40));
-            (secondary, secondaryText) = Button(dialog, "Cancel", new Vector2(0.5f, 0), new Vector2(74, 17), new Vector2(134, 40));
-            dialogCountdown = Label(dialog, "Result countdown", new Vector2(0.5f, 0), new Vector2(74, 17), new Vector2(100, 40), 20);
+        // GameUI 씬의 직렬화된 Canvas와 컨트롤을 서버 표시 및 입력에 연결한다.
+        internal PortHud(PortSceneUi ui, Action interact, Action openSkills) // ui는 씬 참조, interact는 상호작용, openSkills는 기술 창 동작이다.
+        {
+            root = ui.gameObject;
+            worldHealthTemplate = ui.HealthTemplate;
+            worldHealthLayer = ui.Get("World health bars");
+            experienceTrack = ui.Get("World health bars/Experience bar");
+            experienceText = Text(ui, "World health bars/Experience bar/Experience value");
+            experienceFill = ui.Get("World health bars/Experience bar/Fill");
+            timer = Text(ui, "Timer panel/Room timer");
+            score = Text(ui, "Score panel/Competition score");
+            poison = Text(ui, "Poison exposure");
+            ui.Get("Skills").GetComponent<UnityEngine.UI.Button>().onClick.AddListener(() => openSkills()); // 기술 창을 토글한다.
+            interaction = ui.Get("Interaction").GetComponent<UnityEngine.UI.Button>();
+            interaction.onClick.AddListener(() => interact()); // 가까운 서버 개체와 상호작용한다.
+            dialog = ui.Get("Game dialog");
+            dialogTitle = Text(ui, "Game dialog/Title");
+            dialogBody = Text(ui, "Game dialog/Message");
+            primary = ui.Get("Game dialog/Confirm").GetComponent<UnityEngine.UI.Button>();
+            primaryText = Text(ui, "Game dialog/Confirm/Label");
+            secondary = ui.Get("Game dialog/Cancel").GetComponent<UnityEngine.UI.Button>();
+            secondaryText = Text(ui, "Game dialog/Cancel/Label");
+            dialogCountdown = Text(ui, "Game dialog/Result countdown");
             primary.onClick.AddListener(() => primaryAction?.Invoke()); // 대화창의 주 버튼을 실행한다.
             secondary.onClick.AddListener(() => secondaryAction?.Invoke()); // 대화창의 보조 버튼을 실행한다.
             dialog.gameObject.SetActive(false);
@@ -139,26 +129,11 @@ namespace ChildrenOfBottom
             Vector3 overhead = camera.WorldToViewportPoint(model.position + Vector3.up * 0.42f); // 머리 위 0.42 Unity 미터의 뷰포트 위치다.
             if (worldHealthCount == worldHealthBars.Count)
             {
-                RectTransform background = Panel(worldHealthLayer, "Health bar", Vector2.zero,
-                    Vector2.zero, new Vector2(57f, 9f)); // 길이는 57 기준 픽셀, 두께는 기존 18의 절반이다.
-                background.pivot = new Vector2(0.5f, 0.5f);
-                RectTransform fillRect = Rect(background, "Fill", Vector2.zero, Vector2.zero, Vector2.zero); // 배경 안쪽의 체력 채움 영역이다.
-                fillRect.anchorMax = Vector2.one;
-                fillRect.offsetMin = Vector2.up;
-                fillRect.offsetMax = Vector2.down;
-                UnityEngine.UI.Image fill = fillRect.gameObject.AddComponent<UnityEngine.UI.Image>(); // 서버 체력 비율만큼 가로로 채우는 이미지다.
-                fill.raycastTarget = false;
-                UnityEngine.UI.Text level = Label(background, "Level", new Vector2(0f, 0.5f),
-                    new Vector2(-46f, 0f), new Vector2(42f, 18f), 12); // 체력바 왼쪽에 붙는 레벨이다.
-                level.alignment = TextAnchor.MiddleRight;
-                level.gameObject.AddComponent<UnityEngine.UI.Outline>().effectColor = Color.black;
-                UnityEngine.UI.Text name = Label(background, "Player name", Vector2.one * 0.5f,
-                    new Vector2(0f, 17f), new Vector2(180f, 22f), 14); // 레벨과 같은 화면 좌표로 체력바 위에 그리는 플레이어 이름이다.
-                name.supportRichText = false;
-                name.gameObject.AddComponent<UnityEngine.UI.Outline>().effectColor = Color.black;
-                UnityEngine.UI.Text detail = Label(background, "Public status", new Vector2(0.5f, 0.5f),
-                    new Vector2(0f, -17f), new Vector2(190f, 16f), 11); // 상대의 공개 효과 이름을 바 아래에 표시한다.
-                detail.gameObject.AddComponent<UnityEngine.UI.Outline>().effectColor = Color.black;
+                RectTransform background = UnityEngine.Object.Instantiate(worldHealthTemplate, worldHealthLayer); // 풀에 추가할 체력바 원본이다.
+                var fill = background.Find("Fill").GetComponent<UnityEngine.UI.Image>(); // 체력 비율을 그릴 이미지다.
+                var level = background.Find("Level").GetComponent<UnityEngine.UI.Text>(); // 서버 레벨을 그릴 글자다.
+                var name = background.Find("Player name").GetComponent<UnityEngine.UI.Text>(); // 플레이어 이름을 그릴 글자다.
+                var detail = background.Find("Public status").GetComponent<UnityEngine.UI.Text>(); // 공개 효과를 그릴 글자다.
                 worldHealthBars.Add((background, fill, level, name, detail));
             }
 
@@ -301,20 +276,8 @@ namespace ChildrenOfBottom
             fill.anchorMax = new Vector2(maximum > 0 ? Mathf.Clamp01(value / maximum) : 0f, 1f);
         }
 
-        // 본인 아래에 표시할 경험치 배경, 숫자와 채움 영역을 만든다.
-        private (RectTransform, UnityEngine.UI.Text, RectTransform) CreateExperienceBar()
-        {
-            RectTransform track = Panel(worldHealthLayer, "Experience bar", Vector2.zero, Vector2.zero, new Vector2(57, 8)); // 경험치 바의 기준 픽셀 크기다.
-            track.pivot = Vector2.one * 0.5f;
-            RectTransform fill = Rect(track, "Fill", Vector2.zero, Vector2.zero, Vector2.zero); // 현재 경험치 비율이 차지하는 영역이다.
-            UnityEngine.UI.Image image = fill.gameObject.AddComponent<UnityEngine.UI.Image>(); // 경험치 채움의 화면 색상이다.
-            image.color = new Color(0.72f, 0.76f, 0.80f);
-            image.raycastTarget = false;
-            UnityEngine.UI.Text value = Label(track, "Experience value", Vector2.one * 0.5f, new Vector2(0, -13), new Vector2(90, 17), 11); // 현재 및 필요 경험치 숫자다.
-            value.gameObject.AddComponent<UnityEngine.UI.Outline>().effectColor = Color.black;
-            track.gameObject.SetActive(false);
-            return (track, value, fill);
-        }
+        // 씬 참조에서 표시용 Text 컴포넌트를 얻는다.
+        private static UnityEngine.UI.Text Text(PortSceneUi ui, string key) => ui.Get(key).GetComponent<UnityEngine.UI.Text>(); // ui는 화면 참조, key는 텍스트 키다.
 
         // 화면에서 버튼으로 표시할 패널과 가운데 라벨을 만든다.
         internal (UnityEngine.UI.Button, UnityEngine.UI.Text) Button(Transform parent, string name, Vector2 anchor, Vector2 offset, Vector2 size) // parent는 배치 루트, name은 계층 이름, anchor는 화면 기준점, offset과 size는 기준 픽셀 단위다.

@@ -15,7 +15,6 @@ namespace ChildrenOfBottom
         private const string GameUiScene = "GameUI"; // 게임과 함께 추가로 로드하는 HUD 씬이다.
 
         private Transform playerModel; // 게임 씬의 본인 캐릭터 표시 모형이다.
-        private PortHud frontHud; // 현재 메인 또는 로비 씬이 소유하는 Canvas다.
         private PortHud loadingHud; // 씬이 교체되는 동안 유지하는 로딩 Canvas다.
         private PortMainMenuView mainMenu; // Main 씬에 직렬화된 버튼과 상태 표시의 참조다.
         private CancellationTokenSource googleAttempt; // 브라우저에서 진행 중인 Google 인증을 취소한다.
@@ -164,9 +163,8 @@ namespace ChildrenOfBottom
                 await SceneManager.LoadSceneAsync(LobbyScene);
                 lifetime.Token.ThrowIfCancellationRequested();
                 CreateMenuCamera();
-                frontHud = new PortHud();
-                AddBackdrop(frontHud);
-                lobby = new PortLobby(frontHud, EnterRoom, StartRoom, ReadyRoom, LeaveRoom, BrowseRooms, SetRoomPrivacy);
+                PortSceneUi lobbyUi = UnityEngine.Object.FindFirstObjectByType<PortSceneUi>(); // 로비 씬에 저장한 Canvas 참조다.
+                lobby = new PortLobby(lobbyUi, EnterRoom, StartRoom, ReadyRoom, LeaveRoom, BrowseRooms, SetRoomPrivacy);
             }
             lobby.ShowEntry(notice);
             SetLoading(false);
@@ -201,12 +199,12 @@ namespace ChildrenOfBottom
             world = new PortWorldView(WorldScale, worldMaterial);
             items = new PortItemView(WorldScale, worldMaterial);
 
-            hud = new PortHud(Interact, ToggleSkills);
-            SceneManager.MoveGameObjectToScene(hud.CanvasRoot.gameObject, SceneManager.GetSceneByName(GameUiScene));
-            skillShop = new PortSkillShop(hud, RequestSkill);
-            mapView = new PortMapView(hud, OpenMap);
-            touchControls = new PortTouchControls(hud, CastTouchSkill);
-            options = new PortGameOptions(hud, OpenOptions, PromptLeave, SendPriority, SendTestOptions, touchControls);
+            PortSceneUi gameUi = UnityEngine.Object.FindFirstObjectByType<PortSceneUi>(); // 추가 로드한 GameUI의 Canvas 참조다.
+            hud = new PortHud(gameUi, Interact, ToggleSkills);
+            skillShop = new PortSkillShop(hud, gameUi, RequestSkill);
+            mapView = new PortMapView(hud, gameUi, OpenMap);
+            touchControls = new PortTouchControls(gameUi, CastTouchSkill);
+            options = new PortGameOptions(gameUi, OpenOptions, PromptLeave, SendPriority, SendTestOptions, touchControls);
         }
 
         // 교체할 씬의 화면 자료와 메모리를 정리하고 연결은 현재 실행에 남긴다.
@@ -217,13 +215,10 @@ namespace ChildrenOfBottom
             ResetInput();
             if (mainMenu != null)
                 mainMenu.UnbindCallbacks();
-            frontHud?.Clear();
             hud?.Clear();
             mapView?.Dispose();
             items?.Clear();
-            touchControls?.Dispose();
             world?.Clear();
-            frontHud = null;
             mainMenu = null;
             lobby = null;
             hud = null;

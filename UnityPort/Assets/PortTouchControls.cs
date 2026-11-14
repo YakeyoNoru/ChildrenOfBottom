@@ -10,9 +10,6 @@ namespace ChildrenOfBottom
     {
         // 이 PC 또는 기기에만 적용하는 터치 표시 설정의 키다.
         private const string PreferenceKey = "ChildrenOfBottom.Unity.TouchControls";
-        private static readonly Vector2 SkillAnchor = new(1f, 0f); // 기술 버튼의 우측 하단 기준점이다.
-        private static readonly Vector2[] SkillOffsets = { new(0f, 0f), new(0f, 116f), new(-116f, 0f) }; // 우하단 A, 그 위 B, 그 왼쪽 C의 기준 픽셀 오프셋이다.
-        private static readonly Vector2 SkillMargin = new(-24f, 28f); // 화면 오른쪽·아래쪽 끝과 버튼 사이의 기준 픽셀 여백이다.
 
         // 메뉴에서 반복 선택하는 자동·켜기·끄기 값이다.
         private enum Visibility
@@ -28,7 +25,10 @@ namespace ChildrenOfBottom
         // 조이스틱 바탕과 입력 방향을 보여 주는 손잡이다.
         private readonly RectTransform stick;
         private readonly RectTransform thumb;
-        private readonly Sprite controlFace; // 조이스틱과 기술 버튼이 공유하는 원형 이미지다.
+        private readonly Vector2 thumbOrigin; // 씬에서 편집한 손잡이의 초기 위치(기준 픽셀)다.
+        private readonly Vector2[] skillOrigins = new Vector2[3]; // 씬에서 편집한 기술 버튼 위치(기준 픽셀)다.
+        private readonly Vector3[] skillScales = new Vector3[3]; // 기술 버튼의 에디터 배율이다.
+        private readonly Vector3 stickScale; // 조이스틱 바탕의 에디터 배율이다.
 
         // A·B·C 순서로 서버 기술 이름과 재사용 상태를 표시한다.
         private readonly UnityEngine.UI.Button[] buttons = new UnityEngine.UI.Button[3];
@@ -47,23 +47,19 @@ namespace ChildrenOfBottom
         internal Vector2 Axis { get; private set; }
 
         // 기존 HUD 위에 웹과 같은 원형 조이스틱과 기술 배치를 만든다.
-        internal PortTouchControls(PortHud hud, Action<string> cast) // hud는 Canvas, cast는 슬롯을 시전 대기에 올리는 동작이다.
+        internal PortTouchControls(PortSceneUi ui, Action<string> cast) // ui는 씬 참조, cast는 슬롯을 시전 대기에 올리는 동작이다.
         {
             Visibility defaultMode = Application.platform == RuntimePlatform.Android ? Visibility.On : Visibility.Auto; // Android에서 처음 실행할 때 터치 조작을 켠다.
             int saved = PlayerPrefs.GetInt(PreferenceKey, (int)defaultMode); // 사용자가 명시적으로 저장한 선택은 기본값보다 우선한다.
             visibility = saved >= (int)Visibility.Auto && saved <= (int)Visibility.Off ? (Visibility)saved : defaultMode;
 
-            root = PortHud.Rect(hud.CanvasRoot, "Touch Controls", Vector2.zero, Vector2.zero, Vector2.zero);
-            root.anchorMax = Vector2.one;
-            root.offsetMin = Vector2.zero;
-            root.offsetMax = Vector2.zero;
-            controlFace = CreateControlFace();
-            stick = PortHud.Panel(root, "Touch Joystick", Vector2.zero, new Vector2(28, 30), new Vector2(132, 132));
-            StyleCircle(stick.GetComponent<UnityEngine.UI.Image>(), true);
-            thumb = PortHud.Panel(stick, "Joystick Thumb", Vector2.one * 0.5f, Vector2.zero, new Vector2(54, 54));
-            StyleCircle(thumb.GetComponent<UnityEngine.UI.Image>(), false);
-            // 같은 포인터가 조이스틱 바깥으로 나가도 해제 전까지 입력을 추적한다.
-            var stickEvents = stick.gameObject.AddComponent<EventTrigger>();
+            root = ui.Get("Touch Controls");
+            stick = ui.Get("Touch Controls/Touch Joystick");
+            thumb = ui.Get("Touch Controls/Touch Joystick/Joystick Thumb");
+            stickScale = stick.localScale;
+            thumbOrigin = thumb.anchoredPosition;
+            stick.GetComponent<UnityEngine.UI.Image>().alphaHitTestMinimumThreshold = 0.05f;
+            var stickEvents = stick.GetComponent<EventTrigger>(); // 조이스틱 포인터 이벤트 연결점이다.
             AddPointerEvent(stickEvents, EventTriggerType.PointerDown, PressStick);
             AddPointerEvent(stickEvents, EventTriggerType.Drag, MoveStick);
             AddPointerEvent(stickEvents, EventTriggerType.PointerUp, ReleaseStick);
@@ -72,18 +68,15 @@ namespace ChildrenOfBottom
             for (int index = 0; index < buttons.Length; index++) // index는 A·B·C 슬롯의 배열 순번이다.
             {
                 string slot = ((char)('A' + index)).ToString(); // 이 화면 버튼이 시전할 서버 슬롯이다.
-                float diameter = index == 0 ? 104f : 68f; // 기본 기술과 보조 기술 버튼의 지름이며 기준 픽셀이다.
-                // 각 기술의 조작 대상 버튼과 서버 상태 라벨이다.
-                (UnityEngine.UI.Button button, UnityEngine.UI.Text label) = hud.Button(root, "Touch Skill " + slot,
-                    SkillAnchor, SkillMargin + SkillOffsets[index], Vector2.one * diameter);
-                StyleCircle(button.image, true);
+                string key = "Touch Controls/Touch Skill " + slot; // 씬에 미리 배치한 슬롯 버튼의 키다.
+                RectTransform rect = ui.Get(key); // 사용자가 편집한 슬롯 배치다.
+                var button = rect.GetComponent<UnityEngine.UI.Button>(); // 시전 버튼이다.
+                button.image.alphaHitTestMinimumThreshold = 0.05f;
                 buttons[index] = button;
-                labels[index] = label;
-                label.fontSize = index == 0 ? 17 : 12;
-                label.rectTransform.sizeDelta = new Vector2(diameter - 14f, diameter * 0.7f);
-                label.gameObject.AddComponent<UnityEngine.UI.Outline>().effectColor = new Color(0f, 0f, 0f, 0.65f);
-                // 탭을 떼기 전에 기존 웹 조작과 같이 포인터를 누를 때 시전한다.
-                var trigger = button.gameObject.AddComponent<EventTrigger>();
+                labels[index] = ui.Get(key + "/Label").GetComponent<UnityEngine.UI.Text>();
+                skillOrigins[index] = rect.anchoredPosition;
+                skillScales[index] = rect.localScale;
+                var trigger = rect.GetComponent<EventTrigger>(); // 누르는 즉시 시전하는 이벤트 연결점이다.
                 AddPointerEvent(trigger, EventTriggerType.PointerDown, pointer => // pointer는 기술 버튼의 마우스 또는 터치 입력이다.
                 {
                     if (pointer.button == PointerEventData.InputButton.Left && button.interactable)
@@ -91,47 +84,6 @@ namespace ChildrenOfBottom
                 });
             }
             SetAvailable(false, false);
-        }
-
-        // 반투명 바탕, 진한 테두리, 밝은 바깥선을 가진 원형 스프라이트를 생성한다.
-        private static Sprite CreateControlFace()
-        {
-            const int size = 128; // 원형 텍스처의 가로·세로 픽셀 수다.
-            Texture2D texture = new(size, size, TextureFormat.RGBA32, false); // 원형 그림과 입력 범위를 공유하는 읽기 가능한 텍스처다.
-            texture.wrapMode = TextureWrapMode.Clamp;
-            texture.filterMode = FilterMode.Bilinear;
-            Color32[] pixels = new Color32[size * size]; // 투명 바깥 영역을 포함한 픽셀 배열이다.
-            Color fill = new(0.78f, 0.86f, 0.70f, 0.25f); // 지형이 비치는 바탕색이다.
-            Color stroke = new(0.23f, 0.29f, 0.23f, 0.9f); // 밝은 지형에서도 보이는 진한 테두리다.
-            Color edge = new(0.84f, 0.9f, 0.79f, 0.72f); // 어두운 지형에서 원형을 드러내는 바깥선이다.
-            for (int y = 0; y < size; y++) // y는 아래쪽부터 세는 텍스처 행이다.
-            for (int x = 0; x < size; x++) // x는 왼쪽부터 세는 텍스처 열이다.
-            {
-                float distance = new Vector2(x + 0.5f - size / 2f, y + 0.5f - size / 2f).magnitude; // 원 중심까지의 픽셀 거리다.
-                Color color = Color.Lerp(fill, stroke, Mathf.Clamp01(distance - 58f)); // 원 내부와 안쪽 테두리의 경계를 부드럽게 연결한다.
-                color = Color.Lerp(color, edge, Mathf.Clamp01(distance - 61f));
-                color.a *= Mathf.Clamp01(63f - distance);
-                pixels[y * size + x] = color;
-            }
-            texture.SetPixels32(pixels);
-            texture.Apply();
-            return Sprite.Create(texture, new Rect(0f, 0f, size, size), Vector2.one * 0.5f, 100f, 0, SpriteMeshType.FullRect);
-        }
-
-        // 원형 그림을 붙이고 투명한 모서리를 터치 입력 영역에서 제외한다.
-        private void StyleCircle(UnityEngine.UI.Image image, bool receivesTouch) // image는 바탕 그림, receivesTouch는 포인터 입력 수신 여부다.
-        {
-            image.sprite = controlFace;
-            image.color = Color.white;
-            image.raycastTarget = receivesTouch;
-            image.alphaHitTestMinimumThreshold = 0.05f;
-        }
-
-        // 게임 UI를 내릴 때 이번 조작부가 생성한 이미지 리소스를 해제한다.
-        internal void Dispose()
-        {
-            UnityEngine.Object.Destroy(controlFace.texture);
-            UnityEngine.Object.Destroy(controlFace);
         }
 
         // 포커스·게임 상태·모달과 사용자의 표시 설정을 종합한다.
@@ -160,18 +112,18 @@ namespace ChildrenOfBottom
         {
             stickPointer = null;
             Axis = Vector2.zero;
-            thumb.anchoredPosition = Vector2.zero;
+            thumb.anchoredPosition = thumbOrigin;
         }
 
         // 웹 설정과 같은 비율로 조이스틱과 기술 버튼을 확대한다.
         internal void SetScale(float scale) // 사용자가 지정한 조작부 크기 배율이다.
         {
-            stick.localScale = Vector3.one * scale;
+            stick.localScale = stickScale * scale;
             for (int index = 0; index < buttons.Length; index++) // index는 화면 A·B·C 버튼의 순번이다.
             {
                 RectTransform button = buttons[index].GetComponent<RectTransform>(); // 확대와 간격 조정을 적용할 버튼이다.
-                button.localScale = Vector3.one * scale;
-                button.anchoredPosition = SkillMargin + SkillOffsets[index] * scale;
+                button.localScale = skillScales[index] * scale;
+                button.anchoredPosition = skillOrigins[0] + (skillOrigins[index] - skillOrigins[0]) * scale;
             }
             Reset();
         }
@@ -234,7 +186,7 @@ namespace ChildrenOfBottom
                 return;
             float radius = stick.rect.width * 0.32f; // 웹과 같은 비율로 계산한 조이스틱 이동 반경이다.
             Vector2 normalized = Vector2.ClampMagnitude((local - stick.rect.center) / radius, 1f); // Canvas 위쪽이 양수인 손잡이 방향이다.
-            thumb.anchoredPosition = normalized * radius;
+            thumb.anchoredPosition = thumbOrigin + normalized * radius;
             Axis = new Vector2(normalized.x, -normalized.y);
         }
 

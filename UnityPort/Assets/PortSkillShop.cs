@@ -10,10 +10,10 @@ namespace ChildrenOfBottom
     {
         // 기술 창에 고정되는 기준 위치다.
         private static readonly Vector2 Top = new(0.5f, 1f);
-        private static readonly Vector2 Middle = new(0.5f, 0.5f);
 
         // 카드 행과 버튼에 공통 화면 요소를 제공한다.
         private readonly PortHud hud;
+        private readonly UnityEngine.UI.Button skillTemplate; // 동적 기술 카드를 복제할 프리팹이다.
 
         // 기술 창과 스크롤 목록의 배치 기준이다.
         private readonly RectTransform panel;
@@ -41,41 +41,21 @@ namespace ChildrenOfBottom
         private PortProtocol.EntityStatus status;
 
         // 같은 씬에 서버 기술을 확인할 창을 만든다.
-        internal PortSkillShop(PortHud hud, Func<string, string, bool> send) // hud는 Canvas, send는 명령 종류와 선택 코드의 요청 함수다.
+        internal PortSkillShop(PortHud hud, PortSceneUi ui, Func<string, string, bool> send) // hud는 공통 Canvas, ui는 씬 참조, send는 명령 종류와 코드를 보내는 함수다.
         {
             this.hud = hud;
             this.send = send;
-            panel = PortHud.Panel(hud.CanvasRoot, "Skill Shop", Middle, Vector2.zero, new Vector2(580, 420));
-            panel.GetComponent<UnityEngine.UI.Image>().raycastTarget = true;
-            resources = hud.Label(panel, "Skill Points", Top, new Vector2(0, -9), new Vector2(430, 37), 23);
-            AddButton("손패", new Vector2(-172, -55), () => Select(false)); // 서버 손패 구매 탭을 연다.
-            AddButton("보유 기술", new Vector2(0, -55), () => Select(true)); // 장착 가능한 보유 기술 탭을 연다.
-            AddButton("닫기 [B]", new Vector2(172, -55), Hide); // 기술 창을 닫는다.
-
-            // 스크롤할 카드 목록의 화면 경계를 만든다.
-            RectTransform frame = PortHud.Rect(panel, "Skill list", Top, new Vector2(0, -105), new Vector2(540, 214));
-            scroll = frame.gameObject.AddComponent<UnityEngine.UI.ScrollRect>();
-            scroll.horizontal = false;
-            scroll.movementType = UnityEngine.UI.ScrollRect.MovementType.Clamped;
-            scroll.scrollSensitivity = 26;
-            // 표시 범위를 벗어난 카드 행은 마스크로 가린다.
-            RectTransform viewport = PortHud.Rect(frame, "Viewport", Top, Vector2.zero, new Vector2(540, 214));
-            viewport.gameObject.AddComponent<UnityEngine.UI.RectMask2D>();
-            list = PortHud.Rect(viewport, "Content", Top, Vector2.zero, new Vector2(540, 0));
-            // 기술 목록을 위에서부터 차례대로 세로 배치한다.
-            var layout = list.gameObject.AddComponent<UnityEngine.UI.VerticalLayoutGroup>();
-            layout.spacing = 5;
-            layout.childControlWidth = true;
-            layout.childControlHeight = false;
-            layout.childForceExpandHeight = false;
-            // 카드 수에 따라 스크롤할 영역 높이를 늘린다.
-            var fit = list.gameObject.AddComponent<UnityEngine.UI.ContentSizeFitter>();
-            fit.verticalFit = UnityEngine.UI.ContentSizeFitter.FitMode.PreferredSize;
-            scroll.viewport = viewport;
-            scroll.content = list;
-
-            notice = hud.Label(panel, "Skill response", Top, new Vector2(0, -324), new Vector2(540, 29), 16);
-            (reroll, rerollText) = hud.Button(panel, "Reroll", Top, new Vector2(0, -360), new Vector2(264, 40));
+            panel = ui.Get("Skill Shop");
+            skillTemplate = ui.SkillTemplate;
+            resources = ui.Get("Skill Shop/Skill Points").GetComponent<UnityEngine.UI.Text>();
+            AddButton(ui, "손패", () => Select(false)); // 서버 손패를 표시한다.
+            AddButton(ui, "보유 기술", () => Select(true)); // 장착 가능한 기술을 표시한다.
+            AddButton(ui, "닫기 [B]", Hide);
+            scroll = ui.Get("Skill Shop/Skill list").GetComponent<UnityEngine.UI.ScrollRect>();
+            list = scroll.content;
+            notice = ui.Get("Skill Shop/Skill response").GetComponent<UnityEngine.UI.Text>();
+            reroll = ui.Get("Skill Shop/Reroll").GetComponent<UnityEngine.UI.Button>();
+            rerollText = ui.Get("Skill Shop/Reroll/Label").GetComponent<UnityEngine.UI.Text>();
             reroll.onClick.AddListener(() => Request("game.skill.reroll", null)); // 서버에 손패 다시 뽑기를 요청한다.
             Hide();
         }
@@ -215,8 +195,12 @@ namespace ChildrenOfBottom
             // 보유 레벨이 아직 없으면 0으로 표시한다.
             int ownedLevel = status.ownedSkills != null && status.ownedSkills.TryGetValue(code, out int level) ? level : 0; // level은 해당 기술의 서버 보유 레벨이다.
             // 한 줄 장착 버튼 또는 설명을 포함한 구매 카드다.
-            (UnityEngine.UI.Button button, UnityEngine.UI.Text label) =
-                hud.Button(list, code, Top, Vector2.zero, new Vector2(540, equipping ? 43 : 66));
+            var button = UnityEngine.Object.Instantiate(skillTemplate, list); // 서버 기술 하나를 표시하는 프리팹 복제본이다.
+            button.name = code;
+            var rect = (RectTransform)button.transform; // 장착 행의 높이를 구매 카드보다 짧게 설정한다.
+            if (equipping)
+                rect.sizeDelta = new Vector2(rect.sizeDelta.x, 43f);
+            var label = button.GetComponentInChildren<UnityEngine.UI.Text>(); // 이름 및 기술 설명을 표시한다.
             label.fontSize = 16;
             if (equipping)
             {
@@ -236,11 +220,10 @@ namespace ChildrenOfBottom
         }
 
         // 창 상단 탭이나 닫기 버튼을 추가한다.
-        private void AddButton(string title, Vector2 position, Action action) // title은 라벨, position은 기준 픽셀, action은 클릭 동작이다.
+        private static void AddButton(PortSceneUi ui, string title, Action action) // ui는 씬 참조, title은 버튼 키, action은 클릭 동작이다.
         {
             // 화면에 표시할 탐색 버튼과 그 라벨이다.
-            (UnityEngine.UI.Button button, UnityEngine.UI.Text label) = hud.Button(panel, title, Top, position, new Vector2(156, 38));
-            label.text = title;
+            var button = ui.Get("Skill Shop/" + title).GetComponent<UnityEngine.UI.Button>(); // 기술 창 탭 또는 닫기 버튼이다.
             button.onClick.AddListener(() => action()); // 선택한 탭 또는 닫기 명령을 실행한다.
         }
     }

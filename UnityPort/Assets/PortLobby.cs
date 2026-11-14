@@ -7,11 +7,6 @@ namespace ChildrenOfBottom
     // 멀티플레이 방의 생성, 코드 참가와 준비 상태를 표시한다.
     internal sealed class PortLobby
     {
-        // 대기실 UI의 가운데 앵커다.
-        private static readonly Vector2 Middle = new(0.5f, 0.5f);
-        // Canvas 위쪽 중앙에 맞추는 대기실 UI의 앵커다.
-        private static readonly Vector2 Top = new(0.5f, 1f);
-
         // 입장 전 화면과 참가 후 화면을 바꾸는 패널이다.
         private readonly RectTransform entry;
         private readonly RectTransform waiting;
@@ -50,7 +45,7 @@ namespace ChildrenOfBottom
 
         // 서버 상태를 반영하는 방 입장 및 대기 화면을 만든다.
         internal PortLobby(
-            PortHud hud, // 같은 Canvas, 버튼, 글꼴을 제공한다.
+            PortSceneUi ui, // 로비 씬에 저장한 화면과 버튼 참조다.
             Action<string, string, bool> enter, // 이름, 방 코드, 공개 목록 참가 여부를 전송한다.
             Action start, // 방장의 게임 시작 요청이다.
             Action<bool> ready, // 일반 참가자의 준비 변경 요청이다.
@@ -58,24 +53,18 @@ namespace ChildrenOfBottom
             Action browse, // 서버의 공개방 목록 요청이다.
             Action<bool> privacy) // 방장이 서버에 공개 상태를 바꾸도록 요청한다.
         {
-            entry = PortHud.Panel(hud.CanvasRoot, "Lobby Entry", Middle, Vector2.zero, new Vector2(460, 320));
-            waiting = PortHud.Panel(hud.CanvasRoot, "Lobby Room", Middle, Vector2.zero, new Vector2(460, 370));
-            hud.Label(entry, "Title", Top, new Vector2(0, -12), new Vector2(400, 32), 24).text = "Children of Bottom";
-            playerName = Input(hud, entry, "이름", -60, 20);
-            playerName.text = "Unity 플레이어";
-            roomCode = Input(hud, entry, "참가할 방 코드 6자리", -109, 6);
-            entryNotice = hud.Label(entry, "Status", Top, new Vector2(0, -153), new Vector2(425, 40), 17);
+            entry = ui.Get("Lobby Entry");
+            waiting = ui.Get("Lobby Room");
+            playerName = ui.Get("Lobby Entry/이름").GetComponent<UnityEngine.UI.InputField>();
+            roomCode = ui.Get("Lobby Entry/참가할 방 코드 6자리").GetComponent<UnityEngine.UI.InputField>();
+            entryNotice = ui.Get("Lobby Entry/Status").GetComponent<UnityEngine.UI.Text>();
 
-            // 생성과 참가는 같은 이름 입력을 사용하고 참가 시에만 코드를 전송한다.
-            (UnityEngine.UI.Button create, UnityEngine.UI.Text createLabel) = hud.Button(entry, "Create Room", Top, new Vector2(-94, -207), new Vector2(168, 43));
-            createLabel.text = "방 만들기";
+            var create = ui.Get("Lobby Entry/Create Room").GetComponent<UnityEngine.UI.Button>(); // 방 생성 버튼이다.
             create.onClick.AddListener(() => enter(playerName.text, null, false)); // 코드 없이 방 생성 요청을 보낸다.
-            (UnityEngine.UI.Button join, UnityEngine.UI.Text joinLabel) = hud.Button(entry, "Join Room", Top, new Vector2(94, -207), new Vector2(168, 43));
-            joinLabel.text = "코드로 참가";
+            var join = ui.Get("Lobby Entry/Join Room").GetComponent<UnityEngine.UI.Button>(); // 코드 입장 버튼이다.
             join.onClick.AddListener(() => enter(playerName.text, roomCode.text, false)); // 직접 입력한 코드로 참가한다.
             // 공개방 검색 화면으로 이동하는 버튼이다.
-            (UnityEngine.UI.Button browseButton, UnityEngine.UI.Text browseLabel) = hud.Button(entry, "Browse Rooms", Top, new Vector2(0, -262), new Vector2(178, 40));
-            browseLabel.text = "공개방 목록";
+            var browseButton = ui.Get("Lobby Entry/Browse Rooms").GetComponent<UnityEngine.UI.Button>(); // 공개방 목록 버튼이다.
             browseButton.onClick.AddListener(() => // 새로 열 때 서버에 최신 목록을 요청한다.
             {
                 if (string.IsNullOrWhiteSpace(playerName.text))
@@ -90,27 +79,27 @@ namespace ChildrenOfBottom
                 browse();
             });
 
-            browser = PortHud.Panel(hud.CanvasRoot, "Public Rooms", Middle, Vector2.zero, new Vector2(460, 350));
-            hud.Label(browser, "Title", Top, new Vector2(0, -10), new Vector2(420, 34), 22).text = "공개 대기방";
+            browser = ui.Get("Public Rooms");
             for (int index = 0; index < roomRows.Length; index++) // index는 보이는 목록의 행 순번이다.
             {
                 int row = index; // 버튼을 눌렀을 때 선택할 고정 행 번호다.
-                (roomRows[index], rowLabels[index]) = hud.Button(browser, "Public Room " + index, Top,
-                    new Vector2(0, -52 - index * 42), new Vector2(418, 38));
+                roomRows[index] = ui.Get("Public Rooms/Public Room " + index).GetComponent<UnityEngine.UI.Button>();
+                rowLabels[index] = ui.Get("Public Rooms/Public Room " + index + "/Label").GetComponent<UnityEngine.UI.Text>();
                 rowLabels[index].supportRichText = false;
                 roomRows[index].onClick.AddListener(() => enter(playerName.text, rooms[page * roomRows.Length + row].code, true)); // 목록에서 고른 공개방으로 참가한다.
             }
-            browserNotice = hud.Label(browser, "Status", Top, new Vector2(0, -263), new Vector2(420, 31), 16);
-            previousPage = BrowserButton(hud, "이전", -163, () => ChangePage(-1)); // 앞 페이지를 연다.
-            nextPage = BrowserButton(hud, "다음", -58, () => ChangePage(1)); // 뒤 페이지를 연다.
-            BrowserButton(hud, "새로고침", 50, browse);
-            BrowserButton(hud, "돌아가기", 157, () => ShowEntry()); // 이름과 코드 입력으로 돌아간다.
+            browserNotice = ui.Get("Public Rooms/Status").GetComponent<UnityEngine.UI.Text>();
+            previousPage = BrowserButton(ui, "이전", () => ChangePage(-1)); // 앞 페이지를 연다.
+            nextPage = BrowserButton(ui, "다음", () => ChangePage(1)); // 뒤 페이지를 연다.
+            BrowserButton(ui, "새로고침", browse);
+            BrowserButton(ui, "돌아가기", () => ShowEntry()); // 이름과 코드 입력으로 돌아간다.
 
-            heading = hud.Label(waiting, "Room Code", Top, new Vector2(0, -12), new Vector2(400, 34), 24);
-            roster = hud.Label(waiting, "Players", Top, new Vector2(0, -54), new Vector2(430, 150), 20);
+            heading = ui.Get("Lobby Room/Room Code").GetComponent<UnityEngine.UI.Text>();
+            roster = ui.Get("Lobby Room/Players").GetComponent<UnityEngine.UI.Text>();
             roster.supportRichText = false;
-            roomNotice = hud.Label(waiting, "Status", Top, new Vector2(0, -207), new Vector2(425, 40), 17);
-            (roomAction, roomActionText) = hud.Button(waiting, "Ready or Start", Top, new Vector2(-94, -258), new Vector2(168, 43));
+            roomNotice = ui.Get("Lobby Room/Status").GetComponent<UnityEngine.UI.Text>();
+            roomAction = ui.Get("Lobby Room/Ready or Start").GetComponent<UnityEngine.UI.Button>();
+            roomActionText = ui.Get("Lobby Room/Ready or Start/Label").GetComponent<UnityEngine.UI.Text>();
             roomAction.onClick.AddListener(() => // 현재 권한에 맞는 방 명령을 보낸다.
             {
                 if (isHost)
@@ -119,14 +108,13 @@ namespace ChildrenOfBottom
                     ready(readyNext);
             });
             // 방장과 참가자가 공통으로 쓰는 나가기 버튼이다.
-            (UnityEngine.UI.Button exit, UnityEngine.UI.Text exitLabel) = hud.Button(waiting, "Leave Room", Top, new Vector2(94, -258), new Vector2(168, 43));
-            exitLabel.text = "나가기";
+            var exit = ui.Get("Lobby Room/Leave Room").GetComponent<UnityEngine.UI.Button>(); // 방 퇴장 버튼이다.
             exit.onClick.AddListener(() => leave()); // 현재 대기실에서 나간다.
-            (privacyButton, privacyLabel) = hud.Button(waiting, "Room Privacy", Top, new Vector2(-94, -313), new Vector2(168, 38));
+            privacyButton = ui.Get("Lobby Room/Room Privacy").GetComponent<UnityEngine.UI.Button>();
+            privacyLabel = ui.Get("Lobby Room/Room Privacy/Label").GetComponent<UnityEngine.UI.Text>();
             privacyButton.onClick.AddListener(() => privacy(!privateRoom)); // 다음 공개 상태를 서버에 요청한다.
             // 현재 방의 코드를 운영체제 클립보드에 복사하는 버튼이다.
-            (UnityEngine.UI.Button copy, UnityEngine.UI.Text copyLabel) = hud.Button(waiting, "Copy Room Code", Top, new Vector2(94, -313), new Vector2(168, 38));
-            copyLabel.text = "방 코드 복사";
+            var copy = ui.Get("Lobby Room/Copy Room Code").GetComponent<UnityEngine.UI.Button>(); // 방 코드 복사 버튼이다.
             copy.onClick.AddListener(() => // 다른 참가자에게 공유할 수 있도록 서버 코드를 복사한다.
             {
                 GUIUtility.systemCopyBuffer = activeCode;
@@ -136,11 +124,10 @@ namespace ChildrenOfBottom
         }
 
         // 공개방 목록의 하단 탐색 버튼을 만든다.
-        private UnityEngine.UI.Button BrowserButton(PortHud hud, string title, float x, Action action) // hud는 Canvas, title은 라벨, x는 가로 기준 픽셀, action은 클릭 동작이다.
+        private UnityEngine.UI.Button BrowserButton(PortSceneUi ui, string title, Action action) // ui는 씬 참조, title은 버튼 키, action은 클릭 동작이다.
         {
             // 목록 탐색에 쓰는 버튼과 표시 라벨이다.
-            (UnityEngine.UI.Button button, UnityEngine.UI.Text label) = hud.Button(browser, title, Top, new Vector2(x, -305), new Vector2(98, 33));
-            label.text = title;
+            var button = ui.Get("Public Rooms/" + title).GetComponent<UnityEngine.UI.Button>(); // 페이지 탐색에 쓰는 버튼이다.
             button.onClick.AddListener(() => action()); // 버튼이 맡은 탐색 동작을 호출한다.
             return button;
         }
@@ -219,31 +206,5 @@ namespace ChildrenOfBottom
             (waiting.gameObject.activeSelf ? roomNotice : browser.gameObject.activeSelf ? browserNotice : entryNotice).text = message;
         }
 
-        // 로비의 이름 또는 방 코드에 사용할 한 줄 입력란이다.
-        private static UnityEngine.UI.InputField Input(
-            PortHud hud, // 입력에 사용할 글꼴과 텍스트 구성 요소를 제공한다.
-            RectTransform parent, // 입력란을 놓을 대기 패널이다.
-            string hint, // 입력이 비었을 때 표시할 안내다.
-            float top, // 대기 패널 상단에서부터의 위치이며 기준 픽셀이다.
-            int limit) // 서버 검증과 맞춘 입력 최대 글자 수다.
-        {
-            // 클릭을 받는 입력 배경이다.
-            RectTransform field = PortHud.Panel(parent, hint, Top, new Vector2(0, top), new Vector2(354, 40));
-            field.GetComponent<UnityEngine.UI.Image>().color = new Color(0.12f, 0.18f, 0.23f);
-            field.GetComponent<UnityEngine.UI.Image>().raycastTarget = true;
-            // 키보드로 편집할 실제 입력 요소다.
-            var input = field.gameObject.AddComponent<UnityEngine.UI.InputField>();
-            input.characterLimit = limit;
-            // 입력한 문자와 빈 입력 안내를 각각 표시한다.
-            UnityEngine.UI.Text value = hud.Label(field, "Value", Middle, Vector2.zero, new Vector2(324, 35), 19);
-            UnityEngine.UI.Text placeholder = hud.Label(field, "Hint", Middle, Vector2.zero, new Vector2(324, 35), 19);
-            value.font = hud.SharedFont;
-            value.supportRichText = false;
-            placeholder.text = hint;
-            placeholder.color = new Color(0.68f, 0.75f, 0.78f);
-            input.textComponent = value;
-            input.placeholder = placeholder;
-            return input;
-        }
     }
 }

@@ -53,22 +53,22 @@ namespace ChildrenOfBottom
         private double pointerBlockedUntil;
 
         // 플레이 상태를 공유하는 두 지도와 클릭·드래그를 배치한다.
-        internal PortMapView(PortHud hud, Action open) // hud는 게임 Canvas, open은 작은 지도 클릭 동작이다.
+        internal PortMapView(PortHud hud, PortSceneUi ui, Action open) // hud는 게임 Canvas, ui는 씬 참조, open은 작은 지도 클릭 동작이다.
         {
             this.hud = hud;
             // 원형 텍스처를 넣어 투명한 모서리를 가진 우측 상단 버튼을 만든다.
-            RectTransform mini = PortHud.Rect(hud.CanvasRoot, "Minimap", Vector2.one, new Vector2(-18, -18), new Vector2(172, 172));
-            var smallImage = mini.gameObject.AddComponent<UnityEngine.UI.RawImage>(); // 작은 지도 픽셀을 표시한다.
+            RectTransform mini = ui.Get("Minimap"); // 씬에서 배치한 작은 지도다.
+            var smallImage = mini.GetComponent<UnityEngine.UI.RawImage>(); // 작은 지도 픽셀을 표시한다.
             smallImage.texture = miniTexture;
-            miniButton = mini.gameObject.AddComponent<UnityEngine.UI.Button>();
+            miniButton = mini.GetComponent<UnityEngine.UI.Button>();
             miniButton.targetGraphic = smallImage;
             miniButton.onClick.AddListener(() => open()); // 작은 지도 클릭 시 전체 지도를 연다.
 
-            expanded = PortHud.Rect(hud.CanvasRoot, "Expanded Map", Vector2.one * 0.5f, Vector2.zero, new Vector2(640, 400));
-            var largeImage = expanded.gameObject.AddComponent<UnityEngine.UI.RawImage>(); // 불투명한 8:5 전체 지도 픽셀을 표시한다.
+            expanded = ui.Get("Expanded Map");
+            var largeImage = expanded.GetComponent<UnityEngine.UI.RawImage>(); // 불투명한 8:5 전체 지도 픽셀을 표시한다.
             largeImage.texture = expandedTexture;
             // UI의 마우스·터치 드래그를 지도 중심 이동으로 전달한다.
-            var trigger = expanded.gameObject.AddComponent<EventTrigger>();
+            var trigger = expanded.GetComponent<EventTrigger>();
             var begin = new EventTrigger.Entry { eventID = EventTriggerType.BeginDrag }; // 처음 지도 이동을 시작한 포인터 이벤트다.
             begin.callback.AddListener(data => BeginPan((PointerEventData)data)); // data는 드래그를 시작한 포인터다.
             trigger.triggers.Add(begin);
@@ -79,9 +79,7 @@ namespace ChildrenOfBottom
             end.callback.AddListener(data => EndPan((PointerEventData)data)); // data는 드래그를 끝낸 포인터다.
             trigger.triggers.Add(end);
             // 확장 지도를 닫고 이후 합성 클릭을 잠시 차단하는 버튼이다.
-            (UnityEngine.UI.Button close, UnityEngine.UI.Text closeText) =
-                hud.Button(expanded, "Close Map", Vector2.one, new Vector2(-8, -8), new Vector2(40, 40));
-            closeText.text = "×";
+            var close = ui.Get("Expanded Map/Close Map").GetComponent<UnityEngine.UI.Button>(); // 전체 지도 닫기 버튼이다.
             close.onClick.AddListener(() => Close(true)); // 클릭으로 닫을 때만 추가 클릭을 보호한다.
             Reset();
         }

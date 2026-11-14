@@ -24,4 +24,12 @@ Android APK는 `Assets/Resources/AndroidConnectionSettings.json`의 `serverOrigi
 - `PortMainMenuView`: Main Menu에 부착된 스크립트. Inspector의 Button/Text 직렬화 참조를 통해 클릭 이벤트를 연결하고 상태 안내를 갱신한다
 - Google 인증 취소 버튼은 에디터에서 배치를 확인할 수 있도록 저장하지만 Play를 시작하면 숨겨지고 인증 대기 중에만 표시한다
 
-Unity 6000.3.5f2에서 Main 씬을 열어 Console 컴파일 오류가 없는지, 네 버튼 위치가 Scene/Game 뷰에서 보이는지, Play 중 Google 로그인·회원가입·게스트 입장·인증 취소가 동작하는지 확인해야 한다. 이번 단계에서는 Lobby 및 GameUI 씬의 런타임 생성 방식은 변경하지 않았다.
+Unity 6000.3.5f2에서 Main 씬을 열어 Console 컴파일 오류가 없는지, 네 버튼 위치가 Scene/Game 뷰에서 보이는지, Play 중 Google 로그인·회원가입·게스트 입장·인증 취소가 동작하는지 확인해야 한다.
+
+## Lobby와 GameUI 씬 UI 편집
+
+- `Assets/Scenes/Lobby.unity`를 열고 Hierarchy에서 `Lobby Canvas`를 펼치면 방 생성, 방 목록, 대기실 UI를 선택할 수 있다.
+- `Assets/Scenes/GameUI.unity`를 열고 Hierarchy에서 Canvas를 펼치면 미니맵, 메뉴, 기술 버튼과 터치 조작부를 선택할 수 있다. Scene 뷰를 2D로 전환하고 오브젝트를 선택한 상태에서 F를 눌러 배치에 초점을 맞춘다.
+- 비활성 패널은 편집 중 잠시 활성화해 위치와 크기를 확인하고 원래 활성 상태로 돌린 뒤 저장한다. 위치·크기·앵커는 Inspector의 Rect Transform에서 수정한다.
+- 월드 체력바와 스킬 카드의 공통 배치는 Project 창에서 `Assets/WorldHealthBar.prefab`, `Assets/SkillCard.prefab`을 더블클릭해 수정한다. Play 중에는 게임 데이터에 따라 필요한 개수만큼 생성한다.
+- 기존 오브젝트를 교체했다면 Canvas의 Port Scene Ui 컴포넌트에 저장된 참조도 새 오브젝트로 갱신한다.
