@@ -17,8 +17,7 @@ namespace ChildrenOfBottom
         private Transform playerModel; // 게임 씬의 본인 캐릭터 표시 모형이다.
         private PortHud frontHud; // 현재 메인 또는 로비 씬이 소유하는 Canvas다.
         private PortHud loadingHud; // 씬이 교체되는 동안 유지하는 로딩 Canvas다.
-        private UnityEngine.UI.Text mainNotice; // 메인 화면에 인증·접속 상태를 표시한다.
-        private UnityEngine.UI.Button cancelGoogleButton; // Google 인증을 기다리는 동안만 표시할 취소 버튼이다.
+        private PortMainMenuView mainMenu; // Main 씬에 직렬화된 버튼과 상태 표시의 참조다.
         private CancellationTokenSource googleAttempt; // 브라우저에서 진행 중인 Google 인증을 취소한다.
 
         // 빌드 및 에디터 Play에서 첫 씬을 표시하고 한 개의 세션 관리자만 만든다.
@@ -79,8 +78,8 @@ namespace ChildrenOfBottom
             camera.backgroundColor = new Color(0.045f, 0.07f, 0.10f);
         }
 
-        // 연결 시도 전이나 복귀 불가 연결 종료 후 메인 화면을 연다.
-        private async Task ShowMainAsync(string notice = "") // notice는 직전 인증 또는 서버 연결에서 온 안내다.
+        // 메인 씬에 이미 배치된 UI 버튼을 찾아 이벤트를 연결하고 안내 문구를 설정한다.
+        private async Task ShowMainAsync(string notice = "") // notice는 로그인 및 접속 결과 안내다.
         {
             if (SceneManager.GetActiveScene().name != MainScene)
             {
@@ -88,41 +87,14 @@ namespace ChildrenOfBottom
                 await SceneManager.LoadSceneAsync(MainScene);
             }
             lifetime.Token.ThrowIfCancellationRequested();
-            if (mainNotice == null)
-                CreateMainMenu();
-            mainNotice.text = notice;
-        }
-
-        // 로그인과 회원가입을 동일한 Google 인증에 연결하고 게스트를 별도로 제공한다.
-        private void CreateMainMenu()
-        {
-            CreateMenuCamera();
-            frontHud = new PortHud();
-            AddBackdrop(frontHud);
-            Vector2 middle = new(0.5f, 0.5f); // 메인 패널과 메뉴 요소를 가운데에 고정한다.
-            RectTransform panel = PortHud.Panel(frontHud.CanvasRoot, "Main Menu", middle, Vector2.zero, new Vector2(460, 330)); // 로그인 선택 영역이다.
-            frontHud.Label(panel, "Title", middle, new Vector2(0, 122), new Vector2(400, 45), 30).text = "Children of Bottom";
-            AddMainButton(panel, "로그인 · Google", 63, StartGoogle);
-            AddMainButton(panel, "게스트 로그인", 12, StartGuest);
-            AddMainButton(panel, "회원가입 · Google", -39, StartGoogle);
-            cancelGoogleButton = AddMainButton(panel, "Google 인증 취소", -90, CancelGoogle);
-            cancelGoogleButton.gameObject.SetActive(false);
-            mainNotice = frontHud.Label(panel, "Status", middle, new Vector2(0, -133), new Vector2(430, 52), 16);
-            mainNotice.supportRichText = false;
-        }
-
-        // 메인 메뉴 버튼을 연결하고 버튼 문구와 동작을 설정한다.
-        private UnityEngine.UI.Button AddMainButton(
-            RectTransform panel, // 버튼을 배치할 메인 메뉴 패널이다.
-            string title, // 버튼의 화면 문구다.
-            float y, // 패널 중심에서의 세로 기준 픽셀 오프셋이다.
-            Action action) // 버튼이 눌리면 실행할 동작이다.
-        {
-            (UnityEngine.UI.Button button, UnityEngine.UI.Text label) = frontHud.Button(panel, title,
-                new Vector2(0.5f, 0.5f), new Vector2(0, y), new Vector2(220, 42)); // 해당 메뉴의 버튼과 라벨이다.
-            label.text = title;
-            button.onClick.AddListener(() => action()); // 선택한 메뉴 동작을 실행한다.
-            return button;
+            if (mainMenu == null)
+            {
+                mainMenu = UnityEngine.Object.FindFirstObjectByType<PortMainMenuView>(FindObjectsInactive.Include);
+                if (mainMenu == null)
+                    throw new InvalidOperationException("Main.unity에 PortMainMenuView가 없습니다.");
+                mainMenu.BindCallbacks(StartGoogle, StartGuest, CancelGoogle);
+            }
+            mainMenu.SetNotice(notice);
         }
 
         // Google 로그인 또는 첫 가입을 시작하고 승인된 계정으로 소켓을 연다.
@@ -150,8 +122,8 @@ namespace ChildrenOfBottom
                     using var attempt = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token); // 현재 Google 인증의 취소 및 제한 시간이다.
                     googleAttempt = attempt;
                     attempt.CancelAfter(TimeSpan.FromMinutes(3));
-                    cancelGoogleButton.gameObject.SetActive(true);
-                    mainNotice.text = "브라우저에서 Google 인증을 마치고 게임으로 돌아오세요.";
+                    mainMenu.SetGoogleCancelVisible(true);
+                    mainMenu.SetNotice("브라우저에서 Google 인증을 마치고 게임으로 돌아오세요.");
                     try
                     {
                         memberCookies = await connectionSettings.SignInGoogleAsync(attempt.Token);
@@ -159,17 +131,17 @@ namespace ChildrenOfBottom
                     finally
                     {
                         googleAttempt = null;
-                        if (cancelGoogleButton != null)
-                            cancelGoogleButton.gameObject.SetActive(false);
+                        if (mainMenu != null)
+                            mainMenu.SetGoogleCancelVisible(false);
                     }
                 }
-                mainNotice.text = "게임 서버에 연결하고 있습니다.";
+                mainMenu.SetNotice("게임 서버에 연결하고 있습니다.");
                 await RunSessionAsync();
             }
             catch (OperationCanceledException)
             {
-                if (!lifetime.IsCancellationRequested && mainNotice != null)
-                    mainNotice.text = "인증이 취소되었거나 대기 시간이 지났습니다.";
+                if (!lifetime.IsCancellationRequested && mainMenu != null)
+                    mainMenu.SetNotice("인증이 취소되었거나 대기 시간이 지났습니다.");
             }
             catch (Exception error) // error는 설정 오류 또는 인증 서버 연결 실패다.
             {
@@ -242,6 +214,7 @@ namespace ChildrenOfBottom
             playingOnServer = false;
             resultShowing = false;
             ResetInput();
+            mainMenu?.UnbindCallbacks();
             frontHud?.Clear();
             hud?.Clear();
             mapView?.Dispose();
@@ -249,8 +222,7 @@ namespace ChildrenOfBottom
             touchControls?.Dispose();
             world?.Clear();
             frontHud = null;
-            mainNotice = null;
-            cancelGoogleButton = null;
+            mainMenu = null;
             lobby = null;
             hud = null;
             mapView = null;
