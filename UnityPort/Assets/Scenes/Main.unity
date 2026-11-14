@@ -402,7 +402,7 @@ MonoBehaviour:
   guestLoginButton: {fileID: 210032}
   googleRegistrationButton: {fileID: 210041}
   googleCancelButton: {fileID: 210050}
-  statusText: {fileID: undefined}
+  statusText: {fileID: 210058}
 --- !u!1 &210015
 GameObject:
   m_ObjectHideFlags: 0
@@ -1300,6 +1300,8 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 210056}
+  - component: {fileID: 210057}
+  - component: {fileID: 210058}
   m_Layer: 5
   m_Name: Status
   m_TagString: Untagged
@@ -1327,7 +1329,15 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: -133}
   m_SizeDelta: {x: 430, y: 52}
   m_Pivot: {x: 0.5, y: 0.5}
---- !u!114 &undefined
+--- !u!222 &210057
+CanvasRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 210055}
+  m_CullTransparentMesh: 1
+--- !u!114 &210058
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
