@@ -13,3 +13,15 @@ Android APK는 `Assets/Resources/AndroidConnectionSettings.json`의 `serverOrigi
 조작은 WASD 또는 방향키로 이동, 좌클릭·우클릭·Shift로 기술, F로 상호작용, B로 기술 창, Tab으로 전체맵, Esc로 메뉴다. 터치 조작의 자동·켜기·끄기 설정은 게임 메뉴에서 전환할 수 있다. Android에서 처음 실행하면 터치 조작이 켜진다.
 
 게임 UI에는 넥슨코리아가 제공한 마비옛체를 사용한다. 서체의 권리는 넥슨코리아에 있으며, 원본을 수정하지 않는 조건으로 사용할 수 있다. 글꼴 자체의 유료 판매는 금지되며, 소프트웨어에 포함할 때는 저작권 안내를 함께 제공한다. [마비옛체 공식 사용 조건](https://mabinogi.nexon.com/page/pds/font.asp)
+
+
+## Main 씬 UI 배치와 수정
+
+`Assets/Scenes/Main.unity`를 열면 Play를 누르지 않아도 Hierarchy의 `Main Canvas > Main Menu`에서 로그인·게스트·회원가입·인증 취소 버튼과 상태 문구를 확인할 수 있다. Scene 뷰에서 UI 위치·크기·앵커를 수정하고 저장한다. 기존 코드처럼 실행 시 버튼을 새로 생성하지 않는다.
+
+- `Main Canvas`: 전체 화면 Canvas, 배경, 화면 비율에 대응하는 Canvas Scaler
+- `Main Menu`: 제목, `Google Login`, `Guest Login`, `Google Registration`, `Google Cancel`, `Status`를 소유한 패널
+- `PortMainMenuView`: Main Menu에 부착된 스크립트. Inspector의 Button/Text 직렬화 참조를 통해 클릭 이벤트를 연결하고 상태 안내를 갱신한다
+- Google 인증 취소 버튼은 에디터에서 배치를 확인할 수 있도록 저장하지만 Play를 시작하면 숨겨지고 인증 대기 중에만 표시한다
+
+Unity 6000.3.5f2에서 Main 씬을 열어 Console 컴파일 오류가 없는지, 네 버튼 위치가 Scene/Game 뷰에서 보이는지, Play 중 Google 로그인·회원가입·게스트 입장·인증 취소가 동작하는지 확인해야 한다. 이번 단계에서는 Lobby 및 GameUI 씬의 런타임 생성 방식은 변경하지 않았다.
